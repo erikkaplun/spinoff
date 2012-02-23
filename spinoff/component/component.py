@@ -119,7 +119,7 @@ class Component(object, Service):
 
         """
         if outbox not in self._outboxes:
-            raise NoRoute
+            raise NoRoute("Component %s has no connection from outbox %s" % (repr(self), repr(outbox)))
 
         connections = self._outboxes[outbox]
         ds = []
