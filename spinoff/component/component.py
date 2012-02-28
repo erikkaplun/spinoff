@@ -86,7 +86,7 @@ class Component(object, Service):
             `a.connect('default', ('default', b))`
 
         """
-        if isinstance(outbox, list):
+        if hasattr(outbox, '__iter__'):
             for o in outbox:
                 self._connect(o, to)
         else:
