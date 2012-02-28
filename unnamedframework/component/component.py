@@ -1,3 +1,4 @@
+import warnings
 from collections import defaultdict
 
 from twisted.application import service
@@ -33,6 +34,13 @@ class IConsumer(Interface):
         messages so as to avoid having to resort to using a non-static number of outboxes.
 
         Returns a `Deferred` which will be fired when this component has received the `message`.
+
+        """
+
+    def connected(inbox):
+        """Called when something has been connected to the specified `inbox` of this `IConsumer`.
+
+        (Optional).
 
         """
 
@@ -88,6 +96,11 @@ class Component(object, Service):
     def _connect(self, outbox, to):
         inbox, receiver = (to if isinstance(to, tuple) else (outbox, to))
         self._outboxes.setdefault(outbox, []).append((inbox, receiver))
+        if hasattr(receiver, 'connected'):
+            receiver.connected(inbox)
+
+    def connected(self, inbox):
+        self._inboxes[inbox]  # leverage defaultdict behaviour
 
     @selfdocumenting
     def short_circuit(self, outbox, inbox=None):
@@ -103,6 +116,8 @@ class Component(object, Service):
         This method will not complain if nothing has been connected to the requested `inbox`.
 
         """
+        if inbox not in self._inboxes:
+            warnings.warn("Component %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
         message, d = yield self._inboxes[inbox].get()
         d.callback(None)
         returnValue(message)
