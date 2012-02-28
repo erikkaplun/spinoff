@@ -12,6 +12,39 @@ ALLOWED_TERMINATION_SIGNALS = ('KILL', 'TERM', 'INT')
 
 
 def spawn_process(executable, args=[], env=None, termination_signal='KILL'):
+    """Spawns a new subprocess.
+
+    This is implemented using the Twisted standard `ProcessProtocol` behind the curtains.
+
+    Returns a `Deferred` that is fired when the process ends. If the process ends successfully,
+    the `callback` is fired with a list containing the `stdout` of the process, otherwise the
+    `errback` is fired with a `ProcessFailed` instance with `args` set to the error code and the
+    `stderr` of the process.
+
+    The `Deferred` returned can be `cancel`ed, causing the process to be terminated with the
+    specified `terminaion_signal` which defaults to `KILL`.
+
+    Examples:
+
+        try:
+            output = yield spawn_process(...)
+        except ProcessFailed as e:
+            err_code, stderr_output = e.args
+            ...
+        else:
+            # do smth with output
+
+
+        try:
+            output = yield with_timeout(20.0, spawn_process(...))
+        except TimeoutError:
+            print("Process timed out")
+        except ProcessFailed as e:
+            # handle failure
+        else:
+            # do smth with output
+
+    """
     assert termination_signal in ALLOWED_TERMINATION_SIGNALS
     protocol = GenericProcessProtocol(termination_signal=termination_signal)
     reactor.spawnProcess(protocol, executable, args=[os.path.basename(executable)] + args, env=env)
