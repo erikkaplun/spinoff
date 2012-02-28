@@ -11,10 +11,12 @@ __all__ = ['spawn_process', 'ProcessFailed']
 ALLOWED_TERMINATION_SIGNALS = ('KILL', 'TERM', 'INT')
 
 
-def spawn_process(executable, args=[], env=None, termination_signal='KILL'):
-    """Spawns a new subprocess.
+class ProcessFailed(Exception):
+    pass
 
-    This is implemented using the Twisted standard `ProcessProtocol` behind the curtains.
+
+class spawn_process(protocol.ProcessProtocol, Deferred):
+    """Spawns a new subprocess.
 
     Returns a `Deferred` that is fired when the process ends. If the process ends successfully,
     the `callback` is fired with a list containing the `stdout` of the process, otherwise the
@@ -45,23 +47,15 @@ def spawn_process(executable, args=[], env=None, termination_signal='KILL'):
             # do smth with output
 
     """
-    assert termination_signal in ALLOWED_TERMINATION_SIGNALS
-    protocol = GenericProcessProtocol(termination_signal=termination_signal)
-    reactor.spawnProcess(protocol, executable, args=[os.path.basename(executable)] + args, env=env)
-    return protocol
 
-
-class ProcessFailed(Exception):
-    pass
-
-
-class GenericProcessProtocol(protocol.ProcessProtocol, Deferred):
-
-    def __init__(self, termination_signal):
+    def __init__(self, executable, args=[], env=None, termination_signal='KILL'):
+        assert termination_signal in ALLOWED_TERMINATION_SIGNALS
         Deferred.__init__(self, canceller=lambda _: self._kill(termination_signal))
         self._stdout_output = []
         self._stderr_output = []
         self._killed = False
+
+        reactor.spawnProcess(self, executable, args=[os.path.basename(executable)] + args, env=env)
 
     def _kill(self, signal_name):
         self.transport.signalProcess(signal_name)
