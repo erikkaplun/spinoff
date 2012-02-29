@@ -48,14 +48,14 @@ class spawn_process(protocol.ProcessProtocol, Deferred):
 
     """
 
-    def __init__(self, executable, args=[], env=None, termination_signal='KILL'):
+    def __init__(self, executable, args=[], env=None, termination_signal='KILL', path=None):
         assert termination_signal in ALLOWED_TERMINATION_SIGNALS
         Deferred.__init__(self, canceller=lambda _: self._kill(termination_signal))
         self._stdout_output = []
         self._stderr_output = []
         self._killed = False
 
-        reactor.spawnProcess(self, executable, args=[os.path.basename(executable)] + args, env=env)
+        reactor.spawnProcess(self, executable, args=[os.path.basename(executable)] + args, env=env, path=path)
 
     def _kill(self, signal_name):
         self.transport.signalProcess(signal_name)
