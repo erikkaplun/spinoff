@@ -29,7 +29,7 @@ def test_timeout3():
     clock = Clock()
 
     t = []
-    mock = Deferred(lambda _: t.append('OK'))
+    mock = Deferred(canceller=lambda _: t.append('OK'))
 
     d = with_timeout(1.0, mock, reactor=clock)
     d.addErrback(lambda f: f.trap(CancelledError))
