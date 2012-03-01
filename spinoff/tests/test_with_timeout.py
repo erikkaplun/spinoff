@@ -7,7 +7,7 @@ from spinoff.util.testing import deferred
 
 @deferred
 @inlineCallbacks
-def test_timeout1(clock):
+def test_timeout_is_reached(clock):
     try:
         yield with_timeout(1.0, sleep(2.0, reactor=clock), reactor=clock)
     except TimeoutError:
@@ -18,14 +18,14 @@ def test_timeout1(clock):
 
 @deferred
 @inlineCallbacks
-def test_timeout2(clock):
+def test_timeout_is_not_reached(clock):
     try:
         yield with_timeout(2.0, sleep(1.0, clock), reactor=clock)
     except TimeoutError:
         assert False, "Timeout should not have been reached"
 
 
-def test_timeout3():
+def test_deferred_is_cancelled_when_timeout_reached():
     clock = Clock()
 
     t = []
@@ -42,7 +42,7 @@ def test_timeout3():
 
 @deferred
 @inlineCallbacks
-def test_timeout_with_exc(clock):
+def test_exceptions_are_passed_through(clock):
     class MyExc(Exception): pass
 
     @inlineCallbacks
