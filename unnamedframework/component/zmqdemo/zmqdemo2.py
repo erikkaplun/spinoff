@@ -2,10 +2,8 @@ from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory, ZmqEndpoint
 
 from unnamedframework.component.component import Component, Application, make_cycle
-from unnamedframework.component.transport.zeromq import ZmqRep, ZmqDealer
+from unnamedframework.component.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
 from unnamedframework.util.async import sleep
-from unnamedframework.component.transport.zeromq import ZmqRouter
-from unnamedframework.component.transport.zeromq import ZmqReq
 
 
 class TestBroker(Component):
