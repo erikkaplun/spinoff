@@ -4,7 +4,7 @@ from zope.interface import implements
 from spinoff.component.component import IComponent
 
 
-class CompositeComponentBase(object):
+class ComponentCollection(object):
     implements(IComponent)
 
     def __init__(self, *members):
@@ -17,17 +17,11 @@ class CompositeComponentBase(object):
     def add(self, component):
         self._members.append(component)
         self._connect([component], self._connections)
-        self._set_parent([component])
 
     def connect(self, *args, **kwargs):
         connection = (args, kwargs)
         self._connections.append(connection)
         self._connect(self._members, [connection])
-
-    def setServiceParent(self, parent):
-        assert not self._parent
-        self._parent = parent
-        self._set_parent(self._members)
 
     def _connect(self, components, connections):
         for connection in connections:
@@ -35,13 +29,8 @@ class CompositeComponentBase(object):
             for component in components:
                 component.connect(*args, **kwargs)
 
-    def _set_parent(self, components):
-        if self._parent:
-            for component in components:
-                component.setServiceParent(self._parent)
 
-
-class Filter(CompositeComponentBase):
+class Filter(ComponentCollection):
     """Filters messages based on `routing_key`.
 
     The function that maps members to routing key values needs to be provided in the constructor.
