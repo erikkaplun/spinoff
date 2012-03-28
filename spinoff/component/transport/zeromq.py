@@ -48,6 +48,9 @@ class ZmqProxyBase(Component):
                              ' ' + self._identity if self._identity else '',
                              ' ' + endpoints_repr if endpoints_repr else '')
 
+    def stop(self):
+        self._conn.shutdown()
+
 
 class ZmqRouter(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRouterConnection)
