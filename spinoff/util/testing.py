@@ -1,4 +1,5 @@
 import sys
+from contextlib import contextmanager
 from functools import wraps
 
 from twisted.internet.task import Clock
@@ -33,3 +34,11 @@ def deferred(f):
             raise exc_info[0], exc_info[1], exc_info[2]
 
     return ret
+
+
+@contextmanager
+def assert_not_raises(exc_class=Exception, message=None):
+    try:
+        yield
+    except exc_class as e:
+        raise AssertionError(message or "No exception should have been raised but instead %s was raised" % repr(e))
