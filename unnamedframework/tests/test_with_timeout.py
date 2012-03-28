@@ -43,7 +43,8 @@ def test_deferred_is_cancelled_when_timeout_reached():
 @deferred
 @inlineCallbacks
 def test_exceptions_are_passed_through(clock):
-    class MyExc(Exception): pass
+    class MyExc(Exception):
+        pass
 
     @inlineCallbacks
     def dummy():
