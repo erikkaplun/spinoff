@@ -1,4 +1,4 @@
-from dts.common import _normalize_pipe
+from unnamedframework.component.component import _normalize_pipe
 
 
 def test_normalize_pipe():
