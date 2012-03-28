@@ -8,7 +8,6 @@ setup(
     install_requires=[
         'twisted==12.0',
         'zope.interface',
-        'txzmq',
         ],
 
     author="Erik Allik",
