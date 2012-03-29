@@ -8,8 +8,8 @@ from spinoff.util.async import TimeoutError, sleep, with_timeout
 from spinoff.util.testing import assert_not_raises
 
 
-_wait_msg = lambda d: with_timeout(0.2, d)
-_wait_slow_joiners = lambda: sleep(0.0)
+_wait_msg = lambda d: with_timeout(4.0, d)
+_wait_slow_joiners = lambda n=1: sleep(0.05 * n)
 
 
 ADDR = 'ipc://test'
@@ -43,32 +43,32 @@ class RouterDealerTestCase(unittest.TestCase):
         return self._make(ZmqRouter, *args, **kwargs)
 
     @inlineCallbacks
-    def test_router_with_one_dealer(self):
+    def _do_test_router_with_n_dealers(self, n):
         router = self._make_router(ADDR)
-        dealer, mock = self._make_dealer(ADDR, identity='dude', with_mock=True)
-        yield _wait_slow_joiners()
+        dealers = []
+        for i in range(n):
+            dealer, mock = self._make_dealer(ADDR, identity='dude%s' % i, with_mock=True)
+            dealers.append((dealer, mock))
+        yield _wait_slow_joiners(n)
 
-        msg = 'PING'
-        router.deliver(message=(dealer.identity, msg), inbox='default')
-
-        with assert_not_raises(TimeoutError, "should have received a message"):
-            assert msg == (yield _wait_msg(mock.get('default')))
-
-    @inlineCallbacks
-    def test_router_with_two_dealers(self):
-        router = self._make_router(ADDR)
-        dealer1, mock1 = self._make_dealer(ADDR, identity='dude1', with_mock=True)
-        dealer2, mock2 = self._make_dealer(ADDR, identity='dude2', with_mock=True)
-        yield _wait_slow_joiners()
-
-        for i in [1, 2]:
-            dealer = locals()['dealer%s' % i]
-            mock = locals()['mock%s' % i]
+        for dealer, mock in dealers:
             msg = 'PING%s' % i
 
             router.deliver(message=(dealer.identity, msg), inbox='default')
             with assert_not_raises(TimeoutError, "should have received a message"):
                 assert msg == (yield _wait_msg(mock.get('default')))
+
+    def test_router_with_1_dealer(self):
+        return self._do_test_router_with_n_dealers(1)
+
+    def test_router_with_2_dealers(self):
+        return self._do_test_router_with_n_dealers(2)
+
+    def test_router_with_3_dealers(self):
+        return self._do_test_router_with_n_dealers(3)
+
+    def test_router_with_10_dealers(self):
+        return self._do_test_router_with_n_dealers(10)
 
     def tearDown(self):
         for component in self._z_components:
