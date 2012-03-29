@@ -27,8 +27,8 @@ class RouterDealerTestCase(unittest.TestCase):
         yield _wait_slow_joiners()
 
     @inlineCallbacks
-    def test_router(self):
-        self.z_router.deliver(message=('dude', 'PING'), inbox='default')
+    def test_one_router_one_dealer(self):
+        self.z_router.deliver(message=(self.z_dealer.identity, 'PING'), inbox='default')
 
         with assert_not_raises(TimeoutError, "should have received a message"):
             msg = yield _wait_msg(self.mock.get('default'))
