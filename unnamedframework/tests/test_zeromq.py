@@ -17,23 +17,59 @@ ADDR = 'ipc://test'
 
 class RouterDealerTestCase(unittest.TestCase):
 
-    @inlineCallbacks
     def setUp(self):
-        self.mock = Component()
-        f = ZmqFactory()
-        self.z_router = ZmqRouter(f, ('bind', ADDR))
-        self.z_dealer = ZmqDealer(f, ('connect', ADDR), identity='dude')
-        self.z_dealer.connect('default', self.mock)
+        self._z_components = []
+        self._z_factory = ZmqFactory()
+
+    def _make(self, cls, endpoint, identity=None, with_mock=False):
+        ret = cls(self._z_factory, endpoint, identity)
+        self._z_components.append(ret)
+        if with_mock:
+            mocked_inboxes = with_mock
+            assert isinstance(mocked_inboxes, (list, basestring, bool))
+
+            if isinstance(mocked_inboxes, bool):
+                mocked_inboxes = 'default'
+
+            mock = Component()
+            ret.connect(mocked_inboxes, mock)
+            ret = ret, mock
+        return ret
+
+    def _make_dealer(self, *args, **kwargs):
+        return self._make(ZmqDealer, *args, **kwargs)
+
+    def _make_router(self, *args, **kwargs):
+        return self._make(ZmqRouter, *args, **kwargs)
+
+    @inlineCallbacks
+    def test_router_with_one_dealer(self):
+        router = self._make_router(ADDR)
+        dealer, mock = self._make_dealer(ADDR, identity='dude', with_mock=True)
         yield _wait_slow_joiners()
 
-    @inlineCallbacks
-    def test_one_router_one_dealer(self):
-        self.z_router.deliver(message=(self.z_dealer.identity, 'PING'), inbox='default')
+        msg = 'PING'
+        router.deliver(message=(dealer.identity, msg), inbox='default')
 
         with assert_not_raises(TimeoutError, "should have received a message"):
-            msg = yield _wait_msg(self.mock.get('default'))
-        assert msg == 'PING'
+            assert msg == (yield _wait_msg(mock.get('default')))
+
+    @inlineCallbacks
+    def test_router_with_two_dealers(self):
+        router = self._make_router(ADDR)
+        dealer1, mock1 = self._make_dealer(ADDR, identity='dude1', with_mock=True)
+        dealer2, mock2 = self._make_dealer(ADDR, identity='dude2', with_mock=True)
+        yield _wait_slow_joiners()
+
+        for i in [1, 2]:
+            dealer = locals()['dealer%s' % i]
+            mock = locals()['mock%s' % i]
+            msg = 'PING%s' % i
+
+            router.deliver(message=(dealer.identity, msg), inbox='default')
+            with assert_not_raises(TimeoutError, "should have received a message"):
+                assert msg == (yield _wait_msg(mock.get('default')))
 
     def tearDown(self):
-        self.z_dealer.stop()
-        self.z_router.stop()
+        for component in self._z_components:
+            component.stop()
