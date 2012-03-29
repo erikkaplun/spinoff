@@ -41,6 +41,10 @@ class ZmqProxyBase(Component):
         self._endpoints.extend(endpoints)
         self._conn.addEndpoints(endpoints)
 
+    @property
+    def identity(self):
+        return self._identity
+
     def __repr__(self):
         endpoints_repr = ';'.join('%s=>%s' % (endpoint.type, endpoint.address)
                                   for endpoint in self._endpoints)
