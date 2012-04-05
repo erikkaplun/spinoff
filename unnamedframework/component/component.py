@@ -53,11 +53,14 @@ class IComponent(IProducer, IConsumer):
 class Component(object, Service):
     implements(IComponent)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, connections=None, *args, **kwargs):
         super(Component, self).__init__(*args, **kwargs)
         self._inboxes = defaultdict(lambda: DeferredQueue(backlog=1))
         self._waiting = {}
         self._outboxes = {}
+        if connections:
+            for connection in connections.items():
+                self.connect(*connection)
 
     def deliver(self, message, inbox, routing_key):
         d = Deferred()
