@@ -38,8 +38,8 @@ class IConsumer(Interface):
 
         """
 
-    def connected(inbox):
-        """Called when something has been connected to the specified `inbox` of this `IConsumer`.
+    def plugged(inbox, component):
+        """Called when something has been plugged into the specified `inbox` of this `IConsumer`.
 
         (Optional).
 
@@ -100,10 +100,12 @@ class Component(object, Service):
     def _connect(self, outbox, to):
         inbox, receiver = (to if isinstance(to, tuple) else (outbox, to))
         self._outboxes.setdefault(outbox, []).append((inbox, receiver))
-        if hasattr(receiver, 'connected'):
-            receiver.connected(inbox)
+        if hasattr(receiver, 'plugged'):
+            receiver.plugged(inbox, self)
+        if hasattr(self, 'connected'):
+            self.connected(outbox, receiver)
 
-    def connected(self, inbox):
+    def plugged(self, inbox, component):
         self._inboxes[inbox]  # leverage defaultdict behaviour
 
     @selfdocumenting
