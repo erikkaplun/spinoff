@@ -25,6 +25,7 @@ class IProducer(Interface):
 
         """
 
+
 class IConsumer(Interface):
 
     def deliver(message, inbox, routing_key):
@@ -104,7 +105,8 @@ class Component(object, Service):
 
     @selfdocumenting
     def short_circuit(self, outbox, inbox=None):
-        if inbox is None: inbox = outbox
+        if inbox is None:
+            inbox = outbox
         self.connect(outbox, (inbox, self))
 
     @inlineCallbacks
