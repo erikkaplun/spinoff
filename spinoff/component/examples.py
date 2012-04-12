@@ -8,13 +8,13 @@ class CompositeComponentBase(object):
     implements(IComponent)
 
     def __init__(self, *members):
+        self._members = []
         self._connections = []
         self._parent = None
         for member in members:
             self.add(member)
 
     def add(self, component):
-        self._connect(component)
         self._members.append(component)
         self._connect([component], self._connections)
         self._set_parent([component])
