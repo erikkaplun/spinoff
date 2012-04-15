@@ -15,7 +15,7 @@ _wait_slow_joiners = lambda n=1: sleep(0.05 * n)
 ADDR = 'ipc://test'
 
 
-class RouterDealerTestCase(unittest.TestCase):
+class TestCaseBase(unittest.TestCase):
 
     def setUp(self):
         self._z_components = []
@@ -41,6 +41,13 @@ class RouterDealerTestCase(unittest.TestCase):
 
     def _make_router(self, *args, **kwargs):
         return self._make(ZmqRouter, *args, **kwargs)
+
+    def tearDown(self):
+        for component in self._z_components:
+            component.stop()
+
+
+class RouterDealerTestCase(TestCaseBase):
 
     @inlineCallbacks
     def _do_test_router_with_n_dealers(self, n):
@@ -70,6 +77,3 @@ class RouterDealerTestCase(unittest.TestCase):
     def test_router_with_10_dealers(self):
         return self._do_test_router_with_n_dealers(10)
 
-    def tearDown(self):
-        for component in self._z_components:
-            component.stop()
