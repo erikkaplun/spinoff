@@ -147,7 +147,8 @@ class Component(object, Service):
         ds = []
         for inbox, component in connections:
             ds.append(component.deliver(message, inbox, routing_key))
-        for d in ds: yield d
+        for d in ds:
+            yield d
 
     # `startService` and `stopService` are ugly name because they 1) repeat the class
     # name and 2) not all `Service`s want to be labelled as "services".
@@ -159,8 +160,11 @@ class Component(object, Service):
     def stopService(self):
         self.stop()
 
-    def start(self): pass
-    def stop(self): pass
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():
