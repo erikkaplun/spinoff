@@ -56,7 +56,7 @@ class Filter(CompositeComponentBase):
         ds = []
         for member in self._members:
             if self._key_fun(member) == routing_key:
-                ds.append(member.deliver(inbox, message))
+                ds.append(member.deliver(inbox, message, routing_key=None))
         yield DeferredList(ds, consumeErrors=True, fireOnOneErrback=True)
 
 
