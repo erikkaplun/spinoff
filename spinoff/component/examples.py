@@ -81,4 +81,5 @@ class Publisher(CompositeComponentBase):
         ds = []
         for component in self._members:
             ds.append(component.deliver(*args, **kwargs))
-        for d in ds: yield d
+        for d in ds:
+            yield d
