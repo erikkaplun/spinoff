@@ -2,7 +2,11 @@ import sys
 from contextlib import contextmanager
 from functools import wraps
 
+from nose.tools import assert_raises as nose_assert_raises
 from twisted.internet.task import Clock
+
+
+__all__ = ['deferred', 'assert_raises', 'assert_not_raises']
 
 
 def deferred(f):
@@ -42,3 +46,7 @@ def assert_not_raises(exc_class=Exception, message=None):
         yield
     except exc_class as e:
         raise AssertionError(message or "No exception should have been raised but instead %s was raised" % repr(e))
+
+
+def assert_raises(exc_class=Exception, message=None):
+    return nose_assert_raises(exc_class, message)
