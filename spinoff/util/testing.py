@@ -2,7 +2,6 @@ import sys
 from contextlib import contextmanager
 from functools import wraps
 
-from nose.tools import assert_raises as nose_assert_raises
 from twisted.internet.task import Clock
 
 
@@ -48,5 +47,11 @@ def assert_not_raises(exc_class=Exception, message=None):
         raise AssertionError(message or "No exception should have been raised but instead %s was raised" % repr(e))
 
 
+@contextmanager
 def assert_raises(exc_class=Exception, message=None):
-    return nose_assert_raises(exc_class, message)
+    try:
+        yield
+    except exc_class:
+        pass
+    else:
+        raise AssertionError(message or "An exception should have been raised")
