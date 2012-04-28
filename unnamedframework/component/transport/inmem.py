@@ -62,3 +62,5 @@ class InMemoryRouter(object):
             if dealer.identity == routing_key:
                 dealer.put(outbox=inbox, message=message)
                 break
+        else:
+            assert False
