@@ -61,4 +61,4 @@ class InMemoryRouter(object):
         for dealer in self._dealer_endpoints:
             if dealer.identity == routing_key:
                 dealer.put(outbox=inbox, message=message)
-
+                break
