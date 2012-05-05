@@ -32,10 +32,10 @@ class InMemDealerEndpoint(Component):
 
 class InMemoryRouter(object):
 
-    def __init__(self):
+    def __init__(self, id_gen_fn=None):
         self._router_endpoint = None
         self._dealer_endpoints = []
-        self._dealer_id_seq = count()
+        self._dealer_id_gen_fn = id_gen_fn or count().next
         self._used_deaer_identities = set()
 
     def make_router_endpoint(self):
@@ -48,7 +48,7 @@ class InMemoryRouter(object):
     def make_dealer_endpoint(self, identity=None):
         if identity in self._used_deaer_identities:
             raise Exception()
-        identity = self._dealer_id_seq.next() if identity is None else identity
+        identity = self._dealer_id_gen_fn() if identity is None else identity
         self._used_deaer_identities.add(identity)
         ret = InMemDealerEndpoint(manager=self, identity=identity)
         self._dealer_endpoints.append(ret)
