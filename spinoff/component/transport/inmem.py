@@ -58,9 +58,11 @@ class InMemoryRouter(object):
         self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message))
 
     def _delivered_to_router(self, message, inbox, routing_key):
+        if routing_key is None:
+            raise Exception("Routing key must be specified when sending to a router endpoint")
         for dealer in self._dealer_endpoints:
             if dealer.identity == routing_key:
                 dealer.put(outbox=inbox, message=message)
                 break
         else:
-            assert False
+            raise Exception("No dealer ID matches the specified routing key")
