@@ -129,7 +129,6 @@ class Component(object, Service):
         d.callback(None)
         returnValue(message)
 
-    @inlineCallbacks
     def put(self, message, outbox='default', routing_key=None):
         """Puts a `message` into one of the `outbox`es of this component with an optional `routing_key`.
 
@@ -144,11 +143,8 @@ class Component(object, Service):
             raise NoRoute("Component %s has no connection from outbox %s" % (repr(self), repr(outbox)))
 
         connections = self._outboxes[outbox]
-        ds = []
         for inbox, component in connections:
-            ds.append(component.deliver(message, inbox, routing_key))
-        for d in ds:
-            yield d
+            component.deliver(message, inbox, routing_key)
 
     # `startService` and `stopService` are ugly name because they 1) repeat the class
     # name and 2) not all `Service`s want to be labelled as "services".
