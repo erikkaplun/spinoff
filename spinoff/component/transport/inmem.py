@@ -34,7 +34,7 @@ class InMemDealerEndpoint(Component):
         self._manager._delivered_to_dealer(self, message, inbox)
 
 
-class InMemoryRouter(object):
+class InMemoryRouting(object):
 
     def __init__(self, id_gen_fn=None):
         self._router_endpoint = None
