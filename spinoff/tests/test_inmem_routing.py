@@ -1,5 +1,5 @@
 from spinoff.component.component import IProducer, IConsumer, Component
-from spinoff.component.transport.inmem import InMemoryRouter
+from spinoff.component.transport.inmem import InMemoryRouter, RoutingException
 from spinoff.util.testing import assert_raises, assert_not_raises
 
 
@@ -102,6 +102,27 @@ def test_router_to_dealer_communication():
     router.deliver(inbox='default', message='msg3', routing_key=dealer1.identity)
     msg = _get_deferred_result(dealer1_msg_d)
     assert msg == 'msg3'
+
+
+def test_remove_dealer():
+    routing = InMemoryRouter()
+
+    router = routing.make_router_endpoint()
+    mock = Component()
+    router.connect('default', ('default', mock))
+
+    dealer = routing.make_dealer_endpoint()
+
+    routing.dealer_gone(dealer)
+
+    with assert_raises(ValueError, "cannot remove dealer from routing more than once"):
+        routing.dealer_gone(dealer)
+
+    with assert_raises(RoutingException, "sending to a dealer that has previously been removed should not be possible"):
+        router.deliver(inbox='default', message='whatev', routing_key=dealer.identity)
+
+    with assert_raises(RoutingException, "sending from a dealer that has previously been removed should not be possible"):
+        dealer.deliver(inbox='default', message='whatev', routing_key=None)
 
 
 def _get_deferred_result(d):
