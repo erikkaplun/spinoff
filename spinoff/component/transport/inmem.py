@@ -42,6 +42,9 @@ class InMemoryRouting(object):
         self._dealer_id_gen_fn = id_gen_fn or count().next
         self._used_deaer_identities = set()
 
+        self._server = None
+        self._clients = {}
+
     def make_router_endpoint(self):
         if self._router_endpoint:
             raise Exception()
@@ -75,3 +78,27 @@ class InMemoryRouting(object):
                 break
         else:
             raise RoutingException("No dealer ID matches the specified routing key")
+
+    def assign_server(self, server, inbox, outbox):
+        if self._server:
+            raise RoutingException("Can assign only one server")
+        self._server = True
+        router = self.make_router_endpoint()
+        router.connect('default', (inbox, server))
+        server.connect(outbox, ('default', router))
+
+    def add_client(self, client, inbox, outbox):
+        if client in self._clients:
+            raise RoutingException("Attempt add the same client more than once")
+
+        dealer = self.make_dealer_endpoint()
+
+        self._clients[client] = dealer
+        client.connect(outbox, ('default', dealer))
+        dealer.connect('default', (inbox, client))
+
+    def remove_client(self, client):
+        if client not in self._clients:
+            raise RoutingException("Attempt to remove a non-existent client")
+        self.dealer_gone(self._clients[client])
+        del self._clients[client]

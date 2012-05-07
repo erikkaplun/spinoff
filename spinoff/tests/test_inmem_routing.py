@@ -45,6 +45,51 @@ def test_interface():
         routing.make_dealer_endpoint(identity='123')
 
 
+def test_client_server_interface():
+    routing = InMemoryRouting()
+
+    server = Component()
+    client = Component()
+    client2 = Component()
+
+    routing.assign_server(server, inbox='in', outbox='out')
+    routing.add_client(client, inbox='in', outbox='out')
+
+    with assert_raises(RoutingException, "should not be able to assign server twice"):
+        routing.assign_server(server, inbox='whatev', outbox='whatev')
+
+    with assert_not_raises(RoutingException):
+        routing.add_client(client2, inbox='in', outbox='out')
+
+    with assert_raises(RoutingException, "should not be able to add the same client twice"):
+        routing.add_client(client, inbox='in', outbox='out')
+
+    client.put(outbox='out', message='msg-1')
+    sender1, msg1 = _get_deferred_result(server.get(inbox='in'))
+    assert msg1 == 'msg-1'
+
+    client2.put(outbox='out', message='msg-2')
+    sender2, msg2 = _get_deferred_result(server.get(inbox='in'))
+    assert msg2 == 'msg-2'
+
+    assert sender1 != sender2
+
+    server.put(outbox='out', message='msg-3', routing_key=sender1)
+    msg = _get_deferred_result(client.get(inbox='in'))
+    assert msg == 'msg-3'
+
+    routing.remove_client(client)
+    with assert_raises(RoutingException, "should not be able to remove the same client twice"):
+        routing.remove_client(client)
+    with assert_raises(RoutingException, "should not be able to remove a non-existent client"):
+        routing.remove_client(Component())
+
+    with assert_raises(RoutingException, "should not be able to send from a client that has been removed"):
+        client.put(outbox='out', message='whatev')
+    d = server.get(inbox='in')
+    assert not d.called
+
+
 def test_dealer_to_router_communication():
     routing = InMemoryRouting()
 
