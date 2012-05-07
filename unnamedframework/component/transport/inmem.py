@@ -6,6 +6,10 @@ from unnamedframework.component.component import IProducer, IConsumer
 from unnamedframework.component.component import Component
 
 
+class RoutingException(Exception):
+    pass
+
+
 class InMemRouterEndpoint(Component):
 
     def __init__(self, manager):
@@ -54,7 +58,12 @@ class InMemoryRouter(object):
         self._dealer_endpoints.append(ret)
         return ret
 
+    def dealer_gone(self, dealer):
+        self._dealer_endpoints.remove(dealer)
+
     def _delivered_to_dealer(self, dealer, message, inbox):
+        if dealer not in self._dealer_endpoints:
+            raise RoutingException("No such dealer (anymore)")
         self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message))
 
     def _delivered_to_router(self, message, inbox, routing_key):
@@ -65,4 +74,4 @@ class InMemoryRouter(object):
                 dealer.put(outbox=inbox, message=message)
                 break
         else:
-            raise Exception("No dealer ID matches the specified routing key")
+            raise RoutingException("No dealer ID matches the specified routing key")
