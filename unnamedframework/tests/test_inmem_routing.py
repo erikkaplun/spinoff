@@ -1,5 +1,5 @@
 from unnamedframework.component.component import IProducer, IConsumer, Component
-from unnamedframework.component.transport.inmem import InMemoryRouter, RoutingException
+from unnamedframework.component.transport.inmem import InMemoryRouting, RoutingException
 from unnamedframework.util.testing import assert_raises, assert_not_raises
 
 
@@ -12,8 +12,8 @@ def _all_neq(*args):
 
 
 def test_interface():
-    routing = InMemoryRouter()
-    assert isinstance(routing, InMemoryRouter)
+    routing = InMemoryRouting()
+    assert isinstance(routing, InMemoryRouting)
 
     router = routing.make_router_endpoint()
     assert IProducer.providedBy(router)
@@ -46,7 +46,7 @@ def test_interface():
 
 
 def test_dealer_to_router_communication():
-    routing = InMemoryRouter()
+    routing = InMemoryRouting()
 
     router = routing.make_router_endpoint()
     mock = Component()
@@ -76,7 +76,7 @@ def test_dealer_to_router_communication():
 
 
 def test_router_to_dealer_communication():
-    routing = InMemoryRouter()
+    routing = InMemoryRouting()
 
     router = routing.make_router_endpoint()
 
@@ -105,7 +105,7 @@ def test_router_to_dealer_communication():
 
 
 def test_remove_dealer():
-    routing = InMemoryRouter()
+    routing = InMemoryRouting()
 
     router = routing.make_router_endpoint()
     mock = Component()
