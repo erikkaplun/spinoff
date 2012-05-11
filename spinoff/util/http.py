@@ -3,7 +3,7 @@ import base64
 from zope.interface import implements
 
 from twisted.internet import reactor, defer, protocol
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks, returnValue, succeed
 from twisted.web.client import Agent
 from twisted.web.http_headers import Headers
 from twisted.web.iweb import IBodyProducer
@@ -59,7 +59,7 @@ class send_data(object):
 
 
 @inlineCallbacks
-def get_page(method, uri, basic_auth=None, headers=None):
+def get_page(method, uri, basic_auth=None, headers=None, postdata=None):
     headers = headers or {}
 
     if basic_auth:
@@ -70,7 +70,9 @@ def get_page(method, uri, basic_auth=None, headers=None):
     headers = Headers(headers)
 
     agent = Agent(reactor)
-    response = yield agent.request(method, uri, headers)
+    if postdata is not None:
+        postdata = StringProducer(postdata)
+    response = yield agent.request(method, uri, headers, postdata)
     body = yield receive_data(response.deliverBody)
     returnValue((response.code, response.headers, body))
 
@@ -82,3 +84,21 @@ def basic_auth_string(username, password):
     """
     b64 = base64.encodestring('%s:%s' % (username, password)).strip()
     return 'Basic %s' % b64
+
+
+class StringProducer(object):
+    implements(IBodyProducer)
+
+    def __init__(self, body):
+        self.body = body
+        self.length = len(body)
+
+    def startProducing(self, consumer):
+        consumer.write(self.body)
+        return succeed(None)
+
+    def pauseProducing(self):
+        pass
+
+    def stopProducing(self):
+        pass
