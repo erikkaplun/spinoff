@@ -39,6 +39,11 @@ def deferred(f):
     return ret
 
 
+def immediate(d):
+    assert d.called
+    return d
+
+
 @contextmanager
 def assert_not_raises(exc_class=Exception, message=None):
     try:
