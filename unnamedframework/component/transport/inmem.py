@@ -1,8 +1,5 @@
 from itertools import count
 
-from zope.interface import implements
-
-from unnamedframework.component.component import IProducer, IConsumer
 from unnamedframework.component.component import Component
 
 
