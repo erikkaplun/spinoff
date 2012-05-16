@@ -1,6 +1,7 @@
 from spinoff.component.component import IProducer, IConsumer, Component
 from spinoff.component.transport.inmem import InMemoryRouting, RoutingException
 from spinoff.util.testing import assert_raises, assert_not_raises
+from spinoff.util.testing import deferred_result
 
 
 def _all_neq(*args):
@@ -179,8 +180,4 @@ def test_remove_dealer():
 
 
 def _get_deferred_result(d):
-    assert d.called, "messages should be delivered immediately"
-    result = [None]
-    d.addCallback(lambda ret: result.__setitem__(0, ret))
-    msg = result[0]
-    return msg
+    return deferred_result(d)
