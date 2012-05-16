@@ -119,6 +119,14 @@ def test_dealer_to_router_communication():
     assert payload3 == 'msg3'
     assert tmp_sender_id == sender_id2, "messages sent by a single dealer should have the same sender ID"
 
+    dealer2.deliver(message='whatev', inbox='default', routing_key=123)
+    routing_key, msg = _get_deferred_result(mock.get_routed())
+    assert routing_key == 123
+
+    dealer2.deliver(message='whatev', inbox='default', routing_key=321)
+    routing_key, msg = _get_deferred_result(mock.get_routed())
+    assert routing_key == 321
+
 
 def test_router_to_dealer_communication():
     routing = InMemoryRouting()
