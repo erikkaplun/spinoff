@@ -1,10 +1,6 @@
 from itertools import count
 
-from unnamedframework.component.component import Component
-
-
-class RoutingException(Exception):
-    pass
+from unnamedframework.component.component import Component, RoutingException
 
 
 class InMemRouterEndpoint(Component):
