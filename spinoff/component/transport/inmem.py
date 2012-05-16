@@ -27,8 +27,7 @@ class InMemDealerEndpoint(Component):
         self._identity = identity
 
     def deliver(self, message, inbox, routing_key):
-        assert routing_key is None
-        self._manager._delivered_to_dealer(self, message, inbox)
+        self._manager._delivered_to_dealer(self, message, inbox, routing_key)
 
 
 class InMemoryRouting(object):
@@ -61,10 +60,10 @@ class InMemoryRouting(object):
     def dealer_gone(self, dealer):
         self._dealer_endpoints.remove(dealer)
 
-    def _delivered_to_dealer(self, dealer, message, inbox):
+    def _delivered_to_dealer(self, dealer, message, inbox, routing_key):
         if dealer not in self._dealer_endpoints:
             raise RoutingException("No such dealer (anymore)")
-        self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message))
+        self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message), routing_key=routing_key)
 
     def _delivered_to_router(self, message, inbox, routing_key):
         if routing_key is None:
