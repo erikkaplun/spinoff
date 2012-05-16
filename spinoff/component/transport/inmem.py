@@ -1,10 +1,6 @@
 from itertools import count
 
-from spinoff.component.component import Component
-
-
-class RoutingException(Exception):
-    pass
+from spinoff.component.component import Component, RoutingException
 
 
 class InMemRouterEndpoint(Component):
