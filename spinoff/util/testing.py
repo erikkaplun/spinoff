@@ -44,6 +44,17 @@ def immediate(d):
     return d
 
 
+def deferred_result(d):
+    ret = [None]
+    exc = [None]
+    d = immediate(d)
+    d.addCallback(lambda result: ret.__setitem__(0, result))
+    d.addErrback(lambda f: exc.__setitem__(0, f))
+    if exc[0]:
+        exc[0].raiseException()
+    return ret[0]
+
+
 @contextmanager
 def assert_not_raises(exc_class=Exception, message=None):
     try:
