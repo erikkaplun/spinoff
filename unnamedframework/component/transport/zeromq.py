@@ -64,9 +64,9 @@ class ZmqRouter(ZmqProxyBase):
         message, inbox, routing_key = pickle.loads(message[0])
         self.put((sender_id, message), outbox=inbox, routing_key=routing_key)
 
-    def deliver(self, message, inbox, routing_key=None):
+    def deliver(self, message, inbox, routing_key):
         recipient_id = routing_key
-        msg_data_out = pickle.dumps((message, inbox, routing_key))
+        msg_data_out = pickle.dumps((message, inbox, None))
         self._conn.sendMsg(recipient_id, msg_data_out)
         return succeed(True)
 
