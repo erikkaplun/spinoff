@@ -145,7 +145,7 @@ class Component(object, Service):
             warnings.warn("Component %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
         message, d, routing_key = yield self._inboxes[inbox].get()
         if bool(routed) != (routing_key is not None):
-            raise InterfaceException()
+            raise InterfaceException("Routing key was%s expected but was%s found" % (' not' if not routed else '', ' not' if routing_key is None else ''))
         d.callback(None)
         returnValue((routing_key, message))
 
