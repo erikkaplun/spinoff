@@ -72,7 +72,7 @@ class Component(object, Service):
 
     def deliver(self, message, inbox, routing_key):
         d = Deferred()
-        self._inboxes[inbox].put((message, d))
+        self._inboxes[inbox].put((message, d, routing_key))
         return d
 
     def connect(self, outbox=None, to=None):
@@ -131,11 +131,23 @@ class Component(object, Service):
         This method will not complain if nothing has been connected to the requested `inbox`.
 
         """
+        routing_key, message = yield self._get(inbox, routed=False)
+        returnValue(message)
+
+    @inlineCallbacks
+    def get_routed(self, inbox='default'):
+        routing_key, message = yield self._get(inbox, routed=True)
+        returnValue((routing_key, message))
+
+    @inlineCallbacks
+    def _get(self, inbox, routed):
         if inbox not in self._inboxes:
             warnings.warn("Component %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
-        message, d = yield self._inboxes[inbox].get()
+        message, d, routing_key = yield self._inboxes[inbox].get()
+        if bool(routed) != (routing_key is not None):
+            raise InterfaceException()
         d.callback(None)
-        returnValue(message)
+        returnValue((routing_key, message))
 
     def put(self, message, outbox='default', routing_key=None):
         """Puts a `message` into one of the `outbox`es of this component with an optional `routing_key`.
