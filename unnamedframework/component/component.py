@@ -9,10 +9,18 @@ from zope.interface import Interface, implements
 from unnamedframework.util.meta import selfdocumenting
 
 
-__all__ = ['IComponent', 'IProducer', 'IConsumer', 'Component', 'Pipeline', 'Application', 'NoRoute']
+__all__ = ['IComponent', 'IProducer', 'IConsumer', 'Component', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException']
 
 
 class NoRoute(Exception):
+    pass
+
+
+class RoutingException(Exception):
+    pass
+
+
+class InterfaceException(Exception):
     pass
 
 
