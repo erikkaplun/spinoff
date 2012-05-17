@@ -79,11 +79,11 @@ class InMemoryRouting(object):
         router.connect('default', (inbox, server))
         server.connect(outbox, ('default', router))
 
-    def add_client(self, client, inbox, outbox):
+    def add_client(self, client, inbox, outbox, identity=None):
         if client in self._clients:
             raise RoutingException("Attempt add the same client more than once")
 
-        dealer = self.make_dealer_endpoint()
+        dealer = self.make_dealer_endpoint(identity)
 
         self._clients[client] = dealer
         client.connect(outbox, ('default', dealer))

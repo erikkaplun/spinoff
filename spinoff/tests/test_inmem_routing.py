@@ -91,6 +91,21 @@ def test_client_server_interface():
     assert not d.called
 
 
+def test_manual_identity():
+    routing = InMemoryRouting()
+
+    server = Component()
+    client = Component()
+
+    routing.assign_server(server, inbox='in', outbox='out')
+    routing.add_client(client, inbox='in', outbox='out', identity=987)
+
+    client.put(outbox='out', message='whatev')
+
+    sender, msg = deferred_result(server.get('in'))
+    assert sender == 987
+
+
 def test_dealer_to_router_communication():
     routing = InMemoryRouting()
 
