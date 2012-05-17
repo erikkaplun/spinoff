@@ -69,7 +69,7 @@ class InMemoryRouting(object):
                 dealer.put(outbox=inbox, message=message)
                 break
         else:
-            raise RoutingException("No dealer ID matches the specified routing key")
+            raise RoutingException("No dealer ID matches the specified routing key (%s)" % routing_key)
 
     def assign_server(self, server, inbox, outbox):
         if self._server:
