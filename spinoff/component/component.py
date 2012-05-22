@@ -106,20 +106,13 @@ class Component(object, Service):
             `comp_a.connect('outbox', ('default', comp_b))`
 
         """
-        if hasattr(outbox, '__iter__'):
-            for o in outbox:
-                self._connect(o, to)
-        else:
-            self._connect(outbox, to)
-    connect.__doc__ %= {'parent_doc': IComponent.getDescriptionFor('connect').getDoc()}
-
-    def _connect(self, outbox, to):
         inbox, receiver = (to if isinstance(to, tuple) else ('default', to))
         self._outboxes.setdefault(outbox, []).append((inbox, receiver))
         if hasattr(receiver, 'plugged'):
             receiver.plugged(inbox, self)
         if hasattr(self, 'connected'):
             self.connected(outbox, receiver)
+    connect.__doc__ %= {'parent_doc': IComponent.getDescriptionFor('connect').getDoc()}
 
     def plugged(self, inbox, component):
         self._inboxes[inbox]  # leverage defaultdict behaviour
