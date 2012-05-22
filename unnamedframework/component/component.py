@@ -75,11 +75,11 @@ class Component(object, Service):
         self._inboxes[inbox].put((message, d, routing_key))
         return d
 
-    def connect(self, outbox=None, to=None):
+    def connect(self, outbox='default', to=None):
         """%(parent_doc)s
 
         The connection (`to`) can be either a tuple of `(<inbox>, <receiver>)` or just `receiver`, in which case `<inbox>` is
-        taken to be the same as `outbox`.
+        taken to be `'default'`.
 
         If no `outbox` is specified, it is taken to be `'default'`, thus:
 
@@ -97,6 +97,14 @@ class Component(object, Service):
 
             `a.connect('default', ('default', b))`
 
+        and
+
+            `comp_a.connect('outbox', comp_b)`
+
+        is equivalent to:
+
+            `comp_a.connect('outbox', ('default', comp_b))`
+
         """
         if hasattr(outbox, '__iter__'):
             for o in outbox:
@@ -106,7 +114,7 @@ class Component(object, Service):
     connect.__doc__ %= {'parent_doc': IComponent.getDescriptionFor('connect').getDoc()}
 
     def _connect(self, outbox, to):
-        inbox, receiver = (to if isinstance(to, tuple) else (outbox, to))
+        inbox, receiver = (to if isinstance(to, tuple) else ('default', to))
         self._outboxes.setdefault(outbox, []).append((inbox, receiver))
         if hasattr(receiver, 'plugged'):
             receiver.plugged(inbox, self)
