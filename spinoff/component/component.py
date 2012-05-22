@@ -36,7 +36,7 @@ class IProducer(Interface):
 
 class IConsumer(Interface):
 
-    def deliver(message, inbox, routing_key):
+    def deliver(message, inbox, routing_key=None):
         """Delivers an incoming `message` into one of the `inbox`es of this component with an optional `routing_key`.
 
         The `routing_key` argument is intended for writing routers to be able to have branching in the flow of
@@ -70,7 +70,7 @@ class Component(object, Service):
             for connection in connections.items():
                 self.connect(*connection)
 
-    def deliver(self, message, inbox, routing_key):
+    def deliver(self, message, inbox, routing_key=None):
         d = Deferred()
         self._inboxes[inbox].put((message, d, routing_key))
         return d
