@@ -1,9 +1,9 @@
 from twisted.python.failure import Failure
-from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, CancelledError
+from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, CancelledError, DeferredList
 from twisted.internet import reactor, task
 
 
-__all__ = ['TimeoutError', 'sleep', 'exec_async', 'if_', 'with_timeout']
+__all__ = ['TimeoutError', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine']
 
 
 def sleep(seconds, reactor=reactor):
@@ -65,6 +65,10 @@ def with_timeout(timeout, d, reactor=reactor):
         ))
 
     return ret
+
+
+def combine(*ds):
+    return DeferredList(ds, consumeErrors=True, fireOnOneErrback=True)
 
 
 class EventBuffer(object):
