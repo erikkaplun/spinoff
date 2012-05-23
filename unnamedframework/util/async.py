@@ -65,3 +65,29 @@ def with_timeout(timeout, d, reactor=reactor):
         ))
 
     return ret
+
+
+class EventBuffer(object):
+
+    _TWISTED_REACTOR = reactor
+
+    def __init__(self, fn, args=[], kwargs={}, milliseconds=1000, reactor=None):
+        self._milliseconds = milliseconds
+        self._last_event = None
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs
+        self._reactor = reactor or self._TWISTED_REACTOR
+
+    def call(self, *args, **kwargs):
+        t = self._reactor.seconds()
+        if self._last_event is None or t - self._last_event >= self._milliseconds:
+            self._last_event = t
+            _args, _kwargs = [], {}
+            if self._args or args:
+                _args.extend(self._args)
+                _args.extend(args)
+            if self._kwargs or kwargs:
+                _kwargs.update(self._kwargs)
+                _kwargs.update(kwargs)
+            self._fn(*_args, **_kwargs)
