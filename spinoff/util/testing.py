@@ -5,7 +5,7 @@ from functools import wraps
 from twisted.internet.task import Clock
 
 
-__all__ = ['deferred', 'assert_raises', 'assert_not_raises']
+__all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction']
 
 
 def deferred(f):
@@ -71,3 +71,18 @@ def assert_raises(exc_class=Exception, message=None):
         pass
     else:
         raise AssertionError(message or "An exception should have been raised")
+
+
+class MockFunction(object):
+
+    def __init__(self):
+        self.reset()
+
+    def __call__(self, *args, **kwargs):
+        self.called = True
+        self.args = args
+        self.kwargs = kwargs
+
+    def reset(self):
+        self.called = False
+        self.args = self.kwargs = None
