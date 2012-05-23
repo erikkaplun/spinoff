@@ -2,6 +2,7 @@ from twisted.trial import unittest
 from twisted.internet.task import Clock
 
 from unnamedframework.util.async import EventBuffer
+from unnamedframework.util.testing import MockFunction
 
 
 class EventBufferTestCase(unittest.TestCase):
@@ -9,35 +10,29 @@ class EventBufferTestCase(unittest.TestCase):
     def test_basic(self):
         MS = 123
 
-        called = []
-
-        def reset():
-            called[:] = []
-
-        def set():
-            called.append(1)
+        mock_fn = MockFunction()
 
         clock = Clock()
-        x = EventBuffer(set, reactor=clock, milliseconds=MS)
+        x = EventBuffer(mock_fn, reactor=clock, milliseconds=MS)
 
         x.call()
-        assert called, "EventBuffer should fire on the first call"
+        assert mock_fn.called, "EventBuffer should fire on the first call"
 
-        reset()
+        mock_fn.reset()
 
         x.call()
-        assert not called, "EventBuffer should not fire when no time has passed from the last call"
+        assert not mock_fn.called, "EventBuffer should not fire when no time has passed from the last call"
 
         clock.advance(MS / 2)
-        assert not called, "EventBuffer should not fire when not enough time has passed from the last call"
+        assert not mock_fn.called, "EventBuffer should not fire when not enough time has passed from the last call"
 
         clock.advance(MS)
 
         x.call()
-        assert called, "EventBuffer should fire when enough time has passed from the last call"
+        assert mock_fn.called, "EventBuffer should fire when enough time has passed from the last call"
 
-        reset()
+        mock_fn.reset()
 
         clock.advance(MS * 10)
         x.call()
-        assert called, "EventBuffer should fire when more than enough time has passed from the last call"
+        assert mock_fn.called, "EventBuffer should fire when more than enough time has passed from the last call"
