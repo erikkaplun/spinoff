@@ -37,11 +37,8 @@ class IProducer(Interface):
 
 class IConsumer(Interface):
 
-    def deliver(message, inbox, routing_key=None):
-        """Delivers an incoming `message` into one of the `inbox`es of this component with an optional `routing_key`.
-
-        The `routing_key` argument is intended for writing routers to be able to have branching in the flow of
-        messages so as to avoid having to resort to using a non-static number of outboxes.
+    def deliver(message, inbox):
+        """Delivers an incoming `message` into one of the `inbox`es of this component.
 
         Returns a `Deferred` which will be fired when this component has received the `message`.
 
@@ -71,9 +68,9 @@ class Actor(object):
             for connection in connections.items():
                 self.connect(*connection)
 
-    def deliver(self, message, inbox, routing_key=None):
+    def deliver(self, message, inbox):
         d = Deferred()
-        self._inboxes[inbox].put((message, d, routing_key))
+        self._inboxes[inbox].put((message, d))
         return d
 
     def connect(self, outbox='default', to=None):
@@ -126,33 +123,14 @@ class Actor(object):
 
     @inlineCallbacks
     def get(self, inbox='default'):
-        """Retrieves a message from the specified `inbox`.
-
-        Returns a `Deferred` which will be fired when a message is available in the specified `inbox` to be returned.
-
-        This method will not complain if nothing has been connected to the requested `inbox`.
-
-        """
-        routing_key, message = yield self._get(inbox, routed=False)
-        returnValue(message)
-
-    @inlineCallbacks
-    def get_routed(self, inbox='default'):
-        routing_key, message = yield self._get(inbox, routed=True)
-        returnValue((routing_key, message))
-
-    @inlineCallbacks
-    def _get(self, inbox, routed):
         if inbox not in self._inboxes:
             warnings.warn("Actor %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
-        message, d, routing_key = yield self._inboxes[inbox].get()
-        if bool(routed) != (routing_key is not None):
-            raise InterfaceException("Routing key was%s expected but was%s found" % (' not' if not routed else '', ' not' if routing_key is None else ''))
+        message, d = yield self._inboxes[inbox].get()
         d.callback(None)
-        returnValue((routing_key, message))
+        returnValue(message)
 
-    def put(self, message, outbox='default', routing_key=None):
-        """Puts a `message` into one of the `outbox`es of this component with an optional `routing_key`.
+    def put(self, message, outbox='default'):
+        """Puts a `message` into one of the `outbox`es of this component.
 
         If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
         `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
@@ -166,7 +144,7 @@ class Actor(object):
 
         connections = self._outboxes[outbox]
         for inbox, component in connections:
-            component.deliver(message, inbox, routing_key)
+            component.deliver(message, inbox)
 
     def start(self):
         pass

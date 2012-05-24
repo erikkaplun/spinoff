@@ -1,6 +1,6 @@
 from itertools import count
 
-from unnamedframework.actor.actor import Actor, RoutingException
+from unnamedframework.actor.actor import Actor, RoutingException, InterfaceException
 
 
 class InMemRouterEndpoint(Actor):
@@ -9,8 +9,8 @@ class InMemRouterEndpoint(Actor):
         super(InMemRouterEndpoint, self).__init__()
         self._manager = manager
 
-    def deliver(self, message, inbox, routing_key):
-        self._manager._delivered_to_router(message, inbox, routing_key)
+    def deliver(self, message, inbox):
+        self._manager._delivered_to_router(message, inbox)
 
 
 class InMemDealerEndpoint(Actor):
@@ -22,8 +22,8 @@ class InMemDealerEndpoint(Actor):
         self._manager = manager
         self._identity = identity
 
-    def deliver(self, message, inbox, routing_key):
-        self._manager._delivered_to_dealer(self, message, inbox, routing_key)
+    def deliver(self, message, inbox):
+        self._manager._delivered_to_dealer(self, message, inbox)
 
 
 class InMemoryRouting(object):
@@ -56,20 +56,24 @@ class InMemoryRouting(object):
     def dealer_gone(self, dealer):
         self._dealer_endpoints.remove(dealer)
 
-    def _delivered_to_dealer(self, dealer, message, inbox, routing_key):
+    def _delivered_to_dealer(self, dealer, message, inbox):
         if dealer not in self._dealer_endpoints:
             raise RoutingException("No such dealer (anymore)")
-        self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message), routing_key=routing_key)
+        self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message))
 
-    def _delivered_to_router(self, message, inbox, routing_key):
-        if routing_key is None:
-            raise Exception("Routing key must be specified when sending to a router endpoint")
+    def _delivered_to_router(self, message, inbox):
+        try:
+            recipient, contained_message = message
+        except TypeError:
+            raise InterfaceException("Messages to a router actor should be a 2-tuple")
+        if recipient is None:
+            raise InterfaceException("Routing key must be specified when sending to a router endpoint")
         for dealer in self._dealer_endpoints:
-            if dealer.identity == routing_key:
-                dealer.put(outbox=inbox, message=message)
+            if dealer.identity == recipient:
+                dealer.put(outbox=inbox, message=contained_message)
                 break
         else:
-            raise RoutingException("No dealer ID matches the specified routing key (%s)" % routing_key)
+            raise RoutingException("No dealer ID matches the specified routing key (%s)" % recipient)
 
     def assign_server(self, server, inbox, outbox):
         if self._server:

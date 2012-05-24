@@ -1,5 +1,5 @@
-from unnamedframework.actor.actor import Actor, InterfaceException
-from unnamedframework.util.testing import deferred_result, assert_not_raises, assert_raises
+from unnamedframework.actor.actor import Actor
+from unnamedframework.util.testing import deferred_result
 
 
 def test_basic():
@@ -7,25 +7,5 @@ def test_basic():
     mock = Actor()
     c.connect('default', ('default', mock))
 
-    c.put(message='whatev')
-    with assert_not_raises():
-        deferred_result(mock.get())
-
-    c.put(message='msg-1', routing_key=123)
-    with assert_raises(InterfaceException):
-        deferred_result(mock.get())
-
-    c.put(message='msg-1', routing_key=123)
-    with assert_not_raises(InterfaceException):
-        routing_key, msg = deferred_result(mock.get_routed())
-    assert msg == 'msg-1'
-    assert routing_key == 123
-
-    c.put(message='msg-2', routing_key=321)
-    routing_key, msg = deferred_result(mock.get_routed())
-    assert msg == 'msg-2'
-    assert routing_key == 321
-
-    c.put(message='whatev')
-    with assert_raises(InterfaceException):
-        deferred_result(mock.get_routed())
+    c.put(message='msg-1')
+    assert deferred_result(mock.get()) == 'msg-1'

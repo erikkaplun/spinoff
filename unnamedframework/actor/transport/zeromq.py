@@ -23,11 +23,11 @@ class ZmqProxyBase(Actor):
             self.add_endpoints([endpoint])
 
     def _zmq_msg_received(self, message):
-        message, inbox, routing_key = pickle.loads(message[0])
-        self.put(message, outbox=inbox, routing_key=routing_key)
+        message, inbox = pickle.loads(message[0])
+        self.put(message, outbox=inbox)
 
-    def deliver(self, message, inbox, routing_key=None):
-        msg_data_out = pickle.dumps((message, inbox, routing_key))
+    def deliver(self, message, inbox):
+        msg_data_out = pickle.dumps((message, inbox))
         self._conn.sendMsg(msg_data_out)
         return succeed(True)
 
@@ -61,12 +61,13 @@ class ZmqRouter(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, sender_id, message):
-        message, inbox, routing_key = pickle.loads(message[0])
-        self.put((sender_id, message), outbox=inbox, routing_key=routing_key)
+        message, inbox = pickle.loads(message[0])
+        self.put((sender_id, message), outbox=inbox)
 
-    def deliver(self, message, inbox, routing_key):
-        recipient_id = routing_key
-        msg_data_out = pickle.dumps((message, inbox, None))
+    def deliver(self, message, inbox):
+        assert isinstance(message, tuple) and len(message) == 2
+        recipient_id, message = message
+        msg_data_out = pickle.dumps((message, inbox))
         self._conn.sendMsg(recipient_id, msg_data_out)
         return succeed(True)
 
@@ -80,15 +81,15 @@ class ZmqRep(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, message_id, message):
-        message, inbox, routing_key = pickle.loads(message)
-        self.put((message_id, message), outbox=inbox, routing_key=routing_key)
+        message, inbox = pickle.loads(message)
+        self.put((message_id, message), outbox=inbox)
 
-    def deliver(self, message, inbox, routing_key=None):
+    def deliver(self, message, inbox):
         try:
             message_id, message = message
         except ValueError:
             raise Exception("ZmqRouter requires messages of the form (request_id, response)")
-        msg_data_out = pickle.dumps((message, inbox, routing_key))
+        msg_data_out = pickle.dumps((message, inbox))
         self._conn.sendMsg(message_id, msg_data_out)
 
 
@@ -96,8 +97,8 @@ class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
     @inlineCallbacks
-    def deliver(self, message, inbox, routing_key=None):
-        msg_data_out = pickle.dumps((message, inbox, routing_key))
+    def deliver(self, message, inbox):
+        msg_data_out = pickle.dumps((message, inbox))
         msg_data_in = yield self._conn.sendMsg(msg_data_out)
-        message, inbox, routing_key = pickle.loads(msg_data_in[0])
-        self.put(message, outbox=inbox, routing_key=routing_key)
+        message, inbox = pickle.loads(msg_data_in[0])
+        self.put(message, outbox=inbox)
