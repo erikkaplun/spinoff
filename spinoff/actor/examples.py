@@ -52,10 +52,10 @@ class LoadBalancer(CompositeComponentBase):
     """
     _next_index = 0
 
-    def deliver(self, message, inbox, routing_key):
+    def deliver(self, message, inbox):
         component = self._members[self._next_index]
         self._next_index = (self._next_index + 1) % len(self._members)
-        return component.deliver(message, inbox, routing_key)
+        return component.deliver(message, inbox)
 
 
 class Publisher(CompositeComponentBase):
