@@ -1,6 +1,4 @@
-from itertools import count
-
-from twisted.internet.defer import DeferredList, inlineCallbacks
+from twisted.internet.defer import inlineCallbacks
 from zope.interface import implements
 
 from spinoff.actor.actor import IActor
