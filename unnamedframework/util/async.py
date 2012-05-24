@@ -67,7 +67,7 @@ def with_timeout(timeout, d, reactor=reactor):
     return ret
 
 
-def combine(*ds):
+def combine(ds):
     return DeferredList(ds, consumeErrors=True, fireOnOneErrback=True)
 
 
