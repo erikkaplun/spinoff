@@ -86,3 +86,15 @@ class MockFunction(object):
     def reset(self):
         self.called = False
         self.args = self.kwargs = None
+
+
+def errback_called(d):
+    mock_fn = MockFunction()
+    d.addErrback(mock_fn)
+    return mock_fn.called
+
+
+def callback_called(d):
+    mock_fn = MockFunction()
+    d.addCallback(mock_fn)
+    return mock_fn.called
