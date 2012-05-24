@@ -3,3 +3,4 @@ build
 dist
 *.pid
 *egg-info
+_trial_temp
