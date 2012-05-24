@@ -10,7 +10,7 @@ from unnamedframework.util.async import combine
 from unnamedframework.util.meta import selfdocumenting
 
 
-__all__ = ['IComponent', 'IProducer', 'IConsumer', 'Component', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException']
+__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException']
 
 
 class NoRoute(Exception):
@@ -55,15 +55,15 @@ class IConsumer(Interface):
         """
 
 
-class IComponent(IProducer, IConsumer):
+class IActor(IProducer, IConsumer):
     pass
 
 
-class Component(object):
-    implements(IComponent)
+class Actor(object):
+    implements(IActor)
 
     def __init__(self, connections=None, *args, **kwargs):
-        super(Component, self).__init__(*args, **kwargs)
+        super(Actor, self).__init__(*args, **kwargs)
         self._inboxes = defaultdict(lambda: DeferredQueue(backlog=1))
         self._waiting = {}
         self._outboxes = {}
@@ -113,7 +113,7 @@ class Component(object):
             receiver.plugged(inbox, self)
         if hasattr(self, 'connected'):
             self.connected(outbox, receiver)
-    connect.__doc__ %= {'parent_doc': IComponent.getDescriptionFor('connect').getDoc()}
+    connect.__doc__ %= {'parent_doc': IActor.getDescriptionFor('connect').getDoc()}
 
     def plugged(self, inbox, component):
         self._inboxes[inbox]  # leverage defaultdict behaviour
@@ -144,7 +144,7 @@ class Component(object):
     @inlineCallbacks
     def _get(self, inbox, routed):
         if inbox not in self._inboxes:
-            warnings.warn("Component %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
+            warnings.warn("Actor %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
         message, d, routing_key = yield self._inboxes[inbox].get()
         if bool(routed) != (routing_key is not None):
             raise InterfaceException("Routing key was%s expected but was%s found" % (' not' if not routed else '', ' not' if routing_key is None else ''))
@@ -154,7 +154,7 @@ class Component(object):
     def put(self, message, outbox='default', routing_key=None):
         """Puts a `message` into one of the `outbox`es of this component with an optional `routing_key`.
 
-        If the specified `outbox` has not been previously connected to anywhere (see `Component.connect`), a
+        If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
         `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
         to an inbox of another component and be queued there (if/as needed).
 
@@ -162,7 +162,7 @@ class Component(object):
 
         """
         if outbox not in self._outboxes:
-            raise NoRoute("Component %s has no connection from outbox %s" % (repr(self), repr(outbox)))
+            raise NoRoute("Actor %s has no connection from outbox %s" % (repr(self), repr(outbox)))
 
         connections = self._outboxes[outbox]
         for inbox, component in connections:

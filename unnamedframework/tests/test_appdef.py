@@ -1,4 +1,4 @@
-from unnamedframework.component.component import _normalize_pipe
+from unnamedframework.actor.actor import _normalize_pipe
 
 
 def test_normalize_pipe():

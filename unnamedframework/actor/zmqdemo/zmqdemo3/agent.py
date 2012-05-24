@@ -3,12 +3,12 @@ import uuid
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory, ZmqEndpoint
 
-from unnamedframework.component.component import Component, Application, Pipeline, make_cycle
-from unnamedframework.component.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
+from unnamedframework.actor.actor import Actor, Application, Pipeline, make_cycle
+from unnamedframework.actor.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
 from unnamedframework.util.async import sleep
 
 
-class TestAgent(Component):
+class TestAgent(Actor):
 
     def __repr__(self):
         return '<TestAgent>'

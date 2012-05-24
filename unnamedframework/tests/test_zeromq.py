@@ -2,8 +2,8 @@ from twisted.internet.defer import inlineCallbacks
 from twisted.trial import unittest
 from txzmq import ZmqFactory
 
-from unnamedframework.component.component import Component
-from unnamedframework.component.transport.zeromq import ZmqRouter, ZmqDealer
+from unnamedframework.actor.actor import Actor
+from unnamedframework.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from unnamedframework.util.async import TimeoutError, sleep, with_timeout
 from unnamedframework.util.testing import assert_not_raises
 
@@ -31,7 +31,7 @@ class TestCaseBase(unittest.TestCase):
             if isinstance(mocked_inboxes, bool):
                 mocked_inboxes = 'default'
 
-            mock = Component()
+            mock = Actor()
             ret.connect(mocked_inboxes, mock)
             ret = ret, mock
         return ret

@@ -3,12 +3,12 @@ import random
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory
 
-from unnamedframework.component.component import Component, Application, Pipeline
-from unnamedframework.component.transport.zeromq import ZmqReq, ZmqRep
+from unnamedframework.actor.actor import Actor, Application, Pipeline
+from unnamedframework.actor.transport.zeromq import ZmqReq, ZmqRep
 from unnamedframework.util.async import sleep
 
 
-class ZmqTestClient(Component):
+class ZmqTestClient(Actor):
 
     @inlineCallbacks
     def start(self):
@@ -21,7 +21,7 @@ class ZmqTestClient(Component):
             yield sleep(3.0 + random.random())
 
 
-class ZmqTestServer(Component):
+class ZmqTestServer(Actor):
 
     @inlineCallbacks
     def start(self):

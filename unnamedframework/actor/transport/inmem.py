@@ -1,9 +1,9 @@
 from itertools import count
 
-from unnamedframework.component.component import Component, RoutingException
+from unnamedframework.actor.actor import Actor, RoutingException
 
 
-class InMemRouterEndpoint(Component):
+class InMemRouterEndpoint(Actor):
 
     def __init__(self, manager):
         super(InMemRouterEndpoint, self).__init__()
@@ -13,7 +13,7 @@ class InMemRouterEndpoint(Component):
         self._manager._delivered_to_router(message, inbox, routing_key)
 
 
-class InMemDealerEndpoint(Component):
+class InMemDealerEndpoint(Actor):
 
     identity = property(lambda self: self._identity)
 
