@@ -76,4 +76,3 @@ class RouterDealerTestCase(TestCaseBase):
 
     def test_router_with_10_dealers(self):
         return self._do_test_router_with_n_dealers(10)
-
