@@ -6,6 +6,7 @@ from twisted.application.service import Service
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, DeferredQueue
 from zope.interface import Interface, implements
 
+from unnamedframework.util.async import combine
 from unnamedframework.util.meta import selfdocumenting
 
 
@@ -58,7 +59,7 @@ class IComponent(IProducer, IConsumer):
     pass
 
 
-class Component(object, Service):
+class Component(object):
     implements(IComponent)
 
     def __init__(self, connections=None, *args, **kwargs):
@@ -167,16 +168,6 @@ class Component(object, Service):
         for inbox, component in connections:
             component.deliver(message, inbox, routing_key)
 
-    # `startService` and `stopService` are ugly name because they 1) repeat the class
-    # name and 2) not all `Service`s want to be labelled as "services".
-    # Thus, we effectively rename `startService`/`stopService` to `start`/`stop` for subclasses
-    # to override.
-    def startService(self):
-        self.start()
-
-    def stopService(self):
-        self.stop()
-
     def start(self):
         pass
 
@@ -188,6 +179,21 @@ class Component(object, Service):
             print '*** %s.INBOX %s:' % (name or '', inbox)
             for message, _ in queue.pending:
                 print '*** \t%s' % message
+
+    def as_service(self):
+        return ActorsAsService([self])
+
+
+class ActorsAsService(Service):
+
+    def __init__(self, actors):
+        self._actors = actors
+
+    def startService(self):
+        return combine([x.start() for x in self._actors])
+
+    def stopService(self):
+        return combine([x.stop() for x in self._actors])
 
 
 def _normalize_pipe(pipe):
