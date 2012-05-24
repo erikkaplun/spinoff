@@ -1,12 +1,12 @@
 from collections import namedtuple
 
-from spinoff.component.component import Component
+from spinoff.actor.actor import Actor
 
 
 PendingMessage = namedtuple('PendingMessage', ['to', 'message', 'outbox'])
 
 
-class MsgDispatcher(Component):
+class MsgDispatcher(Actor):
 
     def __init__(self):
         super(MsgDispatcher, self).__init__()

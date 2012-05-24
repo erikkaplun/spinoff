@@ -1,6 +1,6 @@
 from twisted.internet.defer import inlineCallbacks, returnValue
 
-from spinoff.component.component import Component, Application, Pipeline
+from spinoff.actor.actor import Actor, Application, Pipeline
 from spinoff.util.async import sleep
 
 
@@ -10,7 +10,7 @@ __all__ = ['application']
 TIME_UNIT = 1.0
 
 
-class Base(Component):
+class Base(Actor):
 
     def __init__(self, id, speed=1.0, *args, **kwargs):
         super(Base, self).__init__(*args, **kwargs)

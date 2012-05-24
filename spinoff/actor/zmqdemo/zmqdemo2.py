@@ -1,12 +1,12 @@
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory, ZmqEndpoint
 
-from spinoff.component.component import Component, Application, make_cycle
-from spinoff.component.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
+from spinoff.actor.actor import Actor, Application, make_cycle
+from spinoff.actor.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
 from spinoff.util.async import sleep
 
 
-class TestBroker(Component):
+class TestBroker(Actor):
 
     def __repr__(self):
         return '<TestBroker>'
@@ -30,7 +30,7 @@ class TestBroker(Component):
             handle(sender_id, msg)
 
 
-class TestProducer(Component):
+class TestProducer(Actor):
 
     def __repr__(self):
         return '<TestProducer>'
@@ -60,7 +60,7 @@ class TestProducer(Component):
             print 'PRODUCER %s sent response to request with ID %s' % (self._id, self._translate(message_id))
 
 
-class TestConsumer(Component):
+class TestConsumer(Actor):
 
     def __repr__(self):
         return '<TestConsumer>'

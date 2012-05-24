@@ -4,10 +4,10 @@ from twisted.internet.defer import succeed, inlineCallbacks
 from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 
-from spinoff.component.component import Component
+from spinoff.actor.actor import Actor
 
 
-class ZmqProxyBase(Component):
+class ZmqProxyBase(Actor):
 
     CONNECTION_CLASS = None
     DEFAULT_ENDPOINT_TYPE = 'connect'

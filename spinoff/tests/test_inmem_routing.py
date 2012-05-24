@@ -1,5 +1,5 @@
-from spinoff.component.component import IProducer, IConsumer, Component
-from spinoff.component.transport.inmem import InMemoryRouting, RoutingException
+from spinoff.actor.actor import IProducer, IConsumer, Actor
+from spinoff.actor.transport.inmem import InMemoryRouting, RoutingException
 from spinoff.util.testing import assert_raises, assert_not_raises
 from spinoff.util.testing import deferred_result
 
@@ -49,9 +49,9 @@ def test_interface():
 def test_client_server_interface():
     routing = InMemoryRouting()
 
-    server = Component()
-    client = Component()
-    client2 = Component()
+    server = Actor()
+    client = Actor()
+    client2 = Actor()
 
     routing.assign_server(server, inbox='in', outbox='out')
     routing.add_client(client, inbox='in', outbox='out')
@@ -83,7 +83,7 @@ def test_client_server_interface():
     with assert_raises(RoutingException, "should not be able to remove the same client twice"):
         routing.remove_client(client)
     with assert_raises(RoutingException, "should not be able to remove a non-existent client"):
-        routing.remove_client(Component())
+        routing.remove_client(Actor())
 
     with assert_raises(RoutingException, "should not be able to send from a client that has been removed"):
         client.put(outbox='out', message='whatev')
@@ -94,8 +94,8 @@ def test_client_server_interface():
 def test_manual_identity():
     routing = InMemoryRouting()
 
-    server = Component()
-    client = Component()
+    server = Actor()
+    client = Actor()
 
     routing.assign_server(server, inbox='in', outbox='out')
     routing.add_client(client, inbox='in', outbox='out', identity=987)
@@ -110,7 +110,7 @@ def test_dealer_to_router_communication():
     routing = InMemoryRouting()
 
     router = routing.make_router_endpoint()
-    mock = Component()
+    mock = Actor()
     router.connect('default', ('default', mock))
 
     dealer1 = routing.make_dealer_endpoint()
@@ -150,7 +150,7 @@ def test_router_to_dealer_communication():
     router = routing.make_router_endpoint()
 
     dealer1 = routing.make_dealer_endpoint()
-    mock1 = Component()
+    mock1 = Actor()
     dealer1.connect('default', ('default', mock1))
 
     router.deliver(inbox='default', message='msg1', routing_key=dealer1.identity)
@@ -158,7 +158,7 @@ def test_router_to_dealer_communication():
     assert msg == 'msg1'
 
     dealer2 = routing.make_dealer_endpoint()
-    mock2 = Component()
+    mock2 = Actor()
     dealer2.connect('default', ('default', mock2))
 
     router.deliver(inbox='default', message='msg2', routing_key=dealer2.identity)
@@ -177,7 +177,7 @@ def test_remove_dealer():
     routing = InMemoryRouting()
 
     router = routing.make_router_endpoint()
-    mock = Component()
+    mock = Actor()
     router.connect('default', ('default', mock))
 
     dealer = routing.make_dealer_endpoint()

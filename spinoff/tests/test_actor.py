@@ -1,10 +1,10 @@
-from spinoff.component.component import Component, InterfaceException
+from spinoff.actor.actor import Actor, InterfaceException
 from spinoff.util.testing import deferred_result, assert_not_raises, assert_raises
 
 
 def test_basic():
-    c = Component()
-    mock = Component()
+    c = Actor()
+    mock = Actor()
     c.connect('default', ('default', mock))
 
     c.put(message='whatev')

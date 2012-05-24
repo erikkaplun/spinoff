@@ -1,4 +1,4 @@
-from spinoff.component.component import _normalize_pipe
+from spinoff.actor.actor import _normalize_pipe
 
 
 def test_normalize_pipe():

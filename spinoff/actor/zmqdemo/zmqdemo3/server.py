@@ -3,12 +3,12 @@ import random
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory, ZmqEndpoint
 
-from spinoff.component.component import Component, Application, Pipeline, make_cycle
-from spinoff.component.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
+from spinoff.actor.actor import Actor, Application, Pipeline, make_cycle
+from spinoff.actor.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
 from spinoff.util.async import sleep
 
 
-class TestServer(Component):
+class TestServer(Actor):
 
     def __repr__(self):
         return '<TestServer>'

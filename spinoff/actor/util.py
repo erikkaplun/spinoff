@@ -1,11 +1,11 @@
 from twisted.internet.defer import inlineCallbacks, DeferredList
 from zope.interface import implements
 
-from spinoff.component.component import IComponent
+from spinoff.actor.actor import IActor
 
 
 class ComponentCollection(object):
-    implements(IComponent)
+    implements(IActor)
 
     def __init__(self, *members):
         self._connections = []

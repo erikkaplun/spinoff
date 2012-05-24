@@ -1,11 +1,13 @@
+from itertools import count
+
 from twisted.internet.defer import DeferredList, inlineCallbacks
 from zope.interface import implements
 
-from spinoff.component.component import IComponent
+from spinoff.actor.actor import IActor
 
 
 class CompositeComponentBase(object):
-    implements(IComponent)
+    implements(IActor)
 
     def __init__(self, *members):
         self._members = []
