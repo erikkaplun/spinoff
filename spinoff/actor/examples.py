@@ -21,6 +21,9 @@ class CompositeComponentBase(object):
         self._connect([component], self._connections)
         self._set_parent([component])
 
+    def remove(self, component):
+        self._members.remove(component)
+
     def connect(self, *args, **kwargs):
         connection = (args, kwargs)
         self._connections.append(connection)
