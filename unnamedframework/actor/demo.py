@@ -61,7 +61,6 @@ class SenderReceiver(Sender, Receiver):
             yield sleep(self.interval)
 
 
-
 class ReceiverSender(Sender, Receiver):
 
     @inlineCallbacks
