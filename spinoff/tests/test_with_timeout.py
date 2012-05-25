@@ -2,7 +2,7 @@ from twisted.internet.defer import TimeoutError, Deferred, CancelledError, inlin
 from twisted.internet.task import Clock
 
 from spinoff.util.async import with_timeout, sleep
-from spinoff.util.testing import deferred
+from spinoff.util.testing import deferred, errback_called
 
 
 @deferred
@@ -59,3 +59,10 @@ def test_exceptions_are_passed_through(clock):
         assert False, "Should not have raised TimeoutError"
     else:
         assert False, "Should have raised MyExc"
+
+
+def test_with_no_timeout():
+    clock = Clock()
+    d = with_timeout(None, Deferred(), clock)
+    clock.advance(9999999999999999)
+    assert not errback_called(d)
