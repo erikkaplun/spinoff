@@ -2,7 +2,7 @@ from twisted.internet.defer import TimeoutError, Deferred, CancelledError, inlin
 from twisted.internet.task import Clock
 
 from spinoff.util.async import with_timeout, sleep
-from spinoff.util.testing import deferred, errback_called
+from spinoff.util.testing import deferred, errback_called, MockFunction
 
 
 @deferred
@@ -28,8 +28,8 @@ def test_timeout_is_not_reached(clock):
 def test_deferred_is_cancelled_when_timeout_reached():
     clock = Clock()
 
-    t = []
-    mock = Deferred(canceller=lambda _: t.append('OK'))
+    cancel_fn = MockFunction()
+    mock = Deferred(canceller=cancel_fn)
 
     d = with_timeout(1.0, mock, reactor=clock)
     d.addErrback(lambda f: f.trap(CancelledError))
@@ -37,7 +37,7 @@ def test_deferred_is_cancelled_when_timeout_reached():
 
     clock.advance(10)
 
-    assert t == ['OK']
+    assert cancel_fn.called
 
 
 @deferred
