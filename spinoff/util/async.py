@@ -3,7 +3,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, Canc
 from twisted.internet import reactor, task
 
 
-__all__ = ['TimeoutError', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine']
+__all__ = ['TimeoutError', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds, reactor=reactor):
