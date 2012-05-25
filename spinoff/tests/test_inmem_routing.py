@@ -1,4 +1,4 @@
-from spinoff.actor.actor import IProducer, IConsumer, Actor
+from spinoff.actor.actor import IProducer, IConsumer, Actor, NoRoute
 from spinoff.actor.transport.inmem import InMemoryRouting, RoutingException
 from spinoff.util.testing import assert_raises, assert_not_raises
 from spinoff.util.testing import deferred_result
@@ -105,6 +105,42 @@ def test_client_server_interface_with_default_boxes():
 
     server.put((1, 'msg-2'))
     assert deferred_result(client.get()) == 'msg-2'
+
+
+def test_client_server_interface_with_no_outbox_or_no_inbox():
+    routing = InMemoryRouting()
+    server = Actor()
+    client = Actor()
+
+    routing.assign_server(server, outbox=None)
+    routing.add_client(client, outbox=None)
+
+    with assert_raises(NoRoute):
+        client.put('whatev')
+    with assert_raises(NoRoute):
+        server.put('whatev')
+
+    ###
+    routing = InMemoryRouting()
+    server = Actor()
+    client = Actor()
+
+    routing.assign_server(server, inbox=None)
+    routing.add_client(client)
+
+    with assert_raises(NoRoute):
+        client.put('whatev')
+
+    ###
+    routing = InMemoryRouting()
+    server = Actor()
+    client = Actor()
+
+    routing.assign_server(server)
+    routing.add_client(client, inbox=None, identity=123)
+
+    with assert_raises(NoRoute):
+        server.put((123, 'whatev'))
 
 
 def test_manual_identity():
