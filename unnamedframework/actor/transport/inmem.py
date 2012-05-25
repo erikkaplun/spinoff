@@ -80,7 +80,8 @@ class InMemoryRouting(object):
             raise RoutingException("Can assign only one server")
         self._server = True
         router = self.make_router_endpoint()
-        router.connect('default', (inbox, server))
+        if inbox is not None:
+            router.connect('default', (inbox, server))
         server.connect(outbox, ('default', router))
 
     def add_client(self, client, inbox='default', outbox='default', identity=None):
@@ -90,8 +91,10 @@ class InMemoryRouting(object):
         dealer = self.make_dealer_endpoint(identity)
 
         self._clients[client] = dealer
-        client.connect(outbox, ('default', dealer))
-        dealer.connect('default', (inbox, client))
+        if outbox is not None:
+            client.connect(outbox, ('default', dealer))
+        if inbox is not None:
+            dealer.connect('default', (inbox, client))
 
     def remove_client(self, client):
         if client not in self._clients:
