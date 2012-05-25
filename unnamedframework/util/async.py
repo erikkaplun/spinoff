@@ -39,6 +39,9 @@ def with_timeout(timeout, d, reactor=reactor):
     from being fired but doesn't cancel the underlying operation.
 
     """
+    if timeout is None:
+        return d
+
     ret = Deferred(canceller=lambda _: (
         d.cancel(),
         timeout_d.cancel(),
