@@ -1,5 +1,8 @@
+from twisted.internet.defer import QueueUnderflow
+
 from spinoff.actor.actor import Actor
-from spinoff.util.testing import deferred_result
+from spinoff.util.async import CancelledError
+from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises
 
 
 def test_basic():
@@ -9,3 +12,20 @@ def test_basic():
 
     c.put(message='msg-1')
     assert deferred_result(mock.get()) == 'msg-1'
+
+
+def test_cancel_get():
+    c = Actor()
+    c._inboxes['default']
+    d = c.get()
+    with assert_raises(QueueUnderflow):
+        c.get()
+
+    ###
+    c = Actor()
+    c._inboxes['default']
+    d = c.get()
+    d.addErrback(lambda f: f.trap(CancelledError))
+    d.cancel()
+    with assert_not_raises(QueueUnderflow):
+        c.get()
