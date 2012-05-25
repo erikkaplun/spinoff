@@ -69,9 +69,7 @@ class Actor(object):
                 self.connect(*connection)
 
     def deliver(self, message, inbox):
-        d = Deferred()
-        self._inboxes[inbox].put((message, d))
-        return d
+        self._inboxes[inbox].put(message)
 
     def connect(self, outbox='default', to=None):
         """%(parent_doc)s
@@ -121,13 +119,10 @@ class Actor(object):
             inbox = outbox
         self.connect(outbox, (inbox, self))
 
-    @inlineCallbacks
     def get(self, inbox='default'):
         if inbox not in self._inboxes:
             warnings.warn("Actor %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
-        message, d = yield self._inboxes[inbox].get()
-        d.callback(None)
-        returnValue(message)
+        return self._inboxes[inbox].get()
 
     def put(self, message, outbox='default'):
         """Puts a `message` into one of the `outbox`es of this component.
