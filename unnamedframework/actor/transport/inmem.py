@@ -75,7 +75,7 @@ class InMemoryRouting(object):
         else:
             raise RoutingException("No dealer ID matches the specified routing key (%s)" % recipient)
 
-    def assign_server(self, server, inbox, outbox):
+    def assign_server(self, server, inbox='default', outbox='default'):
         if self._server:
             raise RoutingException("Can assign only one server")
         self._server = True
@@ -83,7 +83,7 @@ class InMemoryRouting(object):
         router.connect('default', (inbox, server))
         server.connect(outbox, ('default', router))
 
-    def add_client(self, client, inbox, outbox, identity=None):
+    def add_client(self, client, inbox='default', outbox='default', identity=None):
         if client in self._clients:
             raise RoutingException("Attempt add the same client more than once")
 

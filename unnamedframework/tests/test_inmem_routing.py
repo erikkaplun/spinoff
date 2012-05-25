@@ -91,6 +91,22 @@ def test_client_server_interface():
     assert not d.called
 
 
+def test_client_server_interface_with_default_boxes():
+    routing = InMemoryRouting()
+
+    server = Actor()
+    client = Actor()
+
+    routing.assign_server(server)
+    routing.add_client(client, identity=1)
+
+    client.put(message='msg-1')
+    assert deferred_result(server.get()) == (1, 'msg-1')
+
+    server.put((1, 'msg-2'))
+    assert deferred_result(client.get()) == 'msg-2'
+
+
 def test_manual_identity():
     routing = InMemoryRouting()
 
