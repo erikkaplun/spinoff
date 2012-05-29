@@ -68,6 +68,12 @@ class Actor(object):
             for connection in connections.items():
                 self.connect(*connection)
 
+    @classmethod
+    def spawn(cls, *args, **kwargs):
+        ret = cls(*args, **kwargs)
+        ret.start()
+        return ret
+
     def deliver(self, message, inbox):
         self._inboxes[inbox].put(message)
 
