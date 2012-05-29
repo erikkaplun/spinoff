@@ -3,11 +3,10 @@ from collections import defaultdict
 
 from twisted.application import service
 from twisted.application.service import Service
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue, DeferredQueue
-from zope.interface import Interface, implements
-
+from twisted.internet.defer import DeferredQueue
 from unnamedframework.util.async import combine
 from unnamedframework.util.meta import selfdocumenting
+from zope.interface import Interface, implements
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException']
