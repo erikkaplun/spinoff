@@ -169,7 +169,8 @@ class ActorsAsService(Service):
         self._actors = actors
 
     def startService(self):
-        return combine([x.start() for x in self._actors])
+        for x in self._actors:
+            x.start()
 
     def stopService(self):
         return combine([x.stop() for x in self._actors])
