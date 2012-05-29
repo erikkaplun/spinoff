@@ -76,6 +76,8 @@ class Actor(object):
     def deliver(self, message, inbox):
         self._inboxes[inbox].put(message)
 
+    send = deliver
+
     def connect(self, outbox='default', to=None):
         """%(parent_doc)s
 
