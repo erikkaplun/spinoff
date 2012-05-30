@@ -174,7 +174,7 @@ class ActorsAsService(Service):
             x.start()
 
     def stopService(self):
-        return combine(d for d in [x.stop() for x in self._actors] if d)
+        return combine([d for d in [x.stop() for x in self._actors] if d])
 
 
 def _normalize_pipe(pipe):
