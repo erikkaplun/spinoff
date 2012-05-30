@@ -5,7 +5,7 @@ from twisted.trial import unittest
 from unnamedframework.actor import IActor, RoutingException, Actor, InterfaceException
 from unnamedframework.util.testing import assert_raises, assert_not_raises, deferred_result
 
-from dts.server.device.relay import Relay
+from unnamedframework.actor.device.relay import Relay
 
 
 class HttpGatewayTest(unittest.TestCase):
