@@ -9,7 +9,7 @@ from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
 
 
-__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException']
+__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
 
 
 class NoRoute(Exception):
