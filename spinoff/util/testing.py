@@ -79,12 +79,12 @@ class MockFunction(object):
         self.reset()
 
     def __call__(self, *args, **kwargs):
-        self.called = True
+        self.called += 1
         self.args = args
         self.kwargs = kwargs
 
     def reset(self):
-        self.called = False
+        self.called = 0
         self.args = self.kwargs = None
 
 
