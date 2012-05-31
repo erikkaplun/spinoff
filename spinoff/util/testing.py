@@ -98,3 +98,13 @@ def callback_called(d):
     mock_fn = MockFunction()
     d.addCallback(mock_fn)
     return mock_fn.called
+
+
+class DebugActor(object):
+
+    def __init__(self, name, debug_fn=lambda x: 'a message'):
+        self.name = name
+        self.debug_fn = debug_fn
+
+    def deliver(self, message, inbox):
+        print "%s: received %s into %s" % (self.name, self.debug_fn(message), inbox)
