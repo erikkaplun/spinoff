@@ -4,6 +4,8 @@ from functools import wraps
 
 from twisted.internet.task import Clock
 
+from spinoff.util.async import CancelledError
+
 
 __all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction']
 
@@ -53,6 +55,11 @@ def deferred_result(d):
     if exc[0]:
         exc[0].raiseException()
     return ret[0]
+
+
+def cancel_deferred(d):
+    d.addErrback(lambda f: f.trap(CancelledError))
+    d.cancel()
 
 
 @contextmanager
