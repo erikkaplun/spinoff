@@ -36,7 +36,7 @@ class IProducer(Interface):
 
 class IConsumer(Interface):
 
-    def deliver(message, inbox):
+    def deliver(message, inbox='default'):
         """Delivers an incoming `message` into one of the `inbox`es of this component.
 
         Returns a `Deferred` which will be fired when this component has received the `message`.
@@ -73,7 +73,7 @@ class Actor(object):
         ret.start()
         return ret
 
-    def deliver(self, message, inbox):
+    def deliver(self, message, inbox='default'):
         self._inboxes[inbox].put(message)
 
     send = deliver
