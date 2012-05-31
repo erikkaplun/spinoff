@@ -90,6 +90,15 @@ class MockFunction(object):
         self.args = args
         self.kwargs = kwargs
 
+    def assert_called(self, n=None, message=None):
+        if isinstance(n, basestring):
+            n, message = None, n
+        if n is not None:
+            assert self.called == n
+        else:
+            assert self.called
+        self.reset()
+
     def reset(self):
         self.called = 0
         self.args = self.kwargs = None
