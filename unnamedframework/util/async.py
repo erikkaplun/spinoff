@@ -98,3 +98,56 @@ class EventBuffer(object):
                 _kwargs.update(self._kwargs)
                 _kwargs.update(kwargs)
             self._fn(*_args, **_kwargs)
+
+
+def with_heartbeat(interval, reactor=reactor):
+    if callable(interval):
+        return with_heartbeat(1.0)
+    else:
+        def dec(fn):
+            print fn
+            if not hasattr(fn.im_class, '_num_coroutines'):
+                fn.im_class._num_coroutines = 0
+            coroutine_num = fn.im_class._num_coroutines
+            fn.im_class._num_coroutines += 1
+
+            def ret(self, *args, **kwargs):
+                assert hasattr(self, 'send_heartbeat')
+
+                if not hasattr(self, '_heartbeat_cycle'):
+                    self._heartbeat_cycle = 0
+                if not hasattr(self, '_first_heartbeat_sent'):
+                    self._first_heartbeat_sent = False
+
+                def single_heartbeat():
+                    self._heartbeat_cycle += 1
+                    if self._heartbeat_cycle == self._num_coroutines:
+                        self.send_heartbeat()
+                        self._heartbeat_cycle = 0
+
+                if not self._first_heartbeat_sent:
+                    self._first_heartbeat_sent = True
+                    self.send_heartbeat()
+
+                heartbeat_active = False
+                coroutine_running = True
+                last_heartbeat = [reactor.seconds()] * fn.im_class._num_coroutines
+
+                @exec_async
+                def send_heartbeat():
+                    while coroutine_running:
+                        yield sleep(float(interval) / 10.0, reactor=reactor)
+                        if coroutine_running and heartbeat_active and reactor.seconds() - last_heartbeat[coroutine_num] >= interval:
+                            last_heartbeat[coroutine_num] = reactor.seconds()
+                            single_heartbeat()
+
+                try:
+                    for d in fn(self, *args, **kwargs):
+                        heartbeat_active = True
+                        yield d
+                        heartbeat_active = False
+                finally:
+                    coroutine_running = False
+
+            return inlineCallbacks(ret)
+        return dec
