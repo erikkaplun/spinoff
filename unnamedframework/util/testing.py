@@ -1,3 +1,4 @@
+import warnings
 import sys
 from contextlib import contextmanager
 from functools import wraps
@@ -7,7 +8,7 @@ from twisted.internet.task import Clock
 from unnamedframework.util.async import CancelledError
 
 
-__all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction']
+__all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction', 'assert_num_warnings', 'assert_no_warnings', 'assert_one_warning']
 
 
 def deferred(f):
@@ -78,6 +79,22 @@ def assert_raises(exc_class=Exception, message=None):
         pass
     else:
         raise AssertionError(message or "An exception should have been raised")
+
+
+@contextmanager
+def assert_num_warnings(n):
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        yield
+        assert len(w) == n
+
+
+def assert_no_warnings():
+    return assert_num_warnings(0)
+
+
+def assert_one_warning():
+    return assert_num_warnings(1)
 
 
 class MockFunction(object):
