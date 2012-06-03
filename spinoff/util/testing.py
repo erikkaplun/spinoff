@@ -65,6 +65,8 @@ def cancel_deferred(d):
 
 @contextmanager
 def assert_not_raises(exc_class=Exception, message=None):
+    if isinstance(exc_class, basestring):
+        message, exc_class = exc_class, Exception
     try:
         yield
     except exc_class as e:
@@ -73,6 +75,8 @@ def assert_not_raises(exc_class=Exception, message=None):
 
 @contextmanager
 def assert_raises(exc_class=Exception, message=None):
+    if isinstance(exc_class, basestring):
+        message, exc_class = exc_class, Exception
     try:
         yield
     except exc_class:
