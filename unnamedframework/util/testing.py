@@ -103,13 +103,17 @@ def assert_one_warning():
 
 class MockFunction(object):
 
-    def __init__(self):
+    called = property(lambda self: len(self.argses))
+
+    def __init__(self, return_values=None):
         self.reset()
+        self.return_values = return_values and list(return_values)
 
     def __call__(self, *args, **kwargs):
-        self.called += 1
-        self.args = args
-        self.kwargs = kwargs
+        self.argses.append(args)
+        self.kwargses.append(kwargs)
+        if self.return_values is not None:
+            return self.return_values.pop(0)
 
     def assert_called(self, n=None, message=None):
         if isinstance(n, basestring):
@@ -120,9 +124,13 @@ class MockFunction(object):
             assert self.called
         self.reset()
 
+    def assert_called_with_signature(self, *args, **kwargs):
+        args_, kwargs_ = self.argses.pop(0), self.kwargses.pop(0)
+        assert args == args_ and kwargs == kwargs_, "mock function called with different arguments than expected"
+
     def reset(self):
-        self.called = 0
-        self.args = self.kwargs = None
+        self.argses = []
+        self.kwargses = []
 
 
 def errback_called(d):
