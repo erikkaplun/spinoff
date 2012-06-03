@@ -1,4 +1,5 @@
 from functools import wraps
+from types import UnboundMethodType
 
 from twisted.python.failure import Failure
 from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, CancelledError, DeferredList
@@ -107,14 +108,23 @@ def with_heartbeat(interval, reactor=reactor):
         return with_heartbeat(1.0)
     else:
         def dec(fn):
-            if not hasattr(fn.im_class, '_num_coroutines'):
-                fn.im_class._num_coroutines = 0
-            coroutine_num = fn.im_class._num_coroutines
-            fn.im_class._num_coroutines += 1
-
             @wraps(fn)
+            @inlineCallbacks
             def ret(self, *args, **kwargs):
-                assert hasattr(self, 'send_heartbeat')
+                cls = type(self)
+
+                heartbeater_num = None
+                num_heartbeaters = None
+
+                if not hasattr(cls, '_coroutines'):
+                    assert hasattr(self, 'send_heartbeat')
+                    all_methods = [getattr(cls, name).im_func for name in cls.__dict__
+                                   if isinstance(getattr(cls, name), UnboundMethodType)]
+                    cls._coroutines = [method for method in all_methods if hasattr(method, '_is_heartbeater')]
+
+                if heartbeater_num is None:
+                    num_heartbeaters = len(cls._coroutines)
+                    heartbeater_num = cls._coroutines.index(ret)
 
                 if not hasattr(self, '_heartbeat_cycle'):
                     self._heartbeat_cycle = 0
@@ -123,7 +133,7 @@ def with_heartbeat(interval, reactor=reactor):
 
                 def single_heartbeat():
                     self._heartbeat_cycle += 1
-                    if self._heartbeat_cycle == self._num_coroutines:
+                    if self._heartbeat_cycle == num_heartbeaters:
                         self.send_heartbeat()
                         self._heartbeat_cycle = 0
 
@@ -133,14 +143,14 @@ def with_heartbeat(interval, reactor=reactor):
 
                 heartbeat_active = False
                 coroutine_running = True
-                last_heartbeat = [reactor.seconds()] * fn.im_class._num_coroutines
+                last_heartbeat = [reactor.seconds()] * num_heartbeaters
 
                 @exec_async
                 def send_heartbeat():
                     while coroutine_running:
                         yield sleep(float(interval) / 10.0, reactor=reactor)
-                        if coroutine_running and heartbeat_active and reactor.seconds() - last_heartbeat[coroutine_num] >= interval:
-                            last_heartbeat[coroutine_num] = reactor.seconds()
+                        if coroutine_running and heartbeat_active and reactor.seconds() - last_heartbeat[heartbeater_num] >= interval:
+                            last_heartbeat[heartbeater_num] = reactor.seconds()
                             single_heartbeat()
 
                 try:
@@ -151,5 +161,6 @@ def with_heartbeat(interval, reactor=reactor):
                 finally:
                     coroutine_running = False
 
-            return inlineCallbacks(ret)
+            ret._is_heartbeater = True
+            return ret
         return dec
