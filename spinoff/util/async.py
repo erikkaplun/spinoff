@@ -107,7 +107,6 @@ def with_heartbeat(interval, reactor=reactor):
         return with_heartbeat(1.0)
     else:
         def dec(fn):
-            print fn
             if not hasattr(fn.im_class, '_num_coroutines'):
                 fn.im_class._num_coroutines = 0
             coroutine_num = fn.im_class._num_coroutines
