@@ -1,3 +1,5 @@
+from functools import wraps
+
 from twisted.python.failure import Failure
 from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, CancelledError, DeferredList
 from twisted.internet import reactor, task
@@ -111,6 +113,7 @@ def with_heartbeat(interval, reactor=reactor):
             coroutine_num = fn.im_class._num_coroutines
             fn.im_class._num_coroutines += 1
 
+            @wraps(fn)
             def ret(self, *args, **kwargs):
                 assert hasattr(self, 'send_heartbeat')
 
