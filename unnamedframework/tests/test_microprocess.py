@@ -112,39 +112,39 @@ def test_pausing_and_resuming():
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
-    proc = Proc()
-    d = proc.start()
+    proc2 = Proc()
+    d = proc2.start()
 
-    proc.pause()
-    proc.resume()
+    proc2.pause()
+    proc2.resume()
 
     ### can't resume twice
     with assert_raises(CoroutineAlreadyRunning, "it should not be possible to resume a microprocess twice"):
-        proc.resume()
+        proc2.resume()
 
     ### stopping
     mock_d = Deferred()
-    proc = Proc()
-    d = proc.start()
+    proc3 = Proc()
+    d = proc3.start()
 
-    proc.stop()
+    proc3.stop()
     with assert_raises(CoroutineAlreadyStopped):
-        proc.stop()
+        proc3.stop()
 
     assert stopped[0]
 
     with assert_raises(CoroutineAlreadyStopped):
-        proc.start()
+        proc3.start()
     with assert_raises(CoroutineAlreadyStopped):
-        proc.resume()
+        proc3.resume()
 
     ### stopping a paused coroutine
     mock_d = Deferred()
-    proc = Proc()
-    d = proc.start()
+    proc4 = Proc()
+    d = proc4.start()
 
-    proc.pause()
-    proc.stop()
+    proc4.pause()
+    proc4.stop()
 
     assert stopped[0]
 
@@ -171,10 +171,10 @@ def test_coroutine_must_exit_after_being_stopped():
                 yield Deferred()
             except CoroutineStopped:
                 break
-    proc = Proc2()
-    proc.start()
+    proc2 = Proc2()
+    proc2.start()
     with assert_not_raises(CoroutineRefusedToStop):
-        proc.stop()
+        proc2.stop()
 
 
 def test_coroutine_can_return_a_value_when_stopped():
