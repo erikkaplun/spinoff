@@ -1,4 +1,4 @@
-from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.defer import inlineCallbacks, Deferred, _DefGen_Return
 
 
 class MicroProcess(object):
@@ -40,7 +40,8 @@ class MicroProcess(object):
 
     def start(self):
         self.resume()
-        return self._fn()
+        self._ret_d = self._fn()
+        return self._ret_d
 
     def pause(self):
         if not self._running:
@@ -67,6 +68,8 @@ class MicroProcess(object):
             self._gen.throw(CoroutineStopped())
         except StopIteration:
             pass
+        except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
+            self._ret_d.callback(ret.value)
         else:
             raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
 
