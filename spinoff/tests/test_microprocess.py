@@ -151,6 +151,7 @@ def test_pausing_and_resuming():
 
 
 def test_coroutine_must_exit_after_being_stopped():
+    # coroutine that violates the rule
     def mock_coroutine():
         while True:
             try:
@@ -161,6 +162,19 @@ def test_coroutine_must_exit_after_being_stopped():
     proc = Proc()
     proc.start()
     with assert_raises(CoroutineRefusedToStop, "coroutine should not be allowed to continue working when stopped"):
+        proc.stop()
+
+    # coroutine that complies with the rule
+    def mock_coroutine_2():
+        while True:
+            try:
+                yield Deferred()
+            except CoroutineStopped:
+                break
+    Proc = microprocess(mock_coroutine_2)
+    proc = Proc()
+    proc.start()
+    with assert_not_raises(CoroutineRefusedToStop):
         proc.stop()
 
 
