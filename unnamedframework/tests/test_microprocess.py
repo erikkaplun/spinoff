@@ -13,13 +13,12 @@ def test_basic():
 
     retval = random.random()
 
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         called[0] += 1
         yield
         called[0] += 1
         returnValue(retval)
-
-    Proc = microprocess(mock_coroutine)
 
     proc = Proc()
     assert not called[0], "creating a microprocess should not automatically start the coroutine in it"
@@ -49,12 +48,12 @@ def test_deferreds_inside_microprocesses():
     def mock_async_fn():
         return mock_d
 
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         called[0] += 1
         yield mock_async_fn()
         called[0] += 1
 
-    Proc = microprocess(mock_coroutine)
     proc = Proc()
     d = proc.start()
 
@@ -64,11 +63,11 @@ def test_deferreds_inside_microprocesses():
 
 
 def test_wrapped_coroutine_yielding_a_non_deferred():
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         tmp = random.random()
         ret = yield tmp
         assert ret == tmp
-    Proc = microprocess(mock_coroutine)
     proc = Proc()
     proc.start()
 
@@ -83,13 +82,13 @@ def test_pausing_and_resuming():
     def mock_async_fn():
         return mock_d
 
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         try:
             ret = yield mock_async_fn()
             async_result[0] = ret
         except CoroutineStopped:
             stopped[0] = True
-    Proc = microprocess(mock_coroutine)
 
     ### resuming when the async called has been fired
     proc = Proc()
@@ -152,27 +151,27 @@ def test_pausing_and_resuming():
 
 def test_coroutine_must_exit_after_being_stopped():
     # coroutine that violates the rule
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         while True:
             try:
                 yield Deferred()
             except CoroutineStopped:
                 pass
-    Proc = microprocess(mock_coroutine)
     proc = Proc()
     proc.start()
     with assert_raises(CoroutineRefusedToStop, "coroutine should not be allowed to continue working when stopped"):
         proc.stop()
 
     # coroutine that complies with the rule
-    def mock_coroutine_2():
+    @microprocess
+    def Proc2():
         while True:
             try:
                 yield Deferred()
             except CoroutineStopped:
                 break
-    Proc = microprocess(mock_coroutine_2)
-    proc = Proc()
+    proc = Proc2()
     proc.start()
     with assert_not_raises(CoroutineRefusedToStop):
         proc.stop()
@@ -181,13 +180,13 @@ def test_coroutine_must_exit_after_being_stopped():
 def test_coroutine_can_return_a_value_when_stopped():
     retval = random.random()
 
-    def mock_coroutine():
+    @microprocess
+    def Proc():
         while True:
             try:
                 yield Deferred()
             except CoroutineStopped:
                 returnValue(retval)
-    Proc = microprocess(mock_coroutine)
     proc = Proc()
     d = proc.start()
     with assert_not_raises(_DefGen_Return):
