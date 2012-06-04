@@ -162,3 +162,20 @@ def test_coroutine_must_exit_after_being_stopped():
     proc.start()
     with assert_raises(CoroutineRefusedToStop, "coroutine should not be allowed to continue working when stopped"):
         proc.stop()
+
+
+def test_coroutine_can_return_a_value_when_stopped():
+    retval = random.random()
+
+    def mock_coroutine():
+        while True:
+            try:
+                yield Deferred()
+            except CoroutineStopped:
+                returnValue(retval)
+    Proc = microprocess(mock_coroutine)
+    proc = Proc()
+    d = proc.start()
+    with assert_not_raises(_DefGen_Return):
+        proc.stop()
+    assert deferred_result(d) == retval
