@@ -2,10 +2,10 @@ import random
 
 from twisted.internet.defer import Deferred, returnValue, _DefGen_Return
 
-from unnamedframework.util.microprocess import microprocess, CoroutineStopped, CoroutineRefusedToStop, CoroutineAlreadyRunning
+from unnamedframework.util.microprocess import (microprocess, CoroutineStopped, CoroutineRefusedToStop,
+                                                CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped)
 from unnamedframework.util.testing import assert_not_raises, deferred_result, assert_raises
-from unnamedframework.util.microprocess import CoroutineNotRunning
-from unnamedframework.util.microprocess import CoroutineAlreadyStopped
+from unnamedframework.util.microprocess import is_microprocess
 
 
 def test_basic():
@@ -30,7 +30,6 @@ def test_basic():
 
     with assert_not_raises(_DefGen_Return):
         d = proc.start()
-    assert called[0], "starting a microprocesses will start the coroutine in it"
     assert isinstance(d, Deferred), "starting a microprocesses returns a Deferred"
 
     assert called[0] == 2, "the coroutine in a microprocess should complete as normal"
@@ -40,18 +39,31 @@ def test_basic():
         proc.start()
 
 
+def test_is_microprocess():
+    def Proc():
+        yield
+
+    assert not is_microprocess(Proc)
+
+    Proc = microprocess(Proc)
+
+    assert is_microprocess(Proc)
+
+    class Mock(object):
+        some_method = Proc
+    assert is_microprocess(Mock.some_method)
+    assert is_microprocess(Mock().some_method)
+
+
 def test_deferreds_inside_microprocesses():
     called = [0]
 
     mock_d = Deferred()
 
-    def mock_async_fn():
-        return mock_d
-
     @microprocess
     def Proc():
         called[0] += 1
-        yield mock_async_fn()
+        yield mock_d
         called[0] += 1
 
     proc = Proc()
@@ -70,6 +82,13 @@ def test_wrapped_coroutine_yielding_a_non_deferred():
         assert ret == tmp
     proc = Proc()
     proc.start()
+
+    @microprocess
+    def Proc2():
+        ret = yield
+        assert ret is None
+    proc2 = Proc2()
+    proc2.start()
 
 
 def test_pausing_and_resuming():
@@ -192,3 +211,28 @@ def test_coroutine_can_return_a_value_when_stopped():
     with assert_not_raises(_DefGen_Return):
         proc.stop()
     assert deferred_result(d) == retval
+
+
+def test_microprocess_with_args():
+    passed_values = [None, None]
+
+    @microprocess
+    def Proc(a, b):
+        yield
+        passed_values[:] = [a, b]
+
+    proc = Proc(1, b=2)
+    proc.start()
+
+    assert passed_values == [1, 2]
+
+
+def test_microprocess_doesnt_require_generator():
+    @microprocess
+    def Proc():
+        pass
+
+    proc = Proc()
+    with assert_not_raises():
+        d = proc.start()
+    deferred_result(d)
