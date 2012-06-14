@@ -176,9 +176,11 @@ def test_pausing_actor_with_children_pauses_the_children():
     assert child_killed[0]
 
 
-def make_actor_cls(run_fn=lambda self: None):
+def make_actor_cls(run_fn=lambda self: None, name=''):
     class MockActor(Actor):
         run = run_fn
+        if name:
+            __repr__ = lambda self: name
     return MockActor
 
 
