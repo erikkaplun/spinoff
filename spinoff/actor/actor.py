@@ -73,6 +73,10 @@ class Actor(object):
         self._outboxes = {}
         self._parent = parent
         self._children = []
+
+        self._run_args = []
+        self._run_kwargs = {}
+
         if connections:
             for connection in connections.items():
                 self.connect(*connection)
@@ -173,10 +177,10 @@ class Actor(object):
     def start(self):
         try:
             if is_microprocess(self.run):
-                self._microprocess = self.run()
+                self._microprocess = self.run(*self._run_args, **self._run_kwargs)
                 d = self._microprocess.start()
             else:
-                d = maybeDeferred(self.run)
+                d = maybeDeferred(self.run, *self._run_args, **self._run_kwargs)
         except Exception:
             return fail()
         else:
