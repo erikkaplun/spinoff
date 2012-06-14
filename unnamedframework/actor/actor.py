@@ -68,6 +68,7 @@ class Actor(object):
         self._waiting = {}
         self._outboxes = {}
         self._parent = parent
+        self._children = []
         if connections:
             for connection in connections.items():
                 self.connect(*connection)
@@ -82,6 +83,7 @@ class Actor(object):
         d = child.start()
         d.addCallback(on_result)
         d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
+        self._children.append(child)
         return child
 
     def deliver(self, message, inbox='default'):
@@ -178,6 +180,8 @@ class Actor(object):
     def suspend(self):
         if not hasattr(self, '_microprocess'):
             raise ActorDoesNotSupportSuspending()
+        for actor in self._children:
+            actor.suspend()
         self._microprocess.pause()
 
     @property
@@ -202,9 +206,19 @@ class Actor(object):
         if not hasattr(self, '_microprocess'):
             raise ActorDoesNotSupportSuspending()
         self._microprocess.resume()
+        for actor in self._children:
+            actor.wake()
+
+    def kill(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        for actor in self._children:
+            actor.kill()
+        self._microprocess.stop()
 
     def stop(self):
-        pass
+        warnings.warn("Actor.stop has been deprecated in favor of Actor.kill", DeprecationWarning)
+        return self.kill()
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():

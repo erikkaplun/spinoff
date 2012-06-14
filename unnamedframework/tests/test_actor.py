@@ -6,6 +6,7 @@ from unnamedframework.util.microprocess import microprocess
 from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises
 from unnamedframework.actor.actor import ActorDoesNotSupportSuspending
 from unnamedframework.util.testing import assert_one_warning, assert_no_warnings
+from unnamedframework.util.microprocess import CoroutineStopped
 
 
 def test_basic():
@@ -114,6 +115,22 @@ def test_pause_and_wake_actor():
     assert called[0] == 2
 
 
+def test_kill_actor():
+    killed = [False]
+
+    @microprocess
+    def run(self):
+        try:
+            yield Deferred()
+        except CoroutineStopped:
+            killed[0] = True
+    a = make_actor_cls(run)()
+    a.start()
+    a.kill()
+
+    assert killed[0]
+
+
 def test_pause_actor_without_microprocesses():
     d = Deferred()
 
@@ -128,6 +145,37 @@ def test_pause_actor_without_microprocesses():
         a.suspend()
     with assert_raises(ActorDoesNotSupportSuspending):
         a.wake()
+
+
+def test_pausing_actor_with_children_pauses_the_children():
+    mock_d = Deferred()
+
+    children = []
+    child_killed = [False]
+
+    @microprocess
+    def child(self):
+        try:
+            yield Deferred()
+        except CoroutineStopped:
+            child_killed[0] = True
+
+    @microprocess
+    def parent(self):
+        children.append(self.spawn(make_actor_cls(child)))
+        yield mock_d
+    a = make_actor_cls(parent)()
+    a.start()
+
+    a.suspend()
+    assert all(x.is_suspended for x in children)
+
+    a.wake()
+    assert all(not x.is_suspended for x in children)
+
+    a.kill()
+    assert all(not x.is_alive for x in children)
+    assert child_killed[0]
 
 
 def make_actor_cls(run_fn=lambda self: None):
