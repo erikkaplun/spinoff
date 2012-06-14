@@ -148,8 +148,6 @@ def test_pause_actor_without_microprocesses():
 
 
 def test_pausing_actor_with_children_pauses_the_children():
-    mock_d = Deferred()
-
     children = []
     child_killed = [False]
 
@@ -163,7 +161,7 @@ def test_pausing_actor_with_children_pauses_the_children():
     @microprocess
     def parent(self):
         children.append(self.spawn(make_actor_cls(child)))
-        yield mock_d
+        yield Deferred()
     a = make_actor_cls(parent)()
     a.start()
 
