@@ -194,6 +194,16 @@ def test_pausing_and_resuming():
     assert stopped[0]
 
 
+def test_coroutine_does_not_have_to_catch_coroutinestopped():
+    @microprocess
+    def Proc():
+        yield Deferred()
+    proc = Proc()
+    proc.start()
+    with assert_not_raises(CoroutineStopped):
+        proc.stop()
+
+
 def test_coroutine_must_exit_after_being_stopped():
     # coroutine that violates the rule
     @microprocess
