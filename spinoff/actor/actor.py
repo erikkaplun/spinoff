@@ -126,6 +126,7 @@ class Actor(object):
             d.addBoth(lambda _: self._children.remove(child))
             return child
 
+    # TODO: move to MicroProcess
     def join(self, actor):
         return actor.d
 
@@ -226,57 +227,53 @@ class Actor(object):
             return d
 
     def _on_finish(self, result):
-        self._kill_children()
+        self._stop_children()
         return result
 
-    def suspend(self):
+    def pause(self):
         if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
+            raise ActorDoesNotSupportPausing()
         self._microprocess.pause()
         for actor in self._children:
-            if actor.is_active:
-                actor.suspend()
+            if actor.is_running:
+                actor.pause()
 
     @property
     def is_alive(self):
         if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
+            raise ActorDoesNotSupportPausing()
         return self._microprocess.is_alive
 
     @property
-    def is_active(self):
+    def is_running(self):
         if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
+            raise ActorDoesNotSupportPausing()
         return self._microprocess.is_running
 
     @property
-    def is_suspended(self):
+    def is_paused(self):
         if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
+            raise ActorDoesNotSupportPausing()
         return self._microprocess.is_paused
 
-    def wake(self):
+    def resume(self):
         if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
+            raise ActorDoesNotSupportPausing()
         self._microprocess.resume()
         for actor in self._children:
             if actor.is_alive:
-                assert actor.is_suspended
-                actor.wake()
-
-    def kill(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportSuspending()
-        self._kill_children()
-        self._microprocess.stop()
-
-    def _kill_children(self):
-        for actor in self._children:
-            actor.kill() if isinstance(actor, Actor) else actor.stop()
+                assert actor.is_paused
+                actor.resume()
 
     def stop(self):
-        warnings.warn("Actor.stop has been deprecated in favor of Actor.kill", DeprecationWarning)
-        return self.kill()
+        if not self._microprocess:
+            raise ActorDoesNotSupportPausing()
+        self._stop_children()
+        self._microprocess.stop()
+
+    def _stop_children(self):
+        for actor in self._children:
+            actor.stop()
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():
@@ -335,7 +332,7 @@ class ActorRunner(Service):
 
     def stopService(self):
         if self._actor.is_alive:
-            self._actor.kill()
+            self._actor.stop()
 
 
 class _Inbox(object):
@@ -421,7 +418,7 @@ def Application(*pipelines):
     return application
 
 
-class ActorDoesNotSupportSuspending(Exception):
+class ActorDoesNotSupportPausing(Exception):
     pass
 
 
