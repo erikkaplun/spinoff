@@ -116,6 +116,11 @@ class Actor(object):
             d.addBoth(lambda _: self._children.remove(child))
             return child
 
+    def join(self, actor):
+        return actor.d
+
+    def join_children(self):
+        return combine([x.d for x in self._children])
 
     def deliver(self, message, inbox='default'):
         self._inboxes[inbox].put(message)
@@ -208,6 +213,7 @@ class Actor(object):
         else:
             assert isinstance(d, Deferred)
             d.addBoth(self._on_finish)
+            self.d = d
             return d
 
     def _on_finish(self, result):

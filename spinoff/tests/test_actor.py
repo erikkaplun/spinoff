@@ -1,4 +1,7 @@
+from __future__ import print_function
+
 from twisted.internet.defer import QueueUnderflow, Deferred, inlineCallbacks, returnValue
+from twisted.internet.task import Clock
 
 from spinoff.actor.actor import Actor
 from spinoff.util.async import CancelledError
@@ -7,6 +10,8 @@ from spinoff.util.testing import deferred_result, assert_raises, assert_not_rais
 from spinoff.actor.actor import ActorDoesNotSupportSuspending
 from spinoff.util.testing import assert_one_warning, assert_no_warnings
 from spinoff.util.microprocess import CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped
+from spinoff.util.async import sleep
+from spinoff.actor.actor import actor
 
 
 def test_basic():
@@ -229,6 +234,49 @@ def test_actor_finishing_before_child():
     a = make_actor_cls(parent)()
     a.start()
     assert child_stopped[0]
+
+
+def test_actor_joins_child():
+    clock = Clock()
+
+    child_exit = [None]
+
+    @actor
+    def Child(self):
+        try:
+            yield sleep(1.0, clock)
+        except CoroutineStopped:
+            child_exit[0] = 'forced'
+        else:
+            child_exit[0] = 'normal'
+
+    @actor
+    def Parent(self):
+        child = self.spawn(Child)
+        yield self.join(child)
+
+    p = Parent.spawn()
+    assert p.is_active, "an actor should be waiting for a joining child actor to complete"
+
+    clock.advance(1.0)
+    assert not p.is_alive, "an actor should die when a joining child actor completes"
+
+    assert child_exit[0] == 'normal', "a joining child of an actor should die a natural death"
+
+    ##########################
+    # join all children
+
+    @actor
+    def Parent2(self):
+        for _ in range(3):
+            self.spawn(Child)
+        yield self.join_children()
+
+    p = Parent2.spawn()
+    assert p.is_active
+
+    clock.advance(1.0)
+    assert not p.is_alive
 
 
 def make_actor_cls(run_fn=lambda self: None, name=''):
