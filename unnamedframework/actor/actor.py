@@ -109,8 +109,10 @@ class Actor(object):
                                   "send it to the parent explicitly instead")
 
             child = actor_cls(parent=self, *args, **kwargs)
-            self._children.append(child)
             d = child.start()
+            if not d:
+                raise Exception("Child actor start() did not return a Deferred")
+            self._children.append(child)
             d.addCallback(on_result)
             d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
             d.addBoth(lambda _: self._children.remove(child))
@@ -307,7 +309,12 @@ class ActorRunner(Service):
 
         log.msg("running: %s" % actor_path)
 
-        d = self._actor.start()
+        try:
+            d = self._actor.start()
+        except Exception:
+            sys.stderr.write("failed to start: %s\n" % actor_path)
+            Failure().printTraceback(file=sys.stderr)
+            return
 
         @d.addBoth
         def finally_(result):
