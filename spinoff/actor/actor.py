@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import sys
 import warnings
 from collections import defaultdict
@@ -237,9 +239,9 @@ class Actor(object):
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():
-            print '*** %s.INBOX %s:' % (name or '', inbox)
+            print('*** %s.INBOX %s:' % (name or '', inbox))
             for message, _ in queue.pending:
-                print '*** \t%s' % message
+                print('*** \t%s' % message)
 
     def inbox(self, inbox):
         return ('default', _Inbox(self, inbox))
@@ -278,10 +280,10 @@ class ActorRunner(Service):
         @d.addBoth
         def finally_(result):
             if isinstance(result, Failure):
-                print >> sys.stderr, "failed: %s" % actor_path
-                result.printTraceback()
+                sys.stderr.write("failed: %s\n" % actor_path)
+                result.printTraceback(file=sys.stderr)
             else:
-                print >> sys.stderr, "finished: %s" % actor_path
+                sys.stderr.write("finished: %s\n" % actor_path)
 
             # os.kill(os.getpid(), signal.SIGKILL)
 
