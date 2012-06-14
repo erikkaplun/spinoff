@@ -137,6 +137,9 @@ def test_pausing_and_resuming():
     d = proc.start()
 
     proc.pause()
+    assert not proc.is_running
+    assert proc.is_alive
+    assert proc.is_paused
 
     with assert_raises(CoroutineNotRunning):
         proc.pause()

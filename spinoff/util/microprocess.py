@@ -28,6 +28,10 @@ class MicroProcess(object):
     _paused_result = None
     _current_d = None
 
+    is_running = property(lambda self: self._running)
+    is_alive = property(lambda self: not self._stopped)
+    is_paused = property(lambda self: not self.is_running and self.is_alive)
+
     def __init__(self, fn, *args, **kwargs):
         @wraps(fn)
         def wrap():
