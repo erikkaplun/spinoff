@@ -3,10 +3,12 @@ from collections import defaultdict
 
 from twisted.application import service
 from twisted.application.service import Service
-from twisted.internet.defer import DeferredQueue
+from twisted.internet import reactor
+from twisted.internet.defer import DeferredQueue, Deferred, succeed, fail, maybeDeferred
 from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
+from spinoff.util.microprocess import is_microprocess
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
@@ -58,20 +60,29 @@ class IActor(IProducer, IConsumer):
 class Actor(object):
     implements(IActor)
 
-    def __init__(self, connections=None, *args, **kwargs):
+    parent = property(lambda self: self._parent)
+
+    def __init__(self, parent=None, connections=None, *args, **kwargs):
         super(Actor, self).__init__(*args, **kwargs)
         self._inboxes = defaultdict(lambda: DeferredQueue(backlog=1))
         self._waiting = {}
         self._outboxes = {}
+        self._parent = parent
         if connections:
             for connection in connections.items():
                 self.connect(*connection)
 
-    @classmethod
-    def spawn(cls, *args, **kwargs):
-        ret = cls(*args, **kwargs)
-        ret.start()
-        return ret
+    def spawn(self, actor_cls, *args, **kwargs):
+        def on_result(result):
+            if result is not None:
+                warnings.warn("actor returned a value but this value will be lost--"
+                              "send it to the parent explicitly instead")
+
+        child = actor_cls(parent=self, *args, **kwargs)
+        d = child.start()
+        d.addCallback(on_result)
+        d.addErrback(lambda f: self.send(inbox='child-results', message=(child, f.value)))
+        return child
 
     def deliver(self, message, inbox='default'):
         self._inboxes[inbox].put(message)
@@ -148,8 +159,31 @@ class Actor(object):
         for inbox, component in connections:
             component.deliver(message, inbox)
 
+    def run(self):
+        return succeed(None)
+
     def start(self):
-        pass
+        try:
+            if is_microprocess(self.run):
+                self._microprocess = self.run()
+                d = self._microprocess.start()
+            else:
+                d = maybeDeferred(self.run)
+        except Exception:
+            return fail()
+        else:
+            assert isinstance(d, Deferred)
+            return d
+
+    def suspend(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        self._microprocess.pause()
+
+    def wake(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        self._microprocess.resume()
 
     def stop(self):
         pass
@@ -261,3 +295,7 @@ def Application(*pipelines):
         s.setServiceParent(application)
 
     return application
+
+
+class ActorDoesNotSupportSuspending(Exception):
+    pass
