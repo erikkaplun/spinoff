@@ -178,13 +178,19 @@ class Actor(object):
             return fail()
         else:
             assert isinstance(d, Deferred)
+            d.addBoth(self._on_finish)
             return d
+
+    def _on_finish(self, result):
+        self._kill_children()
+        return result
 
     def suspend(self):
         if not hasattr(self, '_microprocess'):
             raise ActorDoesNotSupportSuspending()
         for actor in self._children:
-            actor.suspend()
+            if actor.is_active:
+                actor.suspend()
         self._microprocess.pause()
 
     @property
@@ -210,14 +216,20 @@ class Actor(object):
             raise ActorDoesNotSupportSuspending()
         self._microprocess.resume()
         for actor in self._children:
-            actor.wake()
+            if actor.is_alive:
+                assert actor.is_suspended
+                actor.wake()
 
     def kill(self):
         if not hasattr(self, '_microprocess'):
             raise ActorDoesNotSupportSuspending()
-        for actor in self._children:
-            actor.kill()
+        self._kill_children()
         self._microprocess.stop()
+
+    def _kill_children(self):
+        for actor in self._children:
+            if actor.is_alive:
+                actor.kill()
 
     def stop(self):
         warnings.warn("Actor.stop has been deprecated in favor of Actor.kill", DeprecationWarning)

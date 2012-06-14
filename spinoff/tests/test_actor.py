@@ -6,7 +6,7 @@ from spinoff.util.microprocess import microprocess
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises
 from spinoff.actor.actor import ActorDoesNotSupportSuspending
 from spinoff.util.testing import assert_one_warning, assert_no_warnings
-from spinoff.util.microprocess import CoroutineStopped
+from spinoff.util.microprocess import CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped
 
 
 def test_basic():
@@ -174,6 +174,61 @@ def test_pausing_actor_with_children_pauses_the_children():
     a.kill()
     assert all(not x.is_alive for x in children)
     assert child_killed[0]
+
+
+def test_suspending_and_killing_actor_with_some_finished_children():
+    @microprocess
+    def stillborn(self):
+        yield
+
+    child_killed = [False]
+
+    @microprocess
+    def long_living_child(self):
+        try:
+            yield Deferred()
+        except CoroutineStopped:
+            child_killed[0] = True
+
+    mock_d = Deferred()
+
+    @microprocess
+    def parent(self):
+        self.spawn(make_actor_cls(stillborn, "stillborn"))
+        self.spawn(make_actor_cls(long_living_child, "longliving"))
+        yield mock_d
+
+    a = make_actor_cls(parent, "parent")()
+    a.start()
+
+    with assert_not_raises(CoroutineNotRunning):
+        a.suspend()
+
+    with assert_not_raises(CoroutineAlreadyStopped):
+        a.wake()
+
+    a.kill()
+
+    assert child_killed[0]
+
+
+def test_actor_finishing_before_child():
+    child_stopped = [False]
+
+    @microprocess
+    def child(self):
+        try:
+            yield Deferred()
+        except CoroutineStopped:
+            child_stopped[0] = True
+
+    @microprocess
+    def parent(self):
+        self.spawn(make_actor_cls(child))
+
+    a = make_actor_cls(parent)()
+    a.start()
+    assert child_stopped[0]
 
 
 def make_actor_cls(run_fn=lambda self: None, name=''):
