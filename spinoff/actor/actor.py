@@ -160,6 +160,9 @@ class Actor(object):
             for message, _ in queue.pending:
                 print '*** \t%s' % message
 
+    def inbox(self, inbox):
+        return ('default', _Inbox(self, inbox))
+
     def as_service(self):
         return ActorsAsService([self])
 
@@ -175,6 +178,18 @@ class ActorsAsService(Service):
 
     def stopService(self):
         return combine([d for d in [x.stop() for x in self._actors] if d])
+
+
+class _Inbox(object):
+    implements(IConsumer)
+
+    def __init__(self, actor, inbox):
+        self.actor, self.inbox = actor, inbox
+        actor.plugged(inbox, self)
+
+    def deliver(self, message, inbox):
+        assert inbox == 'default'
+        self.actor.deliver(message=message, inbox=self.inbox)
 
 
 def _normalize_pipe(pipe):
