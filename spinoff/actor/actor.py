@@ -6,8 +6,7 @@ from twisted.application import service
 from twisted.application.service import Service
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet import reactor
-from twisted.internet.defer import DeferredQueue, Deferred, succeed, fail, maybeDeferred
+from twisted.internet.defer import DeferredQueue, Deferred, fail, maybeDeferred
 from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
