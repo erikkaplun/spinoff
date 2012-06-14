@@ -1,8 +1,11 @@
+import sys
 import warnings
 from collections import defaultdict
 
 from twisted.application import service
 from twisted.application.service import Service
+from twisted.python import log
+from twisted.python.failure import Failure
 from twisted.internet import reactor
 from twisted.internet.defer import DeferredQueue, Deferred, succeed, fail, maybeDeferred
 from spinoff.util.async import combine
@@ -231,12 +234,14 @@ class Actor(object):
         return ('default', _Inbox(self, inbox))
 
     def as_service(self):
+        warnings.warn("Actor.as_service is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
         return ActorsAsService([self])
 
 
 class ActorsAsService(Service):
 
     def __init__(self, actors):
+        warnings.warn("ActorsAsService is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
         self._actors = actors
 
     def startService(self):
@@ -245,6 +250,33 @@ class ActorsAsService(Service):
 
     def stopService(self):
         return combine([d for d in [x.stop() for x in self._actors] if d])
+
+
+class ActorRunner(Service):
+
+    def __init__(self, actor):
+        self._actor = actor
+
+    def startService(self):
+        actor_path = '%s.%s' % (type(self._actor).__module__, type(self._actor).__name__)
+
+        log.msg("running: %s" % actor_path)
+
+        d = self._actor.start()
+
+        @d.addBoth
+        def finally_(result):
+            if isinstance(result, Failure):
+                print >> sys.stderr, "failed: %s" % actor_path
+                result.printTraceback()
+            else:
+                print >> sys.stderr, "finished: %s" % actor_path
+
+            # os.kill(os.getpid(), signal.SIGKILL)
+
+    def stopService(self):
+        if self._actor.is_alive:
+            self._actor.kill()
 
 
 class _Inbox(object):
