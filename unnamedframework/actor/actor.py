@@ -82,10 +82,11 @@ class Actor(object):
                               "send it to the parent explicitly instead")
 
         child = actor_cls(parent=self, *args, **kwargs)
+        self._children.append(child)
         d = child.start()
         d.addCallback(on_result)
         d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
-        self._children.append(child)
+        d.addBoth(lambda _: self._children.remove(child))
         return child
 
     def deliver(self, message, inbox='default'):
@@ -228,8 +229,7 @@ class Actor(object):
 
     def _kill_children(self):
         for actor in self._children:
-            if actor.is_alive:
-                actor.kill()
+            actor.kill()
 
     def stop(self):
         warnings.warn("Actor.stop has been deprecated in favor of Actor.kill", DeprecationWarning)
