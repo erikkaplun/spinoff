@@ -381,3 +381,18 @@ def Application(*pipelines):
 
 class ActorDoesNotSupportSuspending(Exception):
     pass
+
+
+def actor(fn):
+
+    class ret(Actor):
+
+        def __init__(self, parent=None, *args, **kwargs):
+            super(ret, self).__init__(parent)
+            self._run_args = args
+            self._run_kwargs = kwargs
+
+        run = microprocess(fn)
+
+    ret.__name__ = fn.__name__
+    return ret
