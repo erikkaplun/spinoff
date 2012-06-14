@@ -1,4 +1,10 @@
-from twisted.internet.defer import inlineCallbacks, Deferred, _DefGen_Return
+from types import GeneratorType
+from functools import wraps
+
+from twisted.internet.defer import Deferred, _DefGen_Return, returnValue
+
+# XXX: this is fragile--might break when t.i.d.inlineCallbacks changes
+from ._defer import inlineCallbacks
 
 
 class MicroProcess(object):
@@ -14,9 +20,13 @@ class MicroProcess(object):
     _paused_result = None
     _current_d = None
 
-    def __init__(self, fn):
+    def __init__(self, fn, *args, **kwargs):
+        @wraps(fn)
         def wrap():
-            gen = self._gen = fn()
+            gen = self._gen = fn(*args, **kwargs)
+            if not isinstance(gen, GeneratorType):
+                yield None
+                returnValue(gen)
             fire_current_d = self._fire_current_d
             prev_result = None
             try:
@@ -75,9 +85,15 @@ class MicroProcess(object):
 
 
 def microprocess(fn):
-    def ret():
-        return MicroProcess(fn)
+    @wraps(fn)
+    def ret(*args, **kwargs):
+        return MicroProcess(fn, *args, **kwargs)
+    ret.__is_microprocess = True
     return ret
+
+
+def is_microprocess(fn):
+    return getattr(fn, '__is_microprocess', False)
 
 
 class CoroutineStopped(Exception):

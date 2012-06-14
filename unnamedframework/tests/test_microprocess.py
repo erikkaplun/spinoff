@@ -3,9 +3,8 @@ import random
 from twisted.internet.defer import Deferred, returnValue, _DefGen_Return
 
 from unnamedframework.util.microprocess import (microprocess, CoroutineStopped, CoroutineRefusedToStop,
-                                                CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped)
-from unnamedframework.util.testing import assert_not_raises, deferred_result, assert_raises
-from unnamedframework.util.microprocess import is_microprocess
+                                                CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped, is_microprocess)
+from unnamedframework.util.testing import assert_not_raises, deferred_result, assert_raises, assert_no_warnings, assert_one_warning
 
 
 def test_basic():
@@ -37,6 +36,30 @@ def test_basic():
 
     with assert_raises(CoroutineAlreadyRunning):
         proc.start()
+
+
+def test_returnvalue():
+    @microprocess
+    def Proc():
+        yield
+        returnValue(123)
+    with assert_no_warnings():
+        Proc().start()
+
+    #######################
+    # This can be considered white-box testing as we know that @microprocesses uses a customized version of
+    # inlineCallbacks internally that works around unwanted returnValue warnings--we need to verify if it still keeps
+    # wanted returnValue warnings:
+
+    def foo():
+        returnValue(123)
+
+    @microprocess
+    def Proc2():
+        yield
+        foo()
+    with assert_one_warning():
+        Proc2().start()
 
 
 def test_is_microprocess():
