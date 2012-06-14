@@ -8,7 +8,7 @@ from twisted.internet.defer import DeferredQueue, Deferred, succeed, fail, maybe
 from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
-from spinoff.util.microprocess import is_microprocess
+from spinoff.util.microprocess import microprocess, is_microprocess
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
@@ -161,8 +161,9 @@ class Actor(object):
         for inbox, component in connections:
             component.deliver(message, inbox)
 
+    @microprocess
     def run(self):
-        return succeed(None)
+        yield
 
     def start(self):
         try:
