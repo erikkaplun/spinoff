@@ -63,7 +63,13 @@ class MicroProcess(object):
     def start(self):
         self.resume()
         self._ret_d = self._fn()
+        self._ret_d.addBoth(self._on_complete)
         return self._ret_d
+
+    def _on_complete(self, result):
+        self._running = False
+        self._stopped = True
+        return result
 
     def pause(self):
         if not self._running:
