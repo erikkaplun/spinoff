@@ -113,7 +113,10 @@ class Actor(object):
                     warnings.warn("actor returned a value but this value will be lost--"
                                   "send it to the parent explicitly instead")
 
-            child = actor_cls(parent=self, *args, **kwargs)
+            if not is_microprocess(actor_cls):
+                child = actor_cls(parent=self, *args, **kwargs)
+            else:
+                child = actor_cls(*args, **kwargs)
             d = child.start()
             if not d:
                 raise Exception("Child actor start() did not return a Deferred")
@@ -269,7 +272,7 @@ class Actor(object):
 
     def _kill_children(self):
         for actor in self._children:
-            actor.kill()
+            actor.kill() if isinstance(actor, Actor) else actor.stop()
 
     def stop(self):
         warnings.warn("Actor.stop has been deprecated in favor of Actor.kill", DeprecationWarning)
