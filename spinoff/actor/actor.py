@@ -180,6 +180,24 @@ class Actor(object):
             raise ActorDoesNotSupportSuspending()
         self._microprocess.pause()
 
+    @property
+    def is_alive(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        return self._microprocess.is_alive
+
+    @property
+    def is_active(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        return self._microprocess.is_running
+
+    @property
+    def is_suspended(self):
+        if not hasattr(self, '_microprocess'):
+            raise ActorDoesNotSupportSuspending()
+        return self._microprocess.is_paused
+
     def wake(self):
         if not hasattr(self, '_microprocess'):
             raise ActorDoesNotSupportSuspending()

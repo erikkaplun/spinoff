@@ -106,6 +106,10 @@ def test_pause_actor():
     d.callback(None)
     assert called[0] == 1
 
+    assert not a.is_active
+    assert a.is_alive
+    assert a.is_suspended
+
     a.wake()
     assert called[0] == 2
 
