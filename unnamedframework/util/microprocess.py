@@ -8,6 +8,14 @@ from ._defer import inlineCallbacks
 
 
 class MicroProcess(object):
+    """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
+
+    Currently only supports coroutines `yield`ing Twisted `Deferred` objects.
+
+    Internally uses `twisted.internet.defer.inlineCallbacks` and thus all coroutines support all `@inlineCallbacks`
+    features such as `returnValue`.
+
+    """
 
     stopped = property(lambda self: self._stopped)
     running = property(lambda self: self._running)
