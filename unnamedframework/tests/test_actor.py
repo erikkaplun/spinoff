@@ -7,7 +7,7 @@ from unnamedframework.actor.actor import Actor
 from unnamedframework.util.async import CancelledError
 from unnamedframework.util.microprocess import microprocess
 from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises
-from unnamedframework.actor.actor import ActorDoesNotSupportSuspending
+from unnamedframework.actor.actor import ActorDoesNotSupportPausing
 from unnamedframework.util.testing import assert_one_warning, assert_no_warnings
 from unnamedframework.util.microprocess import CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped
 from unnamedframework.util.async import sleep
@@ -95,7 +95,7 @@ def test_child_actor_errors_are_sent_to_parent():
     assert msg[0] == a2 and isinstance(msg[1], MockException)
 
 
-def test_suspend_and_wake_actor():
+def test_pause_and_resume_actor():
     called = [0]
     d = Deferred()
 
@@ -107,34 +107,34 @@ def test_suspend_and_wake_actor():
     a = X.spawn()
     assert called[0] == 1
 
-    a.suspend()
+    a.pause()
     d.callback(None)
     assert called[0] == 1
 
-    assert not a.is_active
+    assert not a.is_running
     assert a.is_alive
-    assert a.is_suspended
+    assert a.is_paused
 
-    a.wake()
+    a.resume()
     assert called[0] == 2
 
 
-def test_kill_actor():
-    killed = [False]
+def test_stop_actor():
+    stopped = [False]
 
     @actor
     def X(self):
         try:
             yield Deferred()
         except CoroutineStopped:
-            killed[0] = True
+            stopped[0] = True
     a = X.spawn()
-    a.kill()
+    a.stop()
 
-    assert killed[0]
+    assert stopped[0]
 
 
-def test_suspend_actor_without_microprocesses():
+def test_pause_actor_without_microprocesses():
     d = Deferred()
 
     @make_actor_cls
@@ -143,39 +143,39 @@ def test_suspend_actor_without_microprocesses():
         yield d
 
     a = X()
-    with assert_raises(ActorDoesNotSupportSuspending):
-        a.suspend()
-    with assert_raises(ActorDoesNotSupportSuspending):
-        a.wake()
+    with assert_raises(ActorDoesNotSupportPausing):
+        a.pause()
+    with assert_raises(ActorDoesNotSupportPausing):
+        a.resume()
 
     a = X.spawn()
-    with assert_raises(ActorDoesNotSupportSuspending):
-        a.suspend()
-    with assert_raises(ActorDoesNotSupportSuspending):
-        a.wake()
+    with assert_raises(ActorDoesNotSupportPausing):
+        a.pause()
+    with assert_raises(ActorDoesNotSupportPausing):
+        a.resume()
 
 
-def test_suspend_non_running_but_suspendable_actor():
+def test_pause_non_running_but_pausable_actor():
     @actor
     def X(self):
         yield
 
     a = X()
-    with assert_not_raises(ActorDoesNotSupportSuspending):
+    with assert_not_raises(ActorDoesNotSupportPausing):
         with assert_raises(CoroutineNotRunning):
-            a.suspend()
+            a.pause()
 
 
-def test_suspending_actor_with_children_suspends_the_children():
+def test_pausing_actor_with_children_pauses_the_children():
     children = []
-    child_killed = [False]
+    child_stopped = [False]
 
     @actor
     def Child(self):
         try:
             yield Deferred()
         except CoroutineStopped:
-            child_killed[0] = True
+            child_stopped[0] = True
 
     @actor
     def Parent(self):
@@ -183,30 +183,30 @@ def test_suspending_actor_with_children_suspends_the_children():
         yield Deferred()
     a = Parent.spawn()
 
-    a.suspend()
-    assert all(x.is_suspended for x in children)
+    a.pause()
+    assert all(x.is_paused for x in children)
 
-    a.wake()
-    assert all(not x.is_suspended for x in children)
+    a.resume()
+    assert all(not x.is_paused for x in children)
 
-    a.kill()
+    a.stop()
     assert all(not x.is_alive for x in children)
-    assert child_killed[0]
+    assert child_stopped[0]
 
 
-def test_suspending_and_killing_actor_with_some_finished_children():
+def test_pausing_and_stoping_actor_with_some_finished_children():
     @actor
     def Stillborn(self):
         yield
 
-    child_killed = [False]
+    child_stopped = [False]
 
     @actor
     def LongLivingChild(self):
         try:
             yield Deferred()
         except CoroutineStopped:
-            child_killed[0] = True
+            child_stopped[0] = True
 
     mock_d = Deferred()
 
@@ -219,32 +219,32 @@ def test_suspending_and_killing_actor_with_some_finished_children():
     a = Parent.spawn()
 
     with assert_not_raises(CoroutineNotRunning):
-        a.suspend()
+        a.pause()
 
     with assert_not_raises(CoroutineAlreadyStopped):
-        a.wake()
+        a.resume()
 
-    a.kill()
+    a.stop()
 
-    assert child_killed[0]
+    assert child_stopped[0]
 
 
 def test_actor_finishing_before_child():
-    child_killed = [False]
+    child_stopped = [False]
 
     @actor
     def Child(self):
         try:
             yield Deferred()
         except CoroutineStopped:
-            child_killed[0] = True
+            child_stopped[0] = True
 
     @actor
     def Parent(self):
         self.spawn(Child)
 
     Parent.spawn()
-    assert child_killed[0]
+    assert child_stopped[0]
 
 
 def test_actor_joins_child():
@@ -267,7 +267,7 @@ def test_actor_joins_child():
         yield self.join(child)
 
     p = Parent.spawn()
-    assert p.is_active, "an actor should be waiting for a joining child actor to complete"
+    assert p.is_running, "an actor should be waiting for a joining child actor to complete"
 
     clock.advance(1.0)
     assert not p.is_alive, "an actor should die when a joining child actor completes"
@@ -284,7 +284,7 @@ def test_actor_joins_child():
         yield self.join_children()
 
     p = Parent2.spawn()
-    assert p.is_active
+    assert p.is_running
 
     clock.advance(1.0)
     assert not p.is_alive
@@ -306,7 +306,7 @@ def test_spawn_microprocess():
     a = A.spawn()
     assert bla[0]
 
-    a.kill()
+    a.stop()
 
 
 def make_actor_cls(run_fn):
