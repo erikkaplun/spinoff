@@ -59,9 +59,9 @@ class MicroProcess(object):
 
     def start(self):
         self.resume()
-        self._ret_d = self._fn()
-        self._ret_d.addBoth(self._on_complete)
-        return self._ret_d
+        self.d = self._fn()
+        self.d.addBoth(self._on_complete)
+        return self.d
 
     def _on_complete(self, result):
         self._running = False
@@ -97,7 +97,7 @@ class MicroProcess(object):
         except StopIteration:
             pass
         except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
-            self._ret_d.callback(ret.value)
+            self.d.callback(ret.value)
         else:
             raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
 
