@@ -87,7 +87,10 @@ class MicroProcess(object):
         if self._running:
             self.pause()
         try:
-            self._gen.throw(CoroutineStopped())
+            try:
+                self._gen.throw(CoroutineStopped())
+            except CoroutineStopped:
+                raise StopIteration()
         except StopIteration:
             pass
         except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
