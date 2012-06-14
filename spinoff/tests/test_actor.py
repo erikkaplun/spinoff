@@ -89,7 +89,7 @@ def test_child_actor_errors_are_sent_to_parent():
     assert msg[0] == a2 and isinstance(msg[1], MockException)
 
 
-def test_pause_actor():
+def test_pause_and_wake_actor():
     called = [0]
     d = Deferred()
 
