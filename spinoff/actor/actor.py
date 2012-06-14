@@ -13,6 +13,7 @@ from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
 from spinoff.util.microprocess import microprocess, is_microprocess
+from spinoff.util.python import combomethod
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
@@ -81,19 +82,40 @@ class Actor(object):
             for connection in connections.items():
                 self.connect(*connection)
 
-    def spawn(self, actor_cls, *args, **kwargs):
-        def on_result(result):
-            if result is not None:
-                warnings.warn("actor returned a value but this value will be lost--"
-                              "send it to the parent explicitly instead")
+    @combomethod
+    def spawn(cls_or_self, *args, **kwargs):
+        if not isinstance(cls_or_self, Actor):
+            cls = cls_or_self
+            ret = cls(*args, **kwargs)
+            d = ret.start()
+            d.addErrback(lambda f: (
+                f.printTraceback(sys.stderr),
+                ))
+            return ret
+        else:
+            self = cls_or_self
+            if 'actor_cls' in kwargs:
+                actor_cls = kwargs.pop('actor_cls')
+            elif len(args) >= 0:
+                actor_cls = args[0]
+                args = args[1:]
+            else:
+                raise TypeError("spawn() requires an actor class to be passed as the "
+                                "first argument or actor_cls keyword argument")
 
-        child = actor_cls(parent=self, *args, **kwargs)
-        self._children.append(child)
-        d = child.start()
-        d.addCallback(on_result)
-        d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
-        d.addBoth(lambda _: self._children.remove(child))
-        return child
+            def on_result(result):
+                if result is not None:
+                    warnings.warn("actor returned a value but this value will be lost--"
+                                  "send it to the parent explicitly instead")
+
+            child = actor_cls(parent=self, *args, **kwargs)
+            self._children.append(child)
+            d = child.start()
+            d.addCallback(on_result)
+            d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
+            d.addBoth(lambda _: self._children.remove(child))
+            return child
+
 
     def deliver(self, message, inbox='default'):
         self._inboxes[inbox].put(message)
