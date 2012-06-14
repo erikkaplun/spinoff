@@ -142,12 +142,28 @@ def test_suspend_actor_without_microprocesses():
     def X(self):
         yield d
 
-    a = X.spawn()
-
+    a = X()
     with assert_raises(ActorDoesNotSupportSuspending):
         a.suspend()
     with assert_raises(ActorDoesNotSupportSuspending):
         a.wake()
+
+    a = X.spawn()
+    with assert_raises(ActorDoesNotSupportSuspending):
+        a.suspend()
+    with assert_raises(ActorDoesNotSupportSuspending):
+        a.wake()
+
+
+def test_suspend_non_running_but_suspendable_actor():
+    @actor
+    def X(self):
+        yield
+
+    a = X()
+    with assert_not_raises(ActorDoesNotSupportSuspending):
+        with assert_raises(CoroutineNotRunning):
+            a.suspend()
 
 
 def test_suspending_actor_with_children_suspends_the_children():

@@ -82,6 +82,11 @@ class Actor(object):
             for connection in connections.items():
                 self.connect(*connection)
 
+        if is_microprocess(self.run):
+            self._microprocess = self.run(*self._run_args, **self._run_kwargs)
+        else:
+            self._microprocess = None
+
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
         if not isinstance(cls_or_self, Actor):
@@ -205,8 +210,7 @@ class Actor(object):
 
     def start(self):
         try:
-            if is_microprocess(self.run):
-                self._microprocess = self.run(*self._run_args, **self._run_kwargs)
+            if self._microprocess:
                 d = self._microprocess.start()
             else:
                 d = maybeDeferred(self.run, *self._run_args, **self._run_kwargs)
@@ -223,33 +227,33 @@ class Actor(object):
         return result
 
     def suspend(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
+        self._microprocess.pause()
         for actor in self._children:
             if actor.is_active:
                 actor.suspend()
-        self._microprocess.pause()
 
     @property
     def is_alive(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
         return self._microprocess.is_alive
 
     @property
     def is_active(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
         return self._microprocess.is_running
 
     @property
     def is_suspended(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
         return self._microprocess.is_paused
 
     def wake(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
         self._microprocess.resume()
         for actor in self._children:
@@ -258,7 +262,7 @@ class Actor(object):
                 actor.wake()
 
     def kill(self):
-        if not hasattr(self, '_microprocess'):
+        if not self._microprocess:
             raise ActorDoesNotSupportSuspending()
         self._kill_children()
         self._microprocess.stop()
