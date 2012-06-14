@@ -17,9 +17,6 @@ class MicroProcess(object):
 
     """
 
-    stopped = property(lambda self: self._stopped)
-    running = property(lambda self: self._running)
-
     _stopped = False
     _running = False
 
