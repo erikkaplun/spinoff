@@ -95,17 +95,16 @@ def test_child_actor_errors_are_sent_to_parent():
     assert msg[0] == a2 and isinstance(msg[1], MockException)
 
 
-def test_pause_and_wake_actor():
+def test_suspend_and_wake_actor():
     called = [0]
     d = Deferred()
 
-    @microprocess
-    def run(self):
+    @actor
+    def X(self):
         called[0] += 1
         yield d
         called[0] += 1
-    a = make_actor_cls(run)()
-    a.start()
+    a = X.spawn()
     assert called[0] == 1
 
     a.suspend()
@@ -123,28 +122,27 @@ def test_pause_and_wake_actor():
 def test_kill_actor():
     killed = [False]
 
-    @microprocess
-    def run(self):
+    @actor
+    def X(self):
         try:
             yield Deferred()
         except CoroutineStopped:
             killed[0] = True
-    a = make_actor_cls(run)()
-    a.start()
+    a = X.spawn()
     a.kill()
 
     assert killed[0]
 
 
-def test_pause_actor_without_microprocesses():
+def test_suspend_actor_without_microprocesses():
     d = Deferred()
 
+    @make_actor_cls
     @inlineCallbacks
-    def run(self):
+    def X(self):
         yield d
 
-    a = make_actor_cls(run)()
-    a.start()
+    a = X.spawn()
 
     with assert_raises(ActorDoesNotSupportSuspending):
         a.suspend()
@@ -152,23 +150,22 @@ def test_pause_actor_without_microprocesses():
         a.wake()
 
 
-def test_pausing_actor_with_children_pauses_the_children():
+def test_suspending_actor_with_children_suspends_the_children():
     children = []
     child_killed = [False]
 
-    @microprocess
-    def child(self):
+    @actor
+    def Child(self):
         try:
             yield Deferred()
         except CoroutineStopped:
             child_killed[0] = True
 
-    @microprocess
-    def parent(self):
-        children.append(self.spawn(make_actor_cls(child)))
+    @actor
+    def Parent(self):
+        children.append(self.spawn(Child))
         yield Deferred()
-    a = make_actor_cls(parent)()
-    a.start()
+    a = Parent.spawn()
 
     a.suspend()
     assert all(x.is_suspended for x in children)
@@ -182,14 +179,14 @@ def test_pausing_actor_with_children_pauses_the_children():
 
 
 def test_suspending_and_killing_actor_with_some_finished_children():
-    @microprocess
-    def stillborn(self):
+    @actor
+    def Stillborn(self):
         yield
 
     child_killed = [False]
 
-    @microprocess
-    def long_living_child(self):
+    @actor
+    def LongLivingChild(self):
         try:
             yield Deferred()
         except CoroutineStopped:
@@ -197,14 +194,13 @@ def test_suspending_and_killing_actor_with_some_finished_children():
 
     mock_d = Deferred()
 
-    @microprocess
-    def parent(self):
-        self.spawn(make_actor_cls(stillborn))
-        self.spawn(make_actor_cls(long_living_child))
+    @actor
+    def Parent(self):
+        self.spawn(Stillborn)
+        self.spawn(LongLivingChild)
         yield mock_d
 
-    a = make_actor_cls(parent)()
-    a.start()
+    a = Parent.spawn()
 
     with assert_not_raises(CoroutineNotRunning):
         a.suspend()
@@ -218,37 +214,36 @@ def test_suspending_and_killing_actor_with_some_finished_children():
 
 
 def test_actor_finishing_before_child():
-    child_stopped = [False]
+    child_killed = [False]
 
-    @microprocess
-    def child(self):
+    @actor
+    def Child(self):
         try:
             yield Deferred()
         except CoroutineStopped:
-            child_stopped[0] = True
+            child_killed[0] = True
 
-    @microprocess
-    def parent(self):
-        self.spawn(make_actor_cls(child))
+    @actor
+    def Parent(self):
+        self.spawn(Child)
 
-    a = make_actor_cls(parent)()
-    a.start()
-    assert child_stopped[0]
+    Parent.spawn()
+    assert child_killed[0]
 
 
 def test_actor_joins_child():
     clock = Clock()
 
-    child_exit = [None]
+    child_died_naturally = [False]
 
     @actor
     def Child(self):
         try:
             yield sleep(1.0, clock)
         except CoroutineStopped:
-            child_exit[0] = 'forced'
+            pass
         else:
-            child_exit[0] = 'normal'
+            child_died_naturally[0] = True
 
     @actor
     def Parent(self):
@@ -261,7 +256,7 @@ def test_actor_joins_child():
     clock.advance(1.0)
     assert not p.is_alive, "an actor should die when a joining child actor completes"
 
-    assert child_exit[0] == 'normal', "a joining child of an actor should die a natural death"
+    assert child_died_naturally[0], "a joining child of an actor should die a natural death"
 
     ##########################
     # join all children
