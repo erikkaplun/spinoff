@@ -12,10 +12,12 @@ def test_basic():
 
     retval = random.random()
 
+    mock_d = Deferred()
+
     @microprocess
     def Proc():
         called[0] += 1
-        yield
+        yield mock_d
         called[0] += 1
         returnValue(retval)
 
@@ -31,11 +33,15 @@ def test_basic():
         d = proc.start()
     assert isinstance(d, Deferred), "starting a microprocesses returns a Deferred"
 
+    with assert_raises(CoroutineAlreadyRunning):
+        proc.start()
+
+    mock_d.callback(None)
+
     assert called[0] == 2, "the coroutine in a microprocess should complete as normal"
     assert deferred_result(d) == retval, "the deferred returned by microprocess.start should contain the result of the coroutine"
 
-    with assert_raises(CoroutineAlreadyRunning):
-        proc.start()
+    assert not proc.is_alive
 
 
 def test_returnvalue():
