@@ -81,7 +81,7 @@ class Actor(object):
         child = actor_cls(parent=self, *args, **kwargs)
         d = child.start()
         d.addCallback(on_result)
-        d.addErrback(lambda f: self.send(inbox='child-results', message=(child, f.value)))
+        d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
         return child
 
     def deliver(self, message, inbox='default'):

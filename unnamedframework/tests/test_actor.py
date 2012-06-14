@@ -85,7 +85,7 @@ def test_root_actor_errors_are_returned_asynchronously():
 def test_child_actor_errors_are_sent_to_parent():
     a1 = Actor()
     a2 = a1.spawn(make_actor_cls(run_with_error))
-    msg = deferred_result(a1.get('child-results'))
+    msg = deferred_result(a1.get('child-errors'))
     assert msg[0] == a2 and isinstance(msg[1], MockException)
 
 
