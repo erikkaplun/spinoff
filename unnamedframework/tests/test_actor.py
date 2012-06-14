@@ -199,11 +199,11 @@ def test_suspending_and_killing_actor_with_some_finished_children():
 
     @microprocess
     def parent(self):
-        self.spawn(make_actor_cls(stillborn, "stillborn"))
-        self.spawn(make_actor_cls(long_living_child, "longliving"))
+        self.spawn(make_actor_cls(stillborn))
+        self.spawn(make_actor_cls(long_living_child))
         yield mock_d
 
-    a = make_actor_cls(parent, "parent")()
+    a = make_actor_cls(parent)()
     a.start()
 
     with assert_not_raises(CoroutineNotRunning):
@@ -279,11 +279,10 @@ def test_actor_joins_child():
     assert not p.is_alive
 
 
-def make_actor_cls(run_fn=lambda self: None, name=''):
+def make_actor_cls(run_fn):
     class MockActor(Actor):
         run = run_fn
-        if name:
-            __repr__ = lambda self: name
+    MockActor.__name__ = run_fn.__name__
     return MockActor
 
 
