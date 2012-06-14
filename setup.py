@@ -6,8 +6,7 @@ setup(
     packages=find_packages(),
 
     install_requires=[
-        'twisted==12.0',
-        'zope.interface',
+        'twisted>=12.0',
         'txzmq',
         ],
 
