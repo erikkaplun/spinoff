@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import sys
 import warnings
+import types
 from collections import defaultdict
 
 from twisted.application import service
@@ -13,7 +14,7 @@ from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
 from spinoff.util.python import combomethod
-from spinoff.util.microprocess import MicroProcess
+from spinoff.util.microprocess import MicroProcess, microprocess
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
@@ -102,6 +103,9 @@ class Actor(MicroProcess):
             else:
                 raise TypeError("spawn() requires an actor class to be passed as the "
                                 "first argument or actor_cls keyword argument")
+
+            if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
+                actor_cls = microprocess(actor_cls)
 
             def on_result(result):
                 if result is not None:
