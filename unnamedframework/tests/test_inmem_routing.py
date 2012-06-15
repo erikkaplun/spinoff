@@ -112,8 +112,8 @@ def test_client_server_interface_with_no_outbox_or_no_inbox():
     server = Actor()
     client = Actor()
 
-    routing.assign_server(server, outbox=None)
-    routing.add_client(client, outbox=None)
+    routing.assign_server(server, outbox=False)
+    routing.add_client(client, outbox=False)
 
     with assert_raises(NoRoute):
         client.put('whatev')
@@ -125,7 +125,7 @@ def test_client_server_interface_with_no_outbox_or_no_inbox():
     server = Actor()
     client = Actor()
 
-    routing.assign_server(server, inbox=None)
+    routing.assign_server(server, inbox=False)
     routing.add_client(client)
 
     with assert_raises(NoRoute):
@@ -137,7 +137,7 @@ def test_client_server_interface_with_no_outbox_or_no_inbox():
     client = Actor()
 
     routing.assign_server(server)
-    routing.add_client(client, inbox=None, identity=123)
+    routing.add_client(client, inbox=False, identity=123)
 
     with assert_raises(NoRoute):
         server.put((123, 'whatev'))
@@ -222,7 +222,7 @@ def test_remove_dealer():
 
     router = routing.make_router_endpoint()
     mock = Actor()
-    router.connect('default', ('default', mock))
+    router.connect(mock)
 
     dealer = routing.make_dealer_endpoint()
 

@@ -3,21 +3,22 @@ from __future__ import print_function
 import sys
 import warnings
 import types
-from collections import defaultdict
 
-from twisted.application import service
 from twisted.application.service import Service
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet.defer import DeferredQueue
+from twisted.internet.defer import Deferred, QueueUnderflow
 from unnamedframework.util.async import combine
-from unnamedframework.util.meta import selfdocumenting
 from zope.interface import Interface, implements
 from unnamedframework.util.python import combomethod
 from unnamedframework.util.microprocess import MicroProcess, microprocess
+import unnamedframework.util.pattern as match
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
+
+
+EMPTY = object()
 
 
 class NoRoute(Exception):
@@ -34,8 +35,8 @@ class InterfaceException(Exception):
 
 class IProducer(Interface):
 
-    def connect(outbox, (inbox, component)):
-        """Connects the `outbox` of this component to one of the `inbox`es of another `component`.
+    def connect(component):
+        """Connects this component to another `component`.
 
         It is legal to pass in `self` as the value of `component` if needed.
 
@@ -44,17 +45,10 @@ class IProducer(Interface):
 
 class IConsumer(Interface):
 
-    def send(message, inbox='default'):
+    def send(message):
         """Sends an incoming `message` into one of the `inbox`es of this component.
 
         Returns a `Deferred` which will be fired when this component has received the `message`.
-
-        """
-
-    def plugged(inbox, component):
-        """Called when something has been plugged into the specified `inbox` of this `IConsumer`.
-
-        (Optional).
 
         """
 
@@ -68,20 +62,16 @@ class Actor(MicroProcess):
 
     parent = property(lambda self: self._parent)
 
-    def __init__(self, connections=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(Actor, self).__init__()
-        self._inboxes = defaultdict(lambda: DeferredQueue(backlog=1))
-        self._waiting = {}
-        self._outboxes = {}
+        self._waiting = None
+        self._inbox = []
+        self._out = None
         self._parent = None
         self._children = []
 
         self._run_args = []
         self._run_kwargs = {}
-
-        if connections:
-            for connection in connections.items():
-                self.connect(*connection)
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
@@ -118,7 +108,7 @@ class Actor(MicroProcess):
             d = child.start()
             self._children.append(child)
             d.addCallback(on_result)
-            d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
+            d.addErrback(lambda f: self.send(('child-failed', child, f.value)))
             d.addBoth(lambda result: (self._children.remove(child), result)[-1])
             return child
 
@@ -128,67 +118,46 @@ class Actor(MicroProcess):
     def join_children(self):
         return combine([x.d for x in self._children])
 
-    def send(self, message, inbox='default'):
-        self._inboxes[inbox].put(message)
+    def send(self, message):
+        if self._waiting:
+            found = EMPTY
+            if self._waiting[0] is None:
+                found = message
+            elif found is EMPTY:
+                m, values = match.match(self._waiting[0], message)
+                if m:
+                    found = values
+            if found is not EMPTY:
+                d = self._waiting[1]
+                self._waiting = None
+                d.callback(found)
+                return
+        self._inbox.append(message)
 
-    def deliver(self, message, inbox='default'):
+    def deliver(self, message):
         warnings.warn("Actor.deliver has been deprecated in favor of Actor.send", DeprecationWarning)
-        return self.send(message, inbox)
+        return self.send(message)
 
-    def connect(self, outbox='default', to=None):
-        """%(parent_doc)s
+    def connect(self, to=None):
+        assert not self._out, '%s vs %s' % (self._out, to)
+        self._out = to
 
-        The connection (`to`) can be either a tuple of `(<inbox>, <receiver>)` or just `receiver`, in which case `<inbox>` is
-        taken to be `'default'`.
+    def get(self, filter=None):
+        if self._inbox:
+            if filter is None:
+                return self._inbox.pop(0)
+            for msg in self._inbox:
+                m, values = match.match(filter, msg)
+                if m:
+                    return values
 
-        If no `outbox` is specified, it is taken to be `'default'`, thus:
+        d = Deferred(lambda d: setattr(self, '_waiting', None))
+        if self._waiting:
+            raise QueueUnderflow()
+        self._waiting = (filter, d)
+        return d
 
-            `comp_a.connect(to=...)`
-
-        is equivalent to:
-
-            `comp_a.connect('default', ...)`
-
-        and
-
-            `comp_a.connect(to=comp_b)`
-
-        is equivalent to:
-
-            `a.connect('default', ('default', b))`
-
-        and
-
-            `comp_a.connect('outbox', comp_b)`
-
-        is equivalent to:
-
-            `comp_a.connect('outbox', ('default', comp_b))`
-
-        """
-        inbox, receiver = (to if isinstance(to, tuple) else ('default', to))
-        self._outboxes.setdefault(outbox, []).append((inbox, receiver))
-        if hasattr(receiver, 'plugged'):
-            receiver.plugged(inbox, self)
-        if hasattr(self, 'connected'):
-            self.connected(outbox, receiver)
-    connect.__doc__ %= {'parent_doc': IActor.getDescriptionFor('connect').getDoc()}
-
-    def plugged(self, inbox, component):
-        self._inboxes[inbox]  # leverage defaultdict behaviour
-
-    @selfdocumenting
-    def short_circuit(self, outbox, inbox=None):
-        if inbox is None:
-            inbox = outbox
-        self.connect(outbox, (inbox, self))
-
-    def get(self, inbox='default'):
-        if inbox not in self._inboxes:
-            warnings.warn("Actor %s attempted to get from a non-existent inbox %s" % (repr(self), repr(inbox)))
-        return self._inboxes[inbox].get()
-
-    def put(self, message, outbox='default'):
+    def put(self, message):
         """Puts a `message` into one of the `outbox`es of this component.
 
         If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
@@ -198,12 +167,10 @@ class Actor(MicroProcess):
         Returns a `Deferred` which will be fired when the messages has been delivered to all connected components.
 
         """
-        if outbox not in self._outboxes:
-            raise NoRoute("Actor %s has no connection from outbox %s" % (repr(self), repr(outbox)))
+        if not self._out:
+            raise NoRoute("Actor %s has no outgoing connection" % repr(self))
 
-        connections = self._outboxes[outbox]
-        for inbox, component in connections:
-            component.send(message, inbox)
+        self._out.send(message)
 
     def _on_complete(self):
         # mark this actor as stopped only when all children have been joined
@@ -229,13 +196,8 @@ class Actor(MicroProcess):
             child.stop()
 
     def debug_state(self, name=None):
-        for inbox, queue in self._inboxes.items():
-            print('*** %s.INBOX %s:' % (name or '', inbox))
-            for message, _ in queue.pending:
-                print('*** \t%s' % message)
-
-    def inbox(self, inbox):
-        return ('default', _Inbox(self, inbox))
+        for message, _ in self._inbox.pending:
+            print('*** \t%s' % message)
 
     def as_service(self):
         warnings.warn("Actor.as_service is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
@@ -286,18 +248,6 @@ class ActorRunner(Service):
     def stopService(self):
         if self._actor.is_alive:
             self._actor.stop()
-
-
-class _Inbox(object):
-    implements(IConsumer)
-
-    def __init__(self, actor, inbox):
-        self.actor, self.inbox = actor, inbox
-        actor.plugged(inbox, self)
-
-    def send(self, message, inbox='default'):
-        assert inbox == 'default'
-        self.actor.send(message=message, inbox=self.inbox)
 
 
 def actor(fn):

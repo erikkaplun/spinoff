@@ -37,11 +37,9 @@ class Relay(Actor):
     def stop(self):
         self._cleaning_d.cancel()
 
-    def send(self, message, inbox='default'):
+    def send(self, message):
         if not isinstance(message, tuple) and len(message) >= 2:
             raise RoutingException("Messages to Relay should be tuples whose first element is the sender ID")
-        if inbox != 'messages':
-            raise InterfaceException("Relay only has inbox 'messages'")
 
         if len(message) != 2:
             raise InterfaceException("messages should be 2-tuples")
@@ -62,7 +60,7 @@ class Relay(Actor):
                 currtime = self._reactor.seconds()
                 for message, created_at in self._pending[participant_id]:
                     if self._max_message_age is None or created_at > currtime - self._max_message_age:
-                        self.put(outbox='messages', message=(sender_id, message))
+                        self.put(message=(sender_id, message))
                 del self._pending[participant_id]
         elif command == 'uninit':
             if sender_id not in self._nodes:
@@ -74,7 +72,7 @@ class Relay(Actor):
             if recipient is None:
                 raise InterfaceException()
             if recipient in self._node_addrs:
-                self.put(outbox='messages', message=(self._node_addrs[recipient], payload))
+                self.put(message=(self._node_addrs[recipient], payload))
             else:
                 self._pending.setdefault(recipient, []).append((payload, self._reactor.seconds()))
         else:
