@@ -33,7 +33,6 @@ class MicroProcess(object):
     def __init__(self, *args, **kwargs):
         @wraps(self.run)
         def wrap():
-            print args, kwargs
             gen = self._gen = self.run(*args, **kwargs)
             if not isinstance(gen, GeneratorType):
                 yield None
