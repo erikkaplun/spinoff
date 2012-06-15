@@ -26,7 +26,7 @@ class ZmqProxyBase(Actor):
         message, inbox = pickle.loads(message[0])
         self.put(message, outbox=inbox)
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         msg_data_out = pickle.dumps((message, inbox))
         self._conn.sendMsg(msg_data_out)
         return succeed(True)
@@ -64,7 +64,7 @@ class ZmqRouter(ZmqProxyBase):
         message, inbox = pickle.loads(message[0])
         self.put((sender_id, message), outbox=inbox)
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         assert isinstance(message, tuple) and len(message) == 2
         recipient_id, message = message
         msg_data_out = pickle.dumps((message, inbox))
@@ -84,7 +84,7 @@ class ZmqRep(ZmqProxyBase):
         message, inbox = pickle.loads(message)
         self.put((message_id, message), outbox=inbox)
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         try:
             message_id, message = message
         except ValueError:
@@ -97,7 +97,7 @@ class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
     @inlineCallbacks
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         msg_data_out = pickle.dumps((message, inbox))
         msg_data_in = yield self._conn.sendMsg(msg_data_out)
         message, inbox = pickle.loads(msg_data_in[0])

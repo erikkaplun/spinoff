@@ -61,7 +61,7 @@ class RouterDealerTestCase(TestCaseBase):
         for dealer, mock in dealers:
             msg = 'PING%s' % i
 
-            router.deliver(message=(dealer.identity, msg), inbox='default')
+            router.send(message=(dealer.identity, msg), inbox='default')
             with assert_not_raises(TimeoutError, "should have received a message"):
                 assert msg == (yield _wait_msg(mock.get('default')))
 
