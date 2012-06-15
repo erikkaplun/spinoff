@@ -105,11 +105,12 @@ class Actor(MicroProcess):
             child = actor_cls(*args, **kwargs)
             if hasattr(child, '_parent'):
                 child._parent = self
-            d = child.start()
-            self._children.append(child)
-            d.addCallback(on_result)
-            d.addErrback(lambda f: self.send(('child-failed', child, f.value)))
-            d.addBoth(lambda result: (self._children.remove(child), result)[-1])
+            if hasattr(child, 'start'):
+                d = child.start()
+                self._children.append(child)
+                d.addCallback(on_result)
+                d.addErrback(lambda f: self.send(('child-failed', child, f.value)))
+                d.addBoth(lambda result: (self._children.remove(child), result)[-1])
             return child
 
     def join(self, other):
