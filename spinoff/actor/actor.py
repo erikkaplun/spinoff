@@ -295,7 +295,7 @@ class _Inbox(object):
         self.actor, self.inbox = actor, inbox
         actor.plugged(inbox, self)
 
-    def send(self, message, inbox):
+    def send(self, message, inbox='default'):
         assert inbox == 'default'
         self.actor.send(message=message, inbox=self.inbox)
 
