@@ -112,8 +112,6 @@ class Actor(MicroProcess):
             if hasattr(child, '_parent'):
                 child._parent = self
             d = child.start()
-            if not d:
-                raise Exception("Child actor start() did not return a Deferred")
             self._children.append(child)
             d.addCallback(on_result)
             d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
