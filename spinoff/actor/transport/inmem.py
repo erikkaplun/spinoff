@@ -9,8 +9,8 @@ class InMemRouterEndpoint(Actor):
         super(InMemRouterEndpoint, self).__init__()
         self._manager = manager
 
-    def send(self, message, inbox='default'):
-        self._manager._delivered_to_router(message, inbox)
+    def send(self, message):
+        self._manager._delivered_to_router(message)
 
 
 class InMemDealerEndpoint(Actor):
@@ -22,8 +22,8 @@ class InMemDealerEndpoint(Actor):
         self._manager = manager
         self._identity = identity
 
-    def send(self, message, inbox='default'):
-        self._manager._delivered_to_dealer(self, message, inbox)
+    def send(self, message):
+        self._manager._delivered_to_dealer(self, message)
 
 
 class InMemoryRouting(object):
@@ -56,12 +56,12 @@ class InMemoryRouting(object):
     def dealer_gone(self, dealer):
         self._dealer_endpoints.remove(dealer)
 
-    def _delivered_to_dealer(self, dealer, message, inbox):
+    def _delivered_to_dealer(self, dealer, message):
         if dealer not in self._dealer_endpoints:
             raise RoutingException("No such dealer (anymore)")
-        self._router_endpoint.put(outbox=inbox, message=(dealer.identity, message))
+        self._router_endpoint.put(message=(dealer.identity, message))
 
-    def _delivered_to_router(self, message, inbox):
+    def _delivered_to_router(self, message):
         try:
             recipient, contained_message = message
         except TypeError:
@@ -70,31 +70,32 @@ class InMemoryRouting(object):
             raise InterfaceException("Routing key must be specified when sending to a router endpoint")
         for dealer in self._dealer_endpoints:
             if dealer.identity == recipient:
-                dealer.put(outbox=inbox, message=contained_message)
+                dealer.put(message=contained_message)
                 break
         else:
             raise RoutingException("No dealer ID matches the specified routing key (%s)" % recipient)
 
-    def assign_server(self, server, inbox='default', outbox='default'):
+    def assign_server(self, server, inbox=True, outbox=True):
         if self._server:
             raise RoutingException("Can assign only one server")
         self._server = True
         router = self.make_router_endpoint()
-        if inbox is not None:
-            router.connect('default', (inbox, server))
-        server.connect(outbox, ('default', router))
+        if inbox:
+            router.connect(to=server)
+        if outbox:
+            server.connect(to=router)
 
-    def add_client(self, client, inbox='default', outbox='default', identity=None):
+    def add_client(self, client, inbox=True, outbox=True, identity=None):
         if client in self._clients:
             raise RoutingException("Attempt add the same client more than once")
 
         dealer = self.make_dealer_endpoint(identity)
 
         self._clients[client] = dealer
-        if outbox is not None:
-            client.connect(outbox, ('default', dealer))
-        if inbox is not None:
-            dealer.connect('default', (inbox, client))
+        if outbox:
+            client.connect(to=dealer)
+        if inbox:
+            dealer.connect(to=client)
 
     def remove_client(self, client):
         if client not in self._clients:

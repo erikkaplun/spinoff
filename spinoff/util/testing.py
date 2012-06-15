@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from functools import wraps
 
 from twisted.internet.task import Clock
+from twisted.internet.defer import Deferred
 
 from spinoff.util.async import CancelledError
 
@@ -50,12 +51,15 @@ def immediate(d):
 def deferred_result(d):
     ret = [None]
     exc = [None]
-    d = immediate(d)
-    d.addCallback(lambda result: ret.__setitem__(0, result))
-    d.addErrback(lambda f: exc.__setitem__(0, f))
-    if exc[0]:
-        exc[0].raiseException()
-    return ret[0]
+    if isinstance(d, Deferred):
+        d = immediate(d)
+        d.addCallback(lambda result: ret.__setitem__(0, result))
+        d.addErrback(lambda f: exc.__setitem__(0, f))
+        if exc[0]:
+            exc[0].raiseException()
+        return ret[0]
+    else:
+        return d
 
 
 def cancel_deferred(d):

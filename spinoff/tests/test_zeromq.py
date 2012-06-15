@@ -25,14 +25,8 @@ class TestCaseBase(unittest.TestCase):
         ret = cls(self._z_factory, endpoint, identity)
         self._z_components.append(ret)
         if with_mock:
-            mocked_inboxes = with_mock
-            assert isinstance(mocked_inboxes, (list, basestring, bool))
-
-            if isinstance(mocked_inboxes, bool):
-                mocked_inboxes = 'default'
-
             mock = Actor()
-            ret.connect(mocked_inboxes, mock)
+            ret.connect(mock)
             ret = ret, mock
         return ret
 
@@ -61,9 +55,9 @@ class RouterDealerTestCase(TestCaseBase):
         for dealer, mock in dealers:
             msg = 'PING%s' % i
 
-            router.send(message=(dealer.identity, msg), inbox='default')
+            router.send(message=(dealer.identity, msg))
             with assert_not_raises(TimeoutError, "should have received a message"):
-                assert msg == (yield _wait_msg(mock.get('default')))
+                assert msg == (yield _wait_msg(mock.get()))
 
     def test_router_with_1_dealer(self):
         return self._do_test_router_with_n_dealers(1)
