@@ -204,9 +204,10 @@ class Actor(MicroProcess):
             component.deliver(message, inbox)
 
     def _on_complete(self):
-        super(Actor, self)._on_complete()
-        for child in self._children:
-            child.stop()
+        # mark this actor as stopped only when all children have been joined
+        ret = self.join_children()
+        ret.addCallback(lambda result: super(Actor, self)._on_complete())
+        return ret
 
     def pause(self):
         super(Actor, self).pause()
