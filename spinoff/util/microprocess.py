@@ -103,17 +103,18 @@ class MicroProcess(object):
         if self._state is RUNNING:
             self.pause()
         try:
-            try:
+            if self._gen:
                 try:
-                    self._gen.throw(CoroutineStopped())
-                except CoroutineStopped:
-                    raise StopIteration()
-            except StopIteration:
-                pass
-            except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
-                self.d.callback(ret.value)
-            else:
-                raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
+                    try:
+                        self._gen.throw(CoroutineStopped())
+                    except CoroutineStopped:
+                        raise StopIteration()
+                except StopIteration:
+                    pass
+                except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
+                    self.d.callback(ret.value)
+                else:
+                    raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
         finally:
             if self._state is PAUSED and isinstance(self._paused_result, Failure):
                 warnings.warn("Pending exception in paused microprocess")
