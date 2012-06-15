@@ -65,13 +65,12 @@ class MicroProcess(object):
     def start(self):
         self.resume()
         self.d = maybeDeferred(self._fn)
-        self.d.addBoth(self._on_complete)
+        self.d.addBoth(lambda result: (self._on_complete(), result)[-1])
         return self.d
 
-    def _on_complete(self, result):
+    def _on_complete(self):
         self._running = False
         self._stopped = True
-        return result
 
     def pause(self):
         if not self._running:
@@ -91,9 +90,9 @@ class MicroProcess(object):
     def stop(self):
         if self._stopped:
             raise CoroutineAlreadyStopped("Microprocess already stopped")
-        self._stopped = True
         if self._running:
             self.pause()
+        self._stopped = True
         try:
             try:
                 self._gen.throw(CoroutineStopped())

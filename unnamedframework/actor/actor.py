@@ -12,8 +12,8 @@ from twisted.internet.defer import DeferredQueue
 from unnamedframework.util.async import combine
 from unnamedframework.util.meta import selfdocumenting
 from zope.interface import Interface, implements
-from unnamedframework.util.microprocess import microprocess
 from unnamedframework.util.python import combomethod
+from unnamedframework.util.microprocess import MicroProcess
 
 
 __all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
@@ -62,16 +62,10 @@ class IActor(IProducer, IConsumer):
     pass
 
 
-class Actor(object):
+class Actor(MicroProcess):
     implements(IActor)
 
     parent = property(lambda self: self._parent)
-
-    is_alive = property(lambda self: self._microprocess.is_alive)
-    is_running = property(lambda self: self._microprocess.is_running)
-    is_paused = property(lambda self: self._microprocess.is_paused)
-
-    d = property(lambda self: self._microprocess.d)
 
     def __init__(self, connections=None, *args, **kwargs):
         super(Actor, self).__init__()
@@ -87,8 +81,6 @@ class Actor(object):
         if connections:
             for connection in connections.items():
                 self.connect(*connection)
-
-        self._microprocess = microprocess(self.run)(*args, **kwargs)
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
@@ -128,9 +120,8 @@ class Actor(object):
             d.addBoth(lambda _: self._children.remove(child))
             return child
 
-    # TODO: move to MicroProcess
-    def join(self, actor):
-        return actor.d
+    def join(self, other):
+        return other.d
 
     def join_children(self):
         return combine([x.d for x in self._children])
@@ -210,34 +201,27 @@ class Actor(object):
         for inbox, component in connections:
             component.deliver(message, inbox)
 
-    def run(self):
-        pass
-
-    def start(self):
-        d = self._microprocess.start()
-        d.addBoth(lambda result: (self._on_finish(), result)[-1])
-        return d
-
-    def _on_finish(self):
-        for actor in self._children:
-            actor.stop()
+    def _on_complete(self):
+        super(Actor, self)._on_complete()
+        for child in self._children:
+            child.stop()
 
     def pause(self):
-        self._microprocess.pause()
-        for actor in self._children:
-            if actor.is_running:
-                actor.pause()
+        super(Actor, self).pause()
+        for child in self._children:
+            if child.is_running:
+                child.pause()
 
     def resume(self):
-        self._microprocess.resume()
-        for actor in self._children:
-            if actor.is_alive:
-                assert actor.is_paused
-                actor.resume()
+        super(Actor, self).resume()
+        for child in self._children:
+            assert child.is_paused
+            child.resume()
 
     def stop(self):
-        self._microprocess.stop()
-        self._on_finish()
+        super(Actor, self).stop()
+        for child in self._children:
+            child.stop()
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():
