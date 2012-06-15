@@ -10,6 +10,11 @@ setup(
         'txzmq',
         ],
 
+    entry_points="""
+    [console_scripts]
+    runactor = unnamedframework.runactor:main
+    """,
+
     author="Erik Allik",
     author_email="erik.allik@skype.net",
 )
