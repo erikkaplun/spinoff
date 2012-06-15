@@ -53,30 +53,30 @@ def test_client_server_interface():
     client = Actor()
     client2 = Actor()
 
-    routing.assign_server(server, inbox='in', outbox='out')
-    routing.add_client(client, inbox='in', outbox='out')
+    routing.assign_server(server)
+    routing.add_client(client)
 
     with assert_raises(RoutingException, "should not be able to assign server twice"):
-        routing.assign_server(server, inbox='whatev', outbox='whatev')
+        routing.assign_server(server)
 
     with assert_not_raises(RoutingException):
-        routing.add_client(client2, inbox='in', outbox='out')
+        routing.add_client(client2)
 
     with assert_raises(RoutingException, "should not be able to add the same client twice"):
-        routing.add_client(client, inbox='in', outbox='out')
+        routing.add_client(client)
 
-    client.put(outbox='out', message='msg-1')
-    sender1, msg1 = _get_deferred_result(server.get(inbox='in'))
+    client.put('msg-1')
+    sender1, msg1 = _get_deferred_result(server.get())
     assert msg1 == 'msg-1'
 
-    client2.put(outbox='out', message='msg-2')
-    sender2, msg2 = _get_deferred_result(server.get(inbox='in'))
+    client2.put('msg-2')
+    sender2, msg2 = _get_deferred_result(server.get())
     assert msg2 == 'msg-2'
 
     assert sender1 != sender2
 
-    server.put(outbox='out', message=(sender1, 'msg-3'))
-    msg = _get_deferred_result(client.get(inbox='in'))
+    server.put((sender1, 'msg-3'))
+    msg = _get_deferred_result(client.get())
     assert msg == 'msg-3'
 
     routing.remove_client(client)
@@ -86,8 +86,8 @@ def test_client_server_interface():
         routing.remove_client(Actor())
 
     with assert_raises(RoutingException, "should not be able to send from a client that has been removed"):
-        client.put(outbox='out', message='whatev')
-    d = server.get(inbox='in')
+        client.put('whatev')
+    d = server.get()
     assert not d.called
 
 
@@ -100,7 +100,7 @@ def test_client_server_interface_with_default_boxes():
     routing.assign_server(server)
     routing.add_client(client, identity=1)
 
-    client.put(message='msg-1')
+    client.put('msg-1')
     assert deferred_result(server.get()) == (1, 'msg-1')
 
     server.put((1, 'msg-2'))
@@ -149,12 +149,12 @@ def test_manual_identity():
     server = Actor()
     client = Actor()
 
-    routing.assign_server(server, inbox='in', outbox='out')
-    routing.add_client(client, inbox='in', outbox='out', identity=987)
+    routing.assign_server(server)
+    routing.add_client(client, identity=987)
 
-    client.put(outbox='out', message='whatev')
+    client.put('whatev')
 
-    sender, msg = deferred_result(server.get('in'))
+    sender, msg = deferred_result(server.get())
     assert sender == 987
 
 
@@ -163,10 +163,10 @@ def test_dealer_to_router_communication():
 
     router = routing.make_router_endpoint()
     mock = Actor()
-    router.connect('default', ('default', mock))
+    router.connect(to=mock)
 
     dealer1 = routing.make_dealer_endpoint()
-    dealer1.send(message='msg1', inbox='default')
+    dealer1.send('msg1')
 
     msg = _get_deferred_result(mock.get())
     assert isinstance(msg, tuple), "messages should be delivered on the other end as tuples"
@@ -174,14 +174,14 @@ def test_dealer_to_router_communication():
     assert payload1 == 'msg1', "message should be delivered on the other end as sent"
 
     dealer2 = routing.make_dealer_endpoint()
-    dealer2.send(message='msg2', inbox='default')
+    dealer2.send('msg2')
 
     msg2 = _get_deferred_result(mock.get())
     sender_id2, payload2 = msg2
     assert payload2 == 'msg2'
     assert sender1_id != sender_id2, "messages sent by different dealers should have different sender IDs"
 
-    dealer2.send(message='msg3', inbox='default')
+    dealer2.send('msg3')
     msg = _get_deferred_result(mock.get())
     tmp_sender_id, payload3 = msg
     assert payload3 == 'msg3'
@@ -195,24 +195,24 @@ def test_router_to_dealer_communication():
 
     dealer1 = routing.make_dealer_endpoint()
     mock1 = Actor()
-    dealer1.connect('default', ('default', mock1))
+    dealer1.connect(to=mock1)
 
-    router.send(inbox='default', message=(dealer1.identity, 'msg1'))
+    router.send((dealer1.identity, 'msg1'))
     msg = _get_deferred_result(mock1.get())
     assert msg == 'msg1'
 
     dealer2 = routing.make_dealer_endpoint()
     mock2 = Actor()
-    dealer2.connect('default', ('default', mock2))
+    dealer2.connect(to=mock2)
 
-    router.send(inbox='default', message=(dealer2.identity, 'msg2'))
+    router.send((dealer2.identity, 'msg2'))
     msg = _get_deferred_result(mock2.get())
     assert msg == 'msg2'
 
     dealer1_msg_d = mock1.get()
     assert not dealer1_msg_d.called, "messages are only delivered to a single dealer"
 
-    router.send(inbox='default', message=(dealer1.identity, 'msg3'))
+    router.send((dealer1.identity, 'msg3'))
     msg = _get_deferred_result(dealer1_msg_d)
     assert msg == 'msg3'
 
@@ -232,10 +232,10 @@ def test_remove_dealer():
         routing.dealer_gone(dealer)
 
     with assert_raises(RoutingException, "sending to a dealer that has previously been removed should not be possible"):
-        router.send(inbox='default', message=(dealer.identity, 'whatev'))
+        router.send((dealer.identity, 'whatev'))
 
     with assert_raises(RoutingException, "sending from a dealer that has previously been removed should not be possible"):
-        dealer.send(inbox='default', message='whatev')
+        dealer.send('whatev')
 
 
 def _get_deferred_result(d):

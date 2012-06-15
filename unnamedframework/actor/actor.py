@@ -17,7 +17,7 @@ from unnamedframework.util.python import combomethod
 from unnamedframework.util.microprocess import MicroProcess, microprocess
 
 
-__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'Pipeline', 'Application', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
+__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
 
 
 class NoRoute(Exception):
@@ -298,77 +298,6 @@ class _Inbox(object):
     def send(self, message, inbox='default'):
         assert inbox == 'default'
         self.actor.send(message=message, inbox=self.inbox)
-
-
-def _normalize_pipe(pipe):
-    if not isinstance(pipe, tuple):
-        pipe = (pipe, )
-    assert len(pipe) <= 3, "A pipe definition is should be a 3-tuple"
-
-    is_box = lambda x: isinstance(x, basestring)
-
-    if len(pipe) == 3:
-        assert is_box(pipe[0]), "Left item of a pipe definition should be an inbox name"
-        assert is_box(pipe[2]), "Right item of a pipe definition should be an outbox name"
-    elif len(pipe) == 1:
-        pipe = ('default', pipe[0], 'default')
-    else:
-        pipe = ('default', ) + pipe if is_box(pipe[1]) else pipe + ('default', )
-
-    assert is_box(pipe[0]) or is_box(pipe[2]), "Left and right item of a pipe definition shuld be box names"
-    return pipe
-
-
-def Pipeline(*pipes):
-    """Returns a `Pipeline` that can be used as part of an `Application`.
-
-    A `Pipeline` consists of one ore more pipes.
-
-    A pipe is a connection/link in the pipeline; a pipe connects a
-    component to its neighbouring components via inboxes and outboxes;
-    the normalized form of a pipe definition is a 3-tuple of the form:
-
-        `(<inbox-name>, <component>, <outbox-name>)`
-
-    where `inbox-name`
-    and `outbox-name` should be strings; a pipe definition can
-    optionally be shortened to following forms:
-
-        `(<inbox-name>, <component>)`
-        `(<component>, <outbox-name>)`
-        `(<component>, )`
-        `<component>`
-
-    each of which will be normalized, unspecified box names defaulting
-    to `'default'`.
-
-    """
-    pipes = [_normalize_pipe(pipe) for pipe in pipes]
-
-    for sender, receiver in zip(pipes[:-1], pipes[1:]):
-        _, sender, outbox = sender
-        inbox, receiver, _ = receiver
-        sender.connect(outbox, (inbox, receiver))
-
-    return [pipe[1] for pipe in pipes]
-
-
-def Application(*pipelines):
-    """Returns an application object that can be run using `twistd`.
-
-    An `Application` consists of one or more pipelines.
-
-    """
-    services = []
-    for pipeline in pipelines:
-        # components = [connection[1] for stage in pipeline for connection in stage]
-        services.extend(pipeline)
-
-    application = service.Application("DTS Server")
-    for s in services:
-        s.setServiceParent(application)
-
-    return application
 
 
 def actor(fn):
