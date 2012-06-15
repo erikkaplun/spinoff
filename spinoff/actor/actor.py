@@ -119,7 +119,7 @@ class Actor(MicroProcess):
             self._children.append(child)
             d.addCallback(on_result)
             d.addErrback(lambda f: self.send(inbox='child-errors', message=(child, f.value)))
-            d.addBoth(lambda _: self._children.remove(child))
+            d.addBoth(lambda result: (self._children.remove(child), result)[-1])
             return child
 
     def join(self, other):
