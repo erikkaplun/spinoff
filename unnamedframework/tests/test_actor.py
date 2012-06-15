@@ -251,6 +251,23 @@ def test_actor_joins_child():
     clock.advance(1.0)
     assert not p.is_alive
 
+    ##########################
+    # join a child with error
+
+    @actor
+    def ErrorChild(self):
+        raise Exception()
+
+    @actor
+    def Parent3(self):
+        c = self.spawn(ErrorChild)
+        try:
+            yield self.join(c)
+        except Exception:
+            assert False
+
+    Parent3.spawn()
+
 
 def test_spawn_microprocess():
     bla = [False]

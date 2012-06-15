@@ -1,6 +1,6 @@
 import random
 
-from twisted.internet.defer import Deferred, returnValue, _DefGen_Return
+from twisted.internet.defer import Deferred, returnValue, _DefGen_Return, fail
 
 from unnamedframework.util.microprocess import (microprocess, CoroutineStopped, CoroutineRefusedToStop,
                                                 CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped)
@@ -102,6 +102,49 @@ def test_wrapped_coroutine_yielding_a_non_deferred():
         assert ret is None
     proc2 = Proc2()
     proc2.start()
+
+
+def test_exception():
+    @microprocess
+    def Proc(self):
+        raise MockException()
+
+    proc = Proc()
+    d = proc.start()
+
+    with assert_raises(MockException):
+        deferred_result(d)
+
+
+def test_fail_deferred():
+    @microprocess
+    def Proc(self):
+        yield fail(MockException())
+
+    proc = Proc()
+    d = proc.start()
+
+    with assert_raises(MockException):
+        deferred_result(d)
+
+
+def test_pending_exceptions_on_pause_are_discarded_with_a_warning():
+    mock_d = Deferred()
+
+    @microprocess
+    def Proc(self):
+        yield mock_d
+
+    p = Proc()
+    p.start()
+    p.pause()
+    try:
+        raise Exception()
+    except Exception:
+        mock_d.errback()
+
+    with assert_one_warning():
+        p.stop()
 
 
 def test_pausing_and_resuming():
@@ -262,3 +305,7 @@ def test_microprocess_doesnt_require_generator():
     with assert_not_raises():
         d = proc.start()
     deferred_result(d)
+
+
+class MockException(Exception):
+    pass
