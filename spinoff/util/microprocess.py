@@ -1,7 +1,10 @@
+import warnings
+import sys
 from types import GeneratorType
 from functools import wraps
 
 from twisted.internet.defer import Deferred, _DefGen_Return, returnValue, maybeDeferred
+from twisted.python.failure import Failure
 
 # XXX: this is fragile--might break when t.i.d.inlineCallbacks changes
 from ._defer import inlineCallbacks
@@ -44,7 +47,7 @@ class MicroProcess(object):
                     x = gen.send(prev_result)
                     if isinstance(x, Deferred):
                         d = Deferred()
-                        x.addCallback(fire_current_d, d)
+                        x.addBoth(fire_current_d, d)
                         x = d
                     prev_result = yield x
             except StopIteration:
@@ -57,7 +60,10 @@ class MicroProcess(object):
 
     def _fire_current_d(self, result, d):
         if self.is_running:
-            d.callback(result)
+            if isinstance(result, Failure):
+                d.errback(result)
+            else:
+                d.callback(result)
         else:
             self._current_d = d
             self._paused_result = result
@@ -83,7 +89,10 @@ class MicroProcess(object):
             raise CoroutineAlreadyStopped("Microprocess has been stopped")
         self._state = RUNNING
         if self._current_d:
-            self._current_d.callback(self._paused_result)
+            if isinstance(self._paused_result, Failure):
+                self._current_d.errbackback(self._paused_result)
+            else:
+                self._current_d.callback(self._paused_result)
             self._current_d = self._paused_result = None
 
     def stop(self):
@@ -91,18 +100,23 @@ class MicroProcess(object):
             raise CoroutineAlreadyStopped("Microprocess already stopped")
         if self._state is RUNNING:
             self.pause()
-        self._state = STOPPED
         try:
             try:
-                self._gen.throw(CoroutineStopped())
-            except CoroutineStopped:
-                raise StopIteration()
-        except StopIteration:
-            pass
-        except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
-            self.d.callback(ret.value)
-        else:
-            raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
+                try:
+                    self._gen.throw(CoroutineStopped())
+                except CoroutineStopped:
+                    raise StopIteration()
+            except StopIteration:
+                pass
+            except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
+                self.d.callback(ret.value)
+            else:
+                raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
+        finally:
+            if self._state is PAUSED and isinstance(self._paused_result, Failure):
+                warnings.warn("Pending exception in paused microprocess")
+                # self._paused_result.printTraceback()
+            self._state = STOPPED
 
 
 def microprocess(fn):
