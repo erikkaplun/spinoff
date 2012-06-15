@@ -22,12 +22,15 @@ class TestCaseBase(unittest.TestCase):
         self._z_factory = ZmqFactory()
 
     def _make(self, cls, endpoint, identity=None, with_mock=False):
-        ret = cls(self._z_factory, endpoint, identity)
-        self._z_components.append(ret)
         if with_mock:
             mock = Actor()
+            ret = mock.spawn(cls, self._z_factory, endpoint, identity)
             ret.connect(mock)
+            self._z_components.append(ret)
             ret = ret, mock
+        else:
+            ret = cls.spawn(self._z_factory, endpoint, identity)
+            self._z_components.append(ret)
         return ret
 
     def _make_dealer(self, *args, **kwargs):
