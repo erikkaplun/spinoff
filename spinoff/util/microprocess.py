@@ -96,6 +96,8 @@ class MicroProcess(object):
             self._current_d = self._paused_result = None
 
     def stop(self):
+        if self._state is NOT_STARTED:
+            raise Exception("Microprocess not started")
         if self._state is STOPPED:
             raise CoroutineAlreadyStopped("Microprocess already stopped")
         if self._state is RUNNING:
