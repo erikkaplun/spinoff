@@ -205,8 +205,9 @@ def test_actor_finishing_before_child():
     def Parent(self):
         self.spawn(Child)
 
-    Parent.spawn()
-    assert child_stopped[0]
+    p = Parent.spawn()
+    assert not child_stopped[0]
+    assert p.is_running
 
 
 def test_actor_joins_child():

@@ -71,7 +71,18 @@ class MicroProcess(object):
     def start(self):
         self.resume()
         self.d = maybeDeferred(self._fn)
-        self.d.addBoth(lambda result: (self._on_complete(), result)[-1])
+
+        @self.d.addBoth
+        def finally_(result):
+            d = self._on_complete()
+            if d:
+                ret = Deferred()
+                d.addCallback(lambda _: result)  # pass the original result through
+                d.chainDeferred(ret)  # ...but other than that wait on the new deferred
+                return ret
+            else:
+                return result
+
         return self.d
 
     def _on_complete(self):
