@@ -7,6 +7,9 @@ from twisted.internet.defer import Deferred, _DefGen_Return, returnValue, maybeD
 from ._defer import inlineCallbacks
 
 
+NOT_STARTED, RUNNING, PAUSED, STOPPED = range(4)
+
+
 class MicroProcess(object):
     """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
 
@@ -17,17 +20,15 @@ class MicroProcess(object):
 
     """
 
-    _stopped = False
-    _running = False
-
+    _state = NOT_STARTED
     _fn = None
     _gen = None
     _paused_result = None
     _current_d = None
 
-    is_running = property(lambda self: self._running)
-    is_alive = property(lambda self: not self._stopped)
-    is_paused = property(lambda self: not self.is_running and self.is_alive)
+    is_running = property(lambda self: self._state is RUNNING)
+    is_alive = property(lambda self: self._state < STOPPED)
+    is_paused = property(lambda self: self._state is PAUSED)
 
     def __init__(self, *args, **kwargs):
         @wraps(self.run)
@@ -56,7 +57,7 @@ class MicroProcess(object):
         pass
 
     def _fire_current_d(self, result, d):
-        if self._running:
+        if self.is_running:
             d.callback(result)
         else:
             self._current_d = d
@@ -69,30 +70,29 @@ class MicroProcess(object):
         return self.d
 
     def _on_complete(self):
-        self._running = False
-        self._stopped = True
+        self._state = STOPPED
 
     def pause(self):
-        if not self._running:
+        if self._state is not RUNNING:
             raise CoroutineNotRunning()
-        self._running = False
+        self._state = PAUSED
 
     def resume(self):
-        if self._running:
+        if self._state is RUNNING:
             raise CoroutineAlreadyRunning("Microprocess already running")
-        if self._stopped:
+        if self._state is STOPPED:
             raise CoroutineAlreadyStopped("Microprocess has been stopped")
-        self._running = True
+        self._state = RUNNING
         if self._current_d:
             self._current_d.callback(self._paused_result)
             self._current_d = self._paused_result = None
 
     def stop(self):
-        if self._stopped:
+        if self._state is STOPPED:
             raise CoroutineAlreadyStopped("Microprocess already stopped")
-        if self._running:
+        if self._state is RUNNING:
             self.pause()
-        self._stopped = True
+        self._state = STOPPED
         try:
             try:
                 self._gen.throw(CoroutineStopped())
