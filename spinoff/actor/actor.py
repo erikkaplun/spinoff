@@ -8,11 +8,11 @@ from twisted.application import service
 from twisted.application.service import Service
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet.defer import DeferredQueue, Deferred, fail, maybeDeferred
+from twisted.internet.defer import DeferredQueue
 from spinoff.util.async import combine
 from spinoff.util.meta import selfdocumenting
 from zope.interface import Interface, implements
-from spinoff.util.microprocess import microprocess, is_microprocess
+from spinoff.util.microprocess import microprocess
 from spinoff.util.python import combomethod
 
 
@@ -67,12 +67,18 @@ class Actor(object):
 
     parent = property(lambda self: self._parent)
 
-    def __init__(self, parent=None, connections=None, *args, **kwargs):
-        super(Actor, self).__init__(*args, **kwargs)
+    is_alive = property(lambda self: self._microprocess.is_alive)
+    is_running = property(lambda self: self._microprocess.is_running)
+    is_paused = property(lambda self: self._microprocess.is_paused)
+
+    d = property(lambda self: self._microprocess.d)
+
+    def __init__(self, connections=None, *args, **kwargs):
+        super(Actor, self).__init__()
         self._inboxes = defaultdict(lambda: DeferredQueue(backlog=1))
         self._waiting = {}
         self._outboxes = {}
-        self._parent = parent
+        self._parent = None
         self._children = []
 
         self._run_args = []
@@ -82,10 +88,7 @@ class Actor(object):
             for connection in connections.items():
                 self.connect(*connection)
 
-        if is_microprocess(self.run):
-            self._microprocess = self.run(*self._run_args, **self._run_kwargs)
-        else:
-            self._microprocess = None
+        self._microprocess = microprocess(self.run)(*args, **kwargs)
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
@@ -113,10 +116,9 @@ class Actor(object):
                     warnings.warn("actor returned a value but this value will be lost--"
                                   "send it to the parent explicitly instead")
 
-            if not is_microprocess(actor_cls):
-                child = actor_cls(parent=self, *args, **kwargs)
-            else:
-                child = actor_cls(*args, **kwargs)
+            child = actor_cls(*args, **kwargs)
+            if hasattr(child, '_parent'):
+                child._parent = self
             d = child.start()
             if not d:
                 raise Exception("Child actor start() did not return a Deferred")
@@ -208,57 +210,25 @@ class Actor(object):
         for inbox, component in connections:
             component.deliver(message, inbox)
 
-    @microprocess
     def run(self):
-        yield
+        pass
 
     def start(self):
-        try:
-            if self._microprocess:
-                d = self._microprocess.start()
-            else:
-                d = maybeDeferred(self.run, *self._run_args, **self._run_kwargs)
-        except Exception:
-            return fail()
-        else:
-            assert isinstance(d, Deferred)
-            d.addBoth(self._on_finish)
-            self.d = d
-            return d
+        d = self._microprocess.start()
+        d.addBoth(lambda result: (self._on_finish(), result)[-1])
+        return d
 
-    def _on_finish(self, result):
-        self._stop_children()
-        return result
+    def _on_finish(self):
+        for actor in self._children:
+            actor.stop()
 
     def pause(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
         self._microprocess.pause()
         for actor in self._children:
             if actor.is_running:
                 actor.pause()
 
-    @property
-    def is_alive(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
-        return self._microprocess.is_alive
-
-    @property
-    def is_running(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
-        return self._microprocess.is_running
-
-    @property
-    def is_paused(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
-        return self._microprocess.is_paused
-
     def resume(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
         self._microprocess.resume()
         for actor in self._children:
             if actor.is_alive:
@@ -266,14 +236,8 @@ class Actor(object):
                 actor.resume()
 
     def stop(self):
-        if not self._microprocess:
-            raise ActorDoesNotSupportPausing()
-        self._stop_children()
         self._microprocess.stop()
-
-    def _stop_children(self):
-        for actor in self._children:
-            actor.stop()
+        self._on_finish()
 
     def debug_state(self, name=None):
         for inbox, queue in self._inboxes.items():
@@ -418,20 +382,8 @@ def Application(*pipelines):
     return application
 
 
-class ActorDoesNotSupportPausing(Exception):
-    pass
-
-
 def actor(fn):
-
     class ret(Actor):
-
-        def __init__(self, parent=None, *args, **kwargs):
-            super(ret, self).__init__(parent)
-            self._run_args = args
-            self._run_kwargs = kwargs
-
-        run = microprocess(fn)
-
+        run = fn
     ret.__name__ = fn.__name__
     return ret

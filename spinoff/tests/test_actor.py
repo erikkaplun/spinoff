@@ -1,17 +1,21 @@
 from __future__ import print_function
 
-from twisted.internet.defer import QueueUnderflow, Deferred, inlineCallbacks, returnValue
+import warnings
+
+from twisted.internet.defer import QueueUnderflow, Deferred, returnValue
 from twisted.internet.task import Clock
 
 from spinoff.actor.actor import Actor
 from spinoff.util.async import CancelledError
 from spinoff.util.microprocess import microprocess
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises
-from spinoff.actor.actor import ActorDoesNotSupportPausing
 from spinoff.util.testing import assert_one_warning, assert_no_warnings
 from spinoff.util.microprocess import CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped
 from spinoff.util.async import sleep
 from spinoff.actor.actor import actor
+
+
+warnings.simplefilter('always')
 
 
 def test_basic():
@@ -54,24 +58,13 @@ def test_child_non_empty_return_values_raise_a_warning():
 
     # ...with a plain function without a return value
     with assert_no_warnings():
-        a1.spawn(make_actor_cls(lambda self: None))
+        a1.spawn(actor(lambda self: None))
 
     # ...with a plain function
     with assert_one_warning():
-        a1.spawn(make_actor_cls(lambda self: 123))
+        a1.spawn(actor(lambda self: 123))
 
-    # ...with inlineCallbacks
-    def bla(self):
-        yield
-        returnValue(123)
-    with assert_one_warning():
-        a1.spawn(make_actor_cls(inlineCallbacks(bla)))
-
-    # ...with microprocesses + plain function
-    with assert_one_warning():
-        a1.spawn(make_actor_cls(microprocess(lambda self: 123)))
-
-    # ... with microprocess + generator/inlineCallbacks
+    # ... with microprocess + generator
     @microprocess
     def bla2(self):
         yield
@@ -104,7 +97,8 @@ def test_pause_and_resume_actor():
         called[0] += 1
         yield d
         called[0] += 1
-    a = X.spawn()
+    a = X()
+    a.start()
     assert called[0] == 1
 
     a.pause()
@@ -132,38 +126,6 @@ def test_stop_actor():
     a.stop()
 
     assert stopped[0]
-
-
-def test_pause_actor_without_microprocesses():
-    d = Deferred()
-
-    @make_actor_cls
-    @inlineCallbacks
-    def X(self):
-        yield d
-
-    a = X()
-    with assert_raises(ActorDoesNotSupportPausing):
-        a.pause()
-    with assert_raises(ActorDoesNotSupportPausing):
-        a.resume()
-
-    a = X.spawn()
-    with assert_raises(ActorDoesNotSupportPausing):
-        a.pause()
-    with assert_raises(ActorDoesNotSupportPausing):
-        a.resume()
-
-
-def test_pause_non_running_but_pausable_actor():
-    @actor
-    def X(self):
-        yield
-
-    a = X()
-    with assert_not_raises(ActorDoesNotSupportPausing):
-        with assert_raises(CoroutineNotRunning):
-            a.pause()
 
 
 def test_pausing_actor_with_children_pauses_the_children():
@@ -294,7 +256,7 @@ def test_spawn_microprocess():
     bla = [False]
 
     @microprocess
-    def P():
+    def P(self):
         bla[0] = True
         yield Deferred()
 

@@ -1,7 +1,7 @@
 from types import GeneratorType
 from functools import wraps
 
-from twisted.internet.defer import Deferred, _DefGen_Return, returnValue
+from twisted.internet.defer import Deferred, _DefGen_Return, returnValue, maybeDeferred
 
 # XXX: this is fragile--might break when t.i.d.inlineCallbacks changes
 from ._defer import inlineCallbacks
@@ -29,10 +29,11 @@ class MicroProcess(object):
     is_alive = property(lambda self: not self._stopped)
     is_paused = property(lambda self: not self.is_running and self.is_alive)
 
-    def __init__(self, fn, *args, **kwargs):
-        @wraps(fn)
+    def __init__(self, *args, **kwargs):
+        @wraps(self.run)
         def wrap():
-            gen = self._gen = fn(*args, **kwargs)
+            print args, kwargs
+            gen = self._gen = self.run(*args, **kwargs)
             if not isinstance(gen, GeneratorType):
                 yield None
                 returnValue(gen)
@@ -50,6 +51,10 @@ class MicroProcess(object):
                 pass
         self._fn = inlineCallbacks(wrap)
 
+    @staticmethod
+    def run():
+        pass
+
     def _fire_current_d(self, result, d):
         if self._running:
             d.callback(result)
@@ -59,7 +64,7 @@ class MicroProcess(object):
 
     def start(self):
         self.resume()
-        self.d = self._fn()
+        self.d = maybeDeferred(self._fn)
         self.d.addBoth(self._on_complete)
         return self.d
 
@@ -103,15 +108,10 @@ class MicroProcess(object):
 
 
 def microprocess(fn):
-    @wraps(fn)
-    def ret(*args, **kwargs):
-        return MicroProcess(fn, *args, **kwargs)
-    ret.__is_microprocess = True
+    class ret(MicroProcess):
+        run = fn
+    ret.__name__ = fn.__name__
     return ret
-
-
-def is_microprocess(fn):
-    return getattr(fn, '__is_microprocess', False)
 
 
 class CoroutineStopped(Exception):
