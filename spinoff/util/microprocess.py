@@ -75,7 +75,7 @@ class MicroProcess(object):
         @self.d.addBoth
         def finally_(result):
             d = self._on_complete()
-            if d:
+            if d and not isinstance(result, Failure):
                 ret = Deferred()
                 d.addCallback(lambda _: result)  # pass the original result through
                 d.chainDeferred(ret)  # ...but other than that wait on the new deferred
