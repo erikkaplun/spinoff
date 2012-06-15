@@ -51,6 +51,8 @@ class MicroProcess(object):
                         x = d
                     prev_result = yield x
             except StopIteration:
+                # by exiting the while loop, and thus the function, inlineCallbacks will in turn get a StopIteration
+                # from us.
                 pass
         self._fn = inlineCallbacks(wrap)
 
