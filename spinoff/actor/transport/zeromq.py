@@ -1,6 +1,5 @@
 import pickle
 
-from twisted.internet.defer import succeed, inlineCallbacks
 from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 
@@ -24,12 +23,11 @@ class ZmqProxyBase(Actor):
 
     def _zmq_msg_received(self, message):
         message = pickle.loads(message[0])
-        self.put(message)
+        self.parent.send(message)
 
-    def send(self, message):
-        msg_data_out = pickle.dumps(message)
-        self._conn.sendMsg(msg_data_out)
-        return succeed(True)
+    def run(self):
+        while True:
+            self._conn.sendMsg(pickle.dumps((yield self.get())))
 
     def add_endpoints(self, endpoints):
         endpoints = [
@@ -62,14 +60,14 @@ class ZmqRouter(ZmqProxyBase):
 
     def _zmq_msg_received(self, sender_id, message):
         message = pickle.loads(message[0])
-        self.put((sender_id, message))
+        self.parent.send((sender_id, message))
 
-    def send(self, message):
-        assert isinstance(message, tuple) and len(message) == 2
-        recipient_id, message = message
-        msg_data_out = pickle.dumps(message)
-        self._conn.sendMsg(recipient_id, msg_data_out)
-        return succeed(True)
+    def run(self):
+        while True:
+            message = yield self.get()
+            assert isinstance(message, tuple) and len(message) == 2
+            recipient_id, message = message
+            self._conn.sendMsg(recipient_id, pickle.dumps(message))
 
 
 class ZmqDealer(ZmqProxyBase):
@@ -81,24 +79,23 @@ class ZmqRep(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, message_id, message):
-        message = pickle.loads(message)
-        self.put((message_id, message))
+        self.parent.send((message_id, pickle.loads(message)))
 
-    def send(self, message):
-        try:
-            message_id, message = message
-        except ValueError:
-            raise Exception("ZmqRouter requires messages of the form (request_id, response)")
-        msg_data_out = pickle.dumps(message)
-        self._conn.sendMsg(message_id, msg_data_out)
+    def run(self):
+        while True:
+            message = yield self.get()
+            try:
+                message_id, message = message
+            except ValueError:
+                raise Exception("ZmqRouter requires messages of the form (request_id, response)")
+            msg_data_out = pickle.dumps(message)
+            self._conn.sendMsg(message_id, msg_data_out)
 
 
 class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
-    @inlineCallbacks
-    def send(self, message):
-        msg_data_out = pickle.dumps(message)
-        msg_data_in = yield self._conn.sendMsg(msg_data_out)
-        message, inbox = pickle.loads(msg_data_in[0])
-        self.put(message)
+    def run(self):
+        while True:
+            msg_data_in = yield self._conn.sendMsg(pickle.dumps((yield self.get())))
+            self.parent.send(pickle.loads(msg_data_in[0]))
