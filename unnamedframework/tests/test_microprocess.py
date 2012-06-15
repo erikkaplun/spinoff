@@ -3,7 +3,7 @@ import random
 from twisted.internet.defer import Deferred, returnValue, _DefGen_Return
 
 from unnamedframework.util.microprocess import (microprocess, CoroutineStopped, CoroutineRefusedToStop,
-                                                CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped, is_microprocess)
+                                                CoroutineAlreadyRunning, CoroutineNotRunning, CoroutineAlreadyStopped)
 from unnamedframework.util.testing import assert_not_raises, deferred_result, assert_raises, assert_no_warnings, assert_one_warning
 
 
@@ -15,7 +15,7 @@ def test_basic():
     mock_d = Deferred()
 
     @microprocess
-    def Proc():
+    def Proc(self):
         called[0] += 1
         yield mock_d
         called[0] += 1
@@ -46,7 +46,7 @@ def test_basic():
 
 def test_returnvalue():
     @microprocess
-    def Proc():
+    def Proc(self):
         yield
         returnValue(123)
     with assert_no_warnings():
@@ -61,27 +61,11 @@ def test_returnvalue():
         returnValue(123)
 
     @microprocess
-    def Proc2():
+    def Proc2(self):
         yield
         foo()
     with assert_one_warning():
         Proc2().start()
-
-
-def test_is_microprocess():
-    def Proc():
-        yield
-
-    assert not is_microprocess(Proc)
-
-    Proc = microprocess(Proc)
-
-    assert is_microprocess(Proc)
-
-    class Mock(object):
-        some_method = Proc
-    assert is_microprocess(Mock.some_method)
-    assert is_microprocess(Mock().some_method)
 
 
 def test_deferreds_inside_microprocesses():
@@ -90,7 +74,7 @@ def test_deferreds_inside_microprocesses():
     mock_d = Deferred()
 
     @microprocess
-    def Proc():
+    def Proc(self):
         called[0] += 1
         yield mock_d
         called[0] += 1
@@ -105,7 +89,7 @@ def test_deferreds_inside_microprocesses():
 
 def test_wrapped_coroutine_yielding_a_non_deferred():
     @microprocess
-    def Proc():
+    def Proc(self):
         tmp = random.random()
         ret = yield tmp
         assert ret == tmp
@@ -113,7 +97,7 @@ def test_wrapped_coroutine_yielding_a_non_deferred():
     proc.start()
 
     @microprocess
-    def Proc2():
+    def Proc2(self):
         ret = yield
         assert ret is None
     proc2 = Proc2()
@@ -131,7 +115,7 @@ def test_pausing_and_resuming():
         return mock_d
 
     @microprocess
-    def Proc():
+    def Proc(self):
         try:
             ret = yield mock_async_fn()
             async_result[0] = ret
@@ -202,7 +186,7 @@ def test_pausing_and_resuming():
 
 def test_coroutine_does_not_have_to_catch_coroutinestopped():
     @microprocess
-    def Proc():
+    def Proc(self):
         yield Deferred()
     proc = Proc()
     proc.start()
@@ -213,7 +197,7 @@ def test_coroutine_does_not_have_to_catch_coroutinestopped():
 def test_coroutine_must_exit_after_being_stopped():
     # coroutine that violates the rule
     @microprocess
-    def Proc():
+    def Proc(self):
         while True:
             try:
                 yield Deferred()
@@ -226,7 +210,7 @@ def test_coroutine_must_exit_after_being_stopped():
 
     # coroutine that complies with the rule
     @microprocess
-    def Proc2():
+    def Proc2(self):
         while True:
             try:
                 yield Deferred()
@@ -242,7 +226,7 @@ def test_coroutine_can_return_a_value_when_stopped():
     retval = random.random()
 
     @microprocess
-    def Proc():
+    def Proc(self):
         while True:
             try:
                 yield Deferred()
@@ -259,7 +243,7 @@ def test_microprocess_with_args():
     passed_values = [None, None]
 
     @microprocess
-    def Proc(a, b):
+    def Proc(self, a, b):
         yield
         passed_values[:] = [a, b]
 
@@ -271,7 +255,7 @@ def test_microprocess_with_args():
 
 def test_microprocess_doesnt_require_generator():
     @microprocess
-    def Proc():
+    def Proc(self):
         pass
 
     proc = Proc()
