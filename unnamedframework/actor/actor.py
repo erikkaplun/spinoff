@@ -44,8 +44,8 @@ class IProducer(Interface):
 
 class IConsumer(Interface):
 
-    def deliver(message, inbox='default'):
-        """Delivers an incoming `message` into one of the `inbox`es of this component.
+    def send(message, inbox='default'):
+        """Sends an incoming `message` into one of the `inbox`es of this component.
 
         Returns a `Deferred` which will be fired when this component has received the `message`.
 
@@ -128,10 +128,12 @@ class Actor(MicroProcess):
     def join_children(self):
         return combine([x.d for x in self._children])
 
-    def deliver(self, message, inbox='default'):
+    def send(self, message, inbox='default'):
         self._inboxes[inbox].put(message)
 
-    send = deliver
+    def deliver(self, message, inbox='default'):
+        warnings.warn("Actor.deliver has been deprecated in favor of Actor.send", DeprecationWarning)
+        return self.send(message, inbox)
 
     def connect(self, outbox='default', to=None):
         """%(parent_doc)s
@@ -201,7 +203,7 @@ class Actor(MicroProcess):
 
         connections = self._outboxes[outbox]
         for inbox, component in connections:
-            component.deliver(message, inbox)
+            component.send(message, inbox)
 
     def _on_complete(self):
         # mark this actor as stopped only when all children have been joined
@@ -293,9 +295,9 @@ class _Inbox(object):
         self.actor, self.inbox = actor, inbox
         actor.plugged(inbox, self)
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         assert inbox == 'default'
-        self.actor.deliver(message=message, inbox=self.inbox)
+        self.actor.send(message=message, inbox=self.inbox)
 
 
 def _normalize_pipe(pipe):

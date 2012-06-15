@@ -37,7 +37,7 @@ class Relay(Actor):
     def stop(self):
         self._cleaning_d.cancel()
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox):
         if not isinstance(message, tuple) and len(message) >= 2:
             raise RoutingException("Messages to Relay should be tuples whose first element is the sender ID")
         if inbox != 'messages':

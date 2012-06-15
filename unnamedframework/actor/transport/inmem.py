@@ -9,7 +9,7 @@ class InMemRouterEndpoint(Actor):
         super(InMemRouterEndpoint, self).__init__()
         self._manager = manager
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox='default'):
         self._manager._delivered_to_router(message, inbox)
 
 
@@ -22,7 +22,7 @@ class InMemDealerEndpoint(Actor):
         self._manager = manager
         self._identity = identity
 
-    def deliver(self, message, inbox):
+    def send(self, message, inbox='default'):
         self._manager._delivered_to_dealer(self, message, inbox)
 
 
