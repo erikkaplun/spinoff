@@ -79,9 +79,10 @@ class Actor(MicroProcess):
             cls = cls_or_self
             ret = cls(*args, **kwargs)
             d = ret.start()
-            d.addErrback(lambda f: (
-                f.printTraceback(sys.stderr),
-                ))
+            # d.addErrback(lambda f: (
+            #     f.printTraceback(sys.stderr),
+            #     f
+            #     ))
             return ret
         else:
             self = cls_or_self
