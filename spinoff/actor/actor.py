@@ -3,19 +3,24 @@ from __future__ import print_function
 import sys
 import warnings
 import types
+from functools import wraps
 
 from twisted.application.service import Service
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet.defer import Deferred, QueueUnderflow
+from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return
 from spinoff.util.async import combine
 from zope.interface import Interface, implements
 from spinoff.util.python import combomethod
-from spinoff.util.microprocess import MicroProcess, microprocess
 import spinoff.util.pattern as match
 
+from spinoff.util._defer import inlineCallbacks
 
-__all__ = ['IActor', 'IProducer', 'IConsumer', 'Actor', 'NoRoute', 'RoutingException', 'InterfaceException', 'ActorsAsService']
+
+__all__ = [
+    'IActor', 'IProducer', 'IConsumer', 'Actor', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
+    'ActorsAsService', 'CoroutineStopped', 'CoroutineNotRunning', 'CoroutineAlreadyStopped', 'CoroutineAlreadyRunning',
+    'CoroutineRefusedToStop']
 
 
 EMPTY = object()
@@ -57,13 +62,56 @@ class IActor(IProducer, IConsumer):
     pass
 
 
-class Actor(MicroProcess):
+NOT_STARTED, RUNNING, PAUSED, STOPPED = range(4)
+
+
+class Actor(object):
+    """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
+
+    Currently only supports coroutines `yield`ing Twisted `Deferred` objects.
+
+    Internally uses `twisted.internet.defer.inlineCallbacks` and thus all coroutines support all `@inlineCallbacks`
+    features such as `returnValue`.
+
+    """
+
     implements(IActor)
 
     parent = property(lambda self: self._parent)
 
+    is_running = property(lambda self: self._state is RUNNING)
+    is_alive = property(lambda self: self._state < STOPPED)
+    is_paused = property(lambda self: self._state is PAUSED)
+
+    _state = NOT_STARTED
+    _fn = None
+    _gen = None
+    _paused_result = None
+    _current_d = None
+
     def __init__(self, *args, **kwargs):
-        super(Actor, self).__init__()
+        @wraps(self.run)
+        def wrap():
+            gen = self._gen = self.run(*args, **kwargs)
+            if not isinstance(gen, types.GeneratorType):
+                yield None
+                returnValue(gen)
+            fire_current_d = self._fire_current_d
+            prev_result = None
+            try:
+                while True:
+                    x = gen.send(prev_result)
+                    if isinstance(x, Deferred):
+                        d = Deferred()
+                        x.addBoth(fire_current_d, d)
+                        x = d
+                    prev_result = yield x
+            except StopIteration:
+                # by exiting the while loop, and thus the function, inlineCallbacks will in turn get a StopIteration
+                # from us.
+                pass
+        self._fn = inlineCallbacks(wrap)
+
         self._waiting = None
         self._inbox = []
         self._out = None
@@ -72,6 +120,34 @@ class Actor(MicroProcess):
 
         self._run_args = []
         self._run_kwargs = {}
+
+    def start(self):
+        self.resume()
+        self.d = maybeDeferred(self._fn)
+
+        @self.d.addBoth
+        def finally_(result):
+            d = self._on_complete()
+            if d and not isinstance(result, Failure):
+                return d
+            else:
+                print("FOO", result)
+                return result
+
+        return self.d
+
+    def run(self):
+        pass
+
+    def _fire_current_d(self, result, d):
+        if self.is_running:
+            if isinstance(result, Failure):
+                d.errback(result)
+            else:
+                d.callback(result)
+        else:
+            self._current_d = d
+            self._paused_result = result
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
@@ -96,7 +172,7 @@ class Actor(MicroProcess):
                                 "first argument or actor_cls keyword argument")
 
             if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
-                actor_cls = microprocess(actor_cls)
+                actor_cls = actor(actor_cls)
 
             def on_result(result):
                 if result is not None:
@@ -177,23 +253,60 @@ class Actor(MicroProcess):
     def _on_complete(self):
         # mark this actor as stopped only when all children have been joined
         ret = self.join_children()
-        ret.addCallback(lambda result: super(Actor, self)._on_complete())
+        ret.addCallback(lambda result: setattr(self, '_state', STOPPED))
         return ret
 
     def pause(self):
-        super(Actor, self).pause()
+        if self._state is not RUNNING:
+            raise CoroutineNotRunning()
+        self._state = PAUSED
         for child in self._children:
             if child.is_running:
                 child.pause()
 
     def resume(self):
-        super(Actor, self).resume()
+        if self._state is RUNNING:
+            raise CoroutineAlreadyRunning("Microprocess already running")
+        if self._state is STOPPED:
+            raise CoroutineAlreadyStopped("Microprocess has been stopped")
+        self._state = RUNNING
+        if self._current_d:
+            if isinstance(self._paused_result, Failure):
+                self._current_d.errbackback(self._paused_result)
+            else:
+                self._current_d.callback(self._paused_result)
+            self._current_d = self._paused_result = None
+
         for child in self._children:
             assert child.is_paused
             child.resume()
 
     def stop(self):
-        super(Actor, self).stop()
+        if self._state is NOT_STARTED:
+            raise Exception("Microprocess not started")
+        if self._state is STOPPED:
+            raise CoroutineAlreadyStopped("Microprocess already stopped")
+        if self._state is RUNNING:
+            self.pause()
+        try:
+            if self._gen:
+                try:
+                    try:
+                        self._gen.throw(CoroutineStopped())
+                    except CoroutineStopped:
+                        raise StopIteration()
+                except StopIteration:
+                    pass
+                except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
+                    self.d.callback(ret.value)
+                else:
+                    raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
+        finally:
+            if self._state is PAUSED and isinstance(self._paused_result, Failure):
+                warnings.warn("Pending exception in paused microprocess")
+                # self._paused_result.printTraceback()
+            self._state = STOPPED
+
         for child in self._children:
             child.stop()
 
@@ -257,3 +370,23 @@ def actor(fn):
         run = fn
     ret.__name__ = fn.__name__
     return ret
+
+
+class CoroutineStopped(Exception):
+    pass
+
+
+class CoroutineRefusedToStop(Exception):
+    pass
+
+
+class CoroutineAlreadyRunning(Exception):
+    pass
+
+
+class CoroutineNotRunning(Exception):
+    pass
+
+
+class CoroutineAlreadyStopped(Exception):
+    pass
