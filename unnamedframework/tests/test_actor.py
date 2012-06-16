@@ -295,24 +295,23 @@ def test_actor_parent():
     assert a2.parent == a1
 
 
-def test_child_non_empty_return_values_raise_a_warning():
-    a1 = Actor()
+# def test_child_non_empty_return_values_raise_a_warning():
+#     a1 = Actor()
 
-    # ...with a plain function without a return value
-    with assert_no_warnings():
-        a1.spawn(actor(lambda self: None))
+#     # ...with a plain function without a return value
+#     with assert_no_warnings():
+#         a1.spawn(actor(lambda self: None))
 
-    # ...with a plain function
-    with assert_one_warning():
-        a1.spawn(actor(lambda self: 123))
+#     # ...with a plain function
+#     with assert_one_warning():
+#         a1.spawn(actor(lambda self: 123))
 
-    # ... with microprocess + generator
-    @microprocess
-    def bla2(self):
-        yield
-        returnValue(123)
-    with assert_one_warning():
-        a1.spawn(make_actor_cls(bla2))
+#     # ... with microprocess + generator
+#     def bla2(self):
+#         yield
+#         returnValue(123)
+#     with assert_one_warning():
+#         a1.spawn(actor(bla2))
 
 
 def test_root_actor_errors_are_returned_asynchronously():
