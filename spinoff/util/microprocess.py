@@ -1,5 +1,4 @@
 import warnings
-import sys
 from types import GeneratorType
 from functools import wraps
 
@@ -56,8 +55,7 @@ class MicroProcess(object):
                 pass
         self._fn = inlineCallbacks(wrap)
 
-    @staticmethod
-    def run():
+    def run(self):
         pass
 
     def _fire_current_d(self, result, d):

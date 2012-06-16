@@ -6,15 +6,13 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, returnValue
 from twisted.internet.task import Clock
 
-from spinoff.actor.actor import Actor
-from spinoff.util.async import CancelledError
-from spinoff.util.microprocess import microprocess
-from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises
-from spinoff.util.testing import assert_one_warning, assert_no_warnings
-from spinoff.util.microprocess import CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped
-from spinoff.util.async import sleep
-from spinoff.actor.actor import actor
 import spinoff.util.pattern as match
+from spinoff.actor.actor import Actor, actor
+from spinoff.util.async import CancelledError, sleep
+from spinoff.util.microprocess import (microprocess, CoroutineStopped, CoroutineNotRunning,
+                                                CoroutineAlreadyStopped)
+from spinoff.util.testing import (deferred_result, assert_raises, assert_not_raises, assert_one_warning,
+                                           assert_no_warnings)
 
 
 warnings.simplefilter('always')
