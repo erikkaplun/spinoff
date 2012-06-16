@@ -140,7 +140,7 @@ class Actor(object):
         pass
 
     def _fire_current_d(self, result, d):
-        if self.is_running:
+        if self._state is RUNNING:
             if isinstance(result, Failure):
                 d.errback(result)
             else:
@@ -261,7 +261,7 @@ class Actor(object):
             raise CoroutineNotRunning()
         self._state = PAUSED
         for child in self._children:
-            if child.is_running:
+            if child._state is RUNNING:
                 child.pause()
 
     def resume(self):
