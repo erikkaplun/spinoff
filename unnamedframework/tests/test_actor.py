@@ -3,16 +3,13 @@ from __future__ import print_function
 import random
 import warnings
 
-from twisted.internet.defer import QueueUnderflow, Deferred, returnValue
+from twisted.internet.defer import QueueUnderflow, Deferred, fail
 from twisted.internet.task import Clock
 
-import unnamedframework.util.pattern as match
-from unnamedframework.actor.actor import Actor, actor
+from unnamedframework.actor import Actor, actor, CoroutineStopped, CoroutineNotRunning, CoroutineAlreadyStopped, CoroutineAlreadyRunning, CoroutineRefusedToStop
 from unnamedframework.util.async import CancelledError, sleep
-from unnamedframework.util.microprocess import (microprocess, CoroutineStopped, CoroutineNotRunning,
-                                                CoroutineAlreadyStopped)
-from unnamedframework.util.testing import (deferred_result, assert_raises, assert_not_raises, assert_one_warning,
-                                           assert_no_warnings)
+from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning
+from unnamedframework.util import pattern as match
 
 
 warnings.simplefilter('always')
@@ -25,6 +22,233 @@ def test_basic():
 
     c.put('msg-1')
     assert deferred_result(mock.get()) == 'msg-1'
+
+
+def test_flow():
+    called = [0]
+
+    mock_d = Deferred()
+
+    @actor
+    def Proc(self):
+        called[0] += 1
+        yield mock_d
+        called[0] += 1
+
+    proc = Proc()
+    assert not called[0], "creating a microprocess should not automatically start the coroutine in it"
+
+    assert callable(getattr(proc, 'start', None)), "microprocesses should be startable"
+    assert callable(getattr(proc, 'pause', None)), "microprocesses should be pausable"
+    assert callable(getattr(proc, 'resume', None)), "microprocesses should be resumable"
+    assert callable(getattr(proc, 'stop', None)), "microprocesses should be stoppable"
+
+    d = proc.start()
+    assert isinstance(d, Deferred), "starting a microprocesses returns a Deferred"
+
+    with assert_raises(CoroutineAlreadyRunning):
+        proc.start()
+
+    mock_d.callback(None)
+
+    assert called[0] == 2, "the coroutine in a microprocess should complete as normal"
+
+    assert not proc.is_alive
+
+
+def test_yielding_a_non_deferred():
+    @actor
+    def Actor1(self):
+        tmp = random.random()
+        ret = yield tmp
+        assert ret == tmp
+    Actor1.spawn()
+
+    @actor
+    def Actor2(self):
+        ret = yield
+        assert ret is None
+    Actor2.spawn()
+
+
+def test_exception():
+    @actor
+    def X(self):
+        raise MockException()
+
+    proc = X.spawn()
+
+    with assert_raises(MockException):
+        deferred_result(proc.d)
+
+
+def test_fail_deferred():
+    @actor
+    def X(self):
+        yield fail(MockException())
+
+    proc = X.spawn()
+
+    with assert_raises(MockException):
+        deferred_result(proc.d)
+
+
+def test_pending_exceptions_on_pause_are_discarded_with_a_warning():
+    mock_d = Deferred()
+
+    @actor
+    def X(self):
+        yield mock_d
+
+    p = X()
+    p.start()
+    p.pause()
+    try:
+        raise Exception()
+    except Exception:
+        mock_d.errback()
+
+    with assert_one_warning():
+        p.stop()
+
+
+# def test_return_value():
+#     @actor
+#     def X(self):
+
+
+def test_pausing_and_resuming():
+    async_result = [None]
+
+    stopped = [False]
+
+    mock_d = Deferred()
+
+    def mock_async_fn():
+        return mock_d
+
+    @actor
+    def X(self):
+        try:
+            ret = yield mock_async_fn()
+            async_result[0] = ret
+        except CoroutineStopped:
+            stopped[0] = True
+
+    ### resuming when the async called has been fired
+    proc = X.spawn()
+
+    proc.pause()
+    assert not proc.is_running
+    assert proc.is_alive
+    assert proc.is_paused
+
+    with assert_raises(CoroutineNotRunning):
+        proc.pause()
+
+    retval = random.random()
+    mock_d.callback(retval)
+
+    assert not proc.d.called, "a paused coroutine should not be resumed when the call it's waiting on completes"
+
+    proc.resume()
+
+    assert proc.d.called
+
+    assert async_result[0] == retval
+
+    ### resuming when the async call has NOT been fired
+    mock_d = Deferred()
+    proc2 = X.spawn()
+
+    proc2.pause()
+    proc2.resume()
+
+    ### can't resume twice
+    with assert_raises(CoroutineAlreadyRunning, "it should not be possible to resume a microprocess twice"):
+        proc2.resume()
+
+    ### stopping
+    mock_d = Deferred()
+    proc3 = X.spawn()
+
+    proc3.stop()
+    with assert_raises(CoroutineAlreadyStopped):
+        proc3.stop()
+
+    assert stopped[0]
+
+    with assert_raises(CoroutineAlreadyStopped):
+        proc3.start()
+    with assert_raises(CoroutineAlreadyStopped):
+        proc3.resume()
+
+    ### stopping a paused coroutine
+    mock_d = Deferred()
+    proc4 = X.spawn()
+
+    proc4.pause()
+    proc4.stop()
+
+    assert stopped[0]
+
+
+def test_coroutine_does_not_have_to_catch_coroutinestopped():
+    @actor
+    def X(self):
+        yield Deferred()
+    proc = X.spawn()
+    with assert_not_raises(CoroutineStopped):
+        proc.stop()
+
+
+def test_coroutine_must_exit_after_being_stopped():
+    # coroutine that violates the rule
+    @actor
+    def X(self):
+        while True:
+            try:
+                yield Deferred()
+            except CoroutineStopped:
+                pass
+    proc = X.spawn()
+    with assert_raises(CoroutineRefusedToStop, "coroutine should not be allowed to continue working when stopped"):
+        proc.stop()
+
+    # coroutine that complies with the rule
+    @actor
+    def Proc2(self):
+        while True:
+            try:
+                yield Deferred()
+            except CoroutineStopped:
+                break
+    proc2 = Proc2.spawn()
+    with assert_not_raises(CoroutineRefusedToStop):
+        proc2.stop()
+
+
+def test_microprocess_with_args():
+    passed_values = [None, None]
+
+    @actor
+    def Proc(self, a, b):
+        yield
+        passed_values[:] = [a, b]
+
+    Proc.spawn(1, b=2)
+    assert passed_values == [1, 2]
+
+
+def test_microprocess_doesnt_require_generator():
+    @actor
+    def Proc(self):
+        pass
+
+    proc = Proc()
+    with assert_not_raises():
+        proc.start()
+    deferred_result(proc.d)
 
 
 def test_get():
@@ -288,23 +512,23 @@ def test_actor_joins_child():
     Parent3.spawn()
 
 
-def test_spawn_microprocess():
-    bla = [False]
+# def test_spawn_microprocess():
+#     bla = [False]
 
-    @microprocess
-    def P(self):
-        bla[0] = True
-        yield Deferred()
+#     @microprocess
+#     def P(self):
+#         bla[0] = True
+#         yield Deferred()
 
-    @actor
-    def A(self):
-        self.spawn(P)
-        yield Deferred()
+#     @actor
+#     def A(self):
+#         self.spawn(P)
+#         yield Deferred()
 
-    a = A.spawn()
-    assert bla[0]
+#     a = A.spawn()
+#     assert bla[0]
 
-    a.stop()
+#     a.stop()
 
 
 def make_actor_cls(run_fn):
