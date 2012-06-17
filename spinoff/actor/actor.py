@@ -127,12 +127,14 @@ class Actor(object):
 
         @self.d.addBoth
         def finally_(result):
-            d = self._on_complete()
-            if d and not isinstance(result, Failure):
-                return d
-            else:
-                print("FOO", result)
-                return result
+            if self.parent:
+                self.parent.send(('exit', self, result if not isinstance(result, Failure) else result.value))
+
+            if not isinstance(result, Failure):
+                d = self._on_complete()
+                if isinstance(d, Failure):
+                    return d
+            return result
 
         return self.d
 
@@ -174,20 +176,12 @@ class Actor(object):
             if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
                 actor_cls = actor(actor_cls)
 
-            # def on_result(result):
-            #     if result is not None:
-            #         warnings.warn("actor returned a value but this value will be lost--"
-            #                       "send it to the parent explicitly instead")
-
             child = actor_cls(*args, **kwargs)
             if hasattr(child, '_parent'):
                 child._parent = self
-            if hasattr(child, 'start'):
-                d = child.start()
-                self._children.append(child)
-                # d.addCallback(on_result)
-                d.addErrback(lambda f: self.send(('child-failed', child, f.value)))
-                d.addBoth(lambda result: (self._children.remove(child), result)[-1])
+            d = child.start()
+            self._children.append(child)
+            d.addBoth(lambda _: self._children.remove(child))
             return child
 
     def join(self, other):
@@ -288,27 +282,31 @@ class Actor(object):
             raise CoroutineAlreadyStopped("Microprocess already stopped")
         if self._state is RUNNING:
             self.pause()
-        try:
-            if self._gen:
+
+        if self._gen:
+            try:
                 try:
-                    try:
-                        self._gen.throw(CoroutineStopped())
-                    except CoroutineStopped:
-                        raise StopIteration()
-                except StopIteration:
-                    pass
-                except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
-                    self.d.callback(ret.value)
-                else:
-                    raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
-        finally:
-            if self._state is PAUSED and isinstance(self._paused_result, Failure):
-                warnings.warn("Pending exception in paused microprocess")
-                # self._paused_result.printTraceback()
-            self._state = STOPPED
+                    self._gen.throw(CoroutineStopped())
+                except CoroutineStopped:
+                    raise StopIteration()
+            except StopIteration:
+                pass
+            except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
+                self.d.callback(ret.value)
+            else:
+                raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
 
         for child in self._children:
             child.stop()
+
+        if self._state is PAUSED and isinstance(self._paused_result, Failure):
+            warnings.warn("Pending exception in paused microprocess")
+            # self._paused_result.printTraceback()
+
+        self._state = STOPPED
+
+        if self.parent:
+            self.parent.send(('exit', self, CoroutineStopped))
 
     def debug_state(self, name=None):
         for message, _ in self._inbox.pending:

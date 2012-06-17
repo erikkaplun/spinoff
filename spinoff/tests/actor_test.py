@@ -71,28 +71,6 @@ def test_yielding_a_non_deferred():
     Actor2.spawn()
 
 
-def test_exception():
-    @actor
-    def X(self):
-        raise MockException()
-
-    proc = X.spawn()
-
-    with assert_raises(MockException):
-        deferred_result(proc.d)
-
-
-def test_fail_deferred():
-    @actor
-    def X(self):
-        yield fail(MockException())
-
-    proc = X.spawn()
-
-    with assert_raises(MockException):
-        deferred_result(proc.d)
-
-
 def test_pending_exceptions_are_discarded_with_a_warning():
     mock_d = Deferred()
 
@@ -106,11 +84,6 @@ def test_pending_exceptions_are_discarded_with_a_warning():
     mock_d.errback(fail(Exception()))
     with assert_one_warning():
         p.stop()
-
-
-# def test_return_value():
-#     @actor
-#     def X(self):
 
 
 def test_pausing_and_resuming():
@@ -279,47 +252,55 @@ def test_get():
         c.get()
 
 
-def test_actor_parent():
-    a = Actor()
-    assert a.parent == None
+def test_spawn_child_actor():
+    a1 = Actor.spawn()
 
-    a1 = Actor()
-    a2 = a1.spawn(Actor)
+    ###########################
+    @a1.spawn
+    def a2(self):
+        yield sleep(1.0)
     assert a2.parent == a1
 
+    ###########################
+    a2.stop()
+    assert deferred_result(a1.get()) == ('exit', a2, CoroutineStopped), \
+        "child actor forced exit should be sent to its parent"
 
-# def test_child_non_empty_return_values_raise_a_warning():
-#     a1 = Actor()
-
-#     # ...with a plain function without a return value
-#     with assert_no_warnings():
-#         a1.spawn(actor(lambda self: None))
-
-#     # ...with a plain function
-#     with assert_one_warning():
-#         a1.spawn(actor(lambda self: 123))
-
-#     # ... with microprocess + generator
-#     def bla2(self):
-#         yield
-#         returnValue(123)
-#     with assert_one_warning():
-#         a1.spawn(actor(bla2))
-
-
-def test_root_actor_errors_are_returned_asynchronously():
-    a = run_with_error()
-    with assert_not_raises(MockException):
-        d = a.start()
-    with assert_raises(MockException):
-        deferred_result(d)
-
-
-def test_child_actor_errors_are_sent_to_parent():
+    ###########################
     a1 = Actor()
     a2 = a1.spawn(run_with_error)
     msg = deferred_result(a1.get())
-    assert msg[0:2] == ('child-failed', a2) and isinstance(msg[2], MockException)
+    assert msg[0:2] == ('exit', a2) and isinstance(msg[2], MockException), \
+        "child actor errors should be sent to its parent"
+
+    ###########################
+    for retval in [random.random(), None]:
+        a1 = Actor.spawn()
+        a2 = a1.spawn(lambda self: retval)
+        assert ('exit', a2, retval) == deferred_result(a1.get()), \
+            "child actor return value should be sent to its parent"
+
+
+def test_spawn_root_actor():
+    a1 = Actor()
+    assert not a1.parent
+
+    ###########################
+    a = run_with_error()
+    with assert_not_raises(MockException, "root actor errors should be returned asynchronously"):
+        a.start()
+
+    ###########################
+    with assert_raises(MockException, "root actor errors are returned to the code that spawned it"):
+        deferred_result(a.d)
+
+    ###########################
+    @actor
+    def X(self):
+        yield fail(MockException())
+    proc = X.spawn()
+    with assert_raises(MockException, "root actor errors are returned to the code that spawned it"):
+        deferred_result(proc.d)
 
 
 def test_pause_and_resume_actor():
