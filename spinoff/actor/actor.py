@@ -18,7 +18,7 @@ from spinoff.util._defer import inlineCallbacks
 
 
 __all__ = [
-    'IActor', 'IProducer', 'IConsumer', 'Actor', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
+    'IActor', 'IProducer', 'IConsumer', 'Actor', 'BaseActor', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorStopped', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
     'ActorRefusedToStop']
 
@@ -65,16 +65,7 @@ class IActor(IProducer, IConsumer):
 NOT_STARTED, RUNNING, PAUSED, STOPPED = range(4)
 
 
-class Actor(object):
-    """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
-
-    Currently only supports coroutines `yield`ing Twisted `Deferred` objects.
-
-    Internally uses `twisted.internet.defer.inlineCallbacks` and thus all coroutines support all `@inlineCallbacks`
-    features such as `returnValue`.
-
-    """
-
+class BaseActor(object):
     implements(IActor)
 
     parent = property(lambda self: self._parent)
@@ -84,6 +75,136 @@ class Actor(object):
     is_paused = property(lambda self: self._state is PAUSED)
 
     _state = NOT_STARTED
+    _parent = None
+    _out = None
+
+    def __init__(self):
+        self._children = []
+        self._pending = []
+        self.d = Deferred()
+
+    @combomethod
+    def spawn(cls_or_self, *args, **kwargs):
+        if not isinstance(cls_or_self, BaseActor):
+            cls = cls_or_self
+            ret = cls(*args, **kwargs)
+            ret.start()
+            # d.addErrback(lambda f: (
+            #     f.printTraceback(sys.stderr),
+            #     f
+            #     ))
+            return ret
+        else:
+            return cls_or_self._spawn_child(*args, **kwargs)
+
+    def _spawn_child(self, actor_cls, *args, **kwargs):
+        if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
+            actor_cls = actor(actor_cls)
+
+        child = actor_cls(*args, **kwargs)
+        child._parent = self
+        child.start()
+        self._children.append(child)
+        child.d.addBoth(lambda _: self._children.remove(child))
+        return child
+
+    def start(self):
+        self.resume()
+
+    def send(self, message):
+        if self._state is RUNNING:
+            try:
+                self.handle(message)
+            except BaseException as e:
+                self.parent.send(('error', self, e))
+        else:
+            if self._state is NOT_STARTED:
+                raise ActorNotRunning("Message sent to an actor that hasn't been started ")
+            if self._state is not STOPPED:
+                self._pending.append(message)
+            else:
+                raise ActorNotRunning("Message sent to a stopped actor")
+
+    def handle(self, message):
+        print("Actor %s received %s" % (self, message))
+
+    def pause(self):
+        if self._state is not RUNNING:
+            raise ActorNotRunning()
+        self._state = PAUSED
+        for child in self._children:
+            if child._state is RUNNING:
+                child.pause()
+
+    def resume(self):
+        if self._state is RUNNING:
+            raise ActorAlreadyRunning("Actor already running")
+        if self._state is STOPPED:
+            raise ActorAlreadyStopped("Actor has been stopped")
+        self._state = RUNNING
+
+        for child in self._children:
+            assert child.is_paused
+            child.resume()
+
+        if self._pending:
+            for pending_message in self._pending:
+                self.send(pending_message)
+            self._pending = []
+
+    def stop(self):
+        if self._state is NOT_STARTED:
+            raise Exception("Actor not started")
+        if self._state is STOPPED:
+            raise ActorAlreadyStopped("Actor already stopped")
+        if self._state is RUNNING:
+            self.pause()
+
+        for child in self._children:
+            child.stop()
+
+        if hasattr(self, '_on_stop'):
+            self._on_stop()
+
+        self._state = STOPPED
+
+        if not self.d.called:
+            self.exit(('exit', self, 'stopped'))
+
+    def exit(self, msg):
+        self.parent.send(msg)
+        self.d.callback(None)
+
+    def connect(self, to=None):
+        assert not self._out, '%s vs %s' % (self._out, to)
+        self._out = to
+
+    def put(self, message):
+        """Puts a `message` into one of the `outbox`es of this component.
+
+        If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
+        `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
+        to an inbox of another component and be queued there (if/as needed).
+
+        Returns a `Deferred` which will be fired when the messages has been delivered to all connected components.
+
+        """
+        if not self._out:
+            raise NoRoute("Actor %s has no outgoing connection" % repr(self))
+
+        self._out.send(message)
+
+
+class Actor(BaseActor):
+    """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
+
+    Currently only supports coroutines `yield`ing Twisted `Deferred` objects.
+
+    Internally uses `twisted.internet.defer.inlineCallbacks` and thus all coroutines support all `@inlineCallbacks`
+    features such as `returnValue`.
+
+    """
+
     _fn = None
     _gen = None
     _paused_result = None
@@ -91,6 +212,8 @@ class Actor(object):
     _on_hold_d = None
 
     def __init__(self, *args, **kwargs):
+        super(Actor, self).__init__()
+
         @wraps(self.run)
         def wrap():
             gen = self._gen = self.run(*args, **kwargs)
@@ -122,34 +245,28 @@ class Actor(object):
 
         self._waiting = None
         self._inbox = []
-        self._out = None
-        self._parent = None
-        self._children = []
 
         self._run_args = []
         self._run_kwargs = {}
 
     def start(self):
-        self.resume()
-        self.d = maybeDeferred(self._fn)
+        super(Actor, self).start()
 
-        @self.d.addBoth
+        d = maybeDeferred(self._fn)
+
+        @d.addBoth
         def finally_(result):
-            if self.parent:
-                self.parent.send(('exit', self, result if not isinstance(result, Failure) else result.value))
-
             if not isinstance(result, Failure):
                 d = self._on_complete()
-                if isinstance(d, Failure):
-                    return d
-            return result
-
-        return self.d
+                d.addBoth(lambda _: self.exit(('exit', self, 'done')))
+            else:
+                self.exit(('exit', self, 'error', result.value))
 
     def run(self):
         pass
 
     def _fire_current_d(self, result, d):
+        self._on_hold_d = None
         if self._state is RUNNING:
             if isinstance(result, Failure):
                 d.errback(result)
@@ -159,38 +276,13 @@ class Actor(object):
             self._current_d = d
             self._paused_result = result
 
-    @combomethod
-    def spawn(cls_or_self, *args, **kwargs):
-        if not isinstance(cls_or_self, Actor):
-            cls = cls_or_self
-            ret = cls(*args, **kwargs)
-            ret.start()
-            # d.addErrback(lambda f: (
-            #     f.printTraceback(sys.stderr),
-            #     f
-            #     ))
-            return ret
-        else:
-            return cls_or_self._spawn_child(*args, **kwargs)
-
-    def _spawn_child(self, actor_cls, *args, **kwargs):
-        if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
-            actor_cls = actor(actor_cls)
-
-        child = actor_cls(*args, **kwargs)
-        child._parent = self
-        d = child.start()
-        self._children.append(child)
-        d.addBoth(lambda _: self._children.remove(child))
-        return child
-
     def join(self, other):
         return other.d
 
     def join_children(self):
         return combine([x.d for x in self._children])
 
-    def send(self, message):
+    def handle(self, message):
         if self._waiting:
             found = EMPTY
             if self._waiting[0] is None:
@@ -210,18 +302,19 @@ class Actor(object):
         warnings.warn("Actor.deliver has been deprecated in favor of Actor.send", DeprecationWarning)
         return self.send(message)
 
-    def connect(self, to=None):
-        assert not self._out, '%s vs %s' % (self._out, to)
-        self._out = to
-
     def get(self, filter=None):
         if self._inbox:
             if filter is None:
                 return self._inbox.pop(0)
+            ret = EMPTY
             for msg in self._inbox:
                 m, values = match.match(filter, msg)
                 if m:
-                    return values
+                    ret = values
+                    break
+            if ret is not EMPTY:
+                self._inbox.remove(ret)
+                return ret
 
         d = Deferred(lambda d: setattr(self, '_waiting', None))
         if self._waiting:
@@ -229,41 +322,15 @@ class Actor(object):
         self._waiting = (filter, d)
         return d
 
-    def put(self, message):
-        """Puts a `message` into one of the `outbox`es of this component.
-
-        If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
-        `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
-        to an inbox of another component and be queued there (if/as needed).
-
-        Returns a `Deferred` which will be fired when the messages has been delivered to all connected components.
-
-        """
-        if not self._out:
-            raise NoRoute("Actor %s has no outgoing connection" % repr(self))
-
-        self._out.send(message)
-
     def _on_complete(self):
         # mark this actor as stopped only when all children have been joined
         ret = self.join_children()
         ret.addCallback(lambda result: setattr(self, '_state', STOPPED))
         return ret
 
-    def pause(self):
-        if self._state is not RUNNING:
-            raise ActorNotRunning()
-        self._state = PAUSED
-        for child in self._children:
-            if child._state is RUNNING:
-                child.pause()
-
     def resume(self):
-        if self._state is RUNNING:
-            raise ActorAlreadyRunning("Actor already running")
-        if self._state is STOPPED:
-            raise ActorAlreadyStopped("Actor has been stopped")
-        self._state = RUNNING
+        super(Actor, self).resume()
+
         if self._current_d:
             if isinstance(self._paused_result, Failure):
                 self._current_d.errback(self._paused_result)
@@ -271,18 +338,7 @@ class Actor(object):
                 self._current_d.callback(self._paused_result)
             self._current_d = self._paused_result = None
 
-        for child in self._children:
-            assert child.is_paused
-            child.resume()
-
-    def stop(self):
-        if self._state is NOT_STARTED:
-            raise Exception("Actor not started")
-        if self._state is STOPPED:
-            raise ActorAlreadyStopped("Actor already stopped")
-        if self._state is RUNNING:
-            self.pause()
-
+    def _on_stop(self):
         if self._on_hold_d:
             try:
                 self._on_hold_d.cancel()
@@ -297,24 +353,21 @@ class Actor(object):
                     self._gen.throw(ActorStopped())
                 except ActorStopped:
                     raise StopIteration()
+                except StopIteration:
+                    raise
+                except BaseException as e:
+                    self.exit(('exit', self, 'stopped-unclean', e))
+                    raise StopIteration()
             except StopIteration:
                 pass
-            except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
-                self.d.callback(ret.value)
+            except _DefGen_Return:
+                pass
             else:
-                raise ActorRefusedToStop("Actor was expected to exit but did not")
-
-        for child in self._children:
-            child.stop()
+                self.exit(('exit', self, 'stopped-refuse'))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
             # self._paused_result.printTraceback()
-
-        self._state = STOPPED
-
-        if self.parent:
-            self.parent.send(('exit', self, ActorStopped))
 
     def debug_state(self, name=None):
         for message, _ in self._inbox.pending:

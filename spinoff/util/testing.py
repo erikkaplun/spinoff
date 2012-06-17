@@ -7,6 +7,7 @@ from twisted.internet.task import Clock
 from twisted.internet.defer import Deferred
 
 from spinoff.util.async import CancelledError
+from spinoff.actor.actor import BaseActor
 
 
 __all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction', 'assert_num_warnings', 'assert_no_warnings', 'assert_one_warning']
@@ -157,3 +158,56 @@ class DebugActor(object):
 
     def deliver(self, message, inbox):
         print "%s: received %s into %s" % (self.name, self.debug_fn(message), inbox)
+
+
+class MockActor(BaseActor):
+
+    def __init__(self, *args, **kwargs):
+        super(MockActor, self).__init__(*args, **kwargs)
+        self.messages = []
+        self.waiting = None
+
+    def handle(self, message):
+        if self.waiting:
+            self.waiting.callback(message)
+        else:
+            self.messages.append(message)
+
+    def clear(self):
+        ret = self.messages
+        self.messages = []
+        return ret
+
+    def wait(self):
+        self.waiting = Deferred()
+        return self.waiting
+
+
+class RootActor(object):
+
+    def __init__(self, actor=None):
+        if actor:
+            actor._parent = self
+        self.messages = []
+
+    def send(self, msg):
+        if isinstance(msg[-1], AssertionError):
+            raise msg[-1]
+        else:
+            self.messages.append(msg)
+
+    def clear(self):
+        ret = self.messages
+        self.messages = []
+        return ret
+
+
+def run(a_clses, *args, **kwargs):
+    root = RootActor()
+    actors = []
+    for a_cls in (a_clses if isinstance(a_clses, list) else [a_clses]):
+        a = a_cls(*args, **kwargs)
+        a._parent = root
+        a.start()
+        actors.append(a)
+    return root, actors[0] if len(actors) == 1 else actors

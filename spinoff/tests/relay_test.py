@@ -6,6 +6,8 @@ from spinoff.actor import IActor, RoutingException, Actor, InterfaceException
 from spinoff.util.testing import assert_raises, assert_not_raises, deferred_result
 
 from spinoff.actor.device.relay import Relay
+from spinoff.util.testing import MockActor
+from spinoff.util.testing import run, RootActor
 
 
 class HttpGatewayTest(unittest.TestCase):
@@ -14,77 +16,79 @@ class HttpGatewayTest(unittest.TestCase):
         self._create_relay()
 
     def _create_relay(self, use_clock=False, **kwargs):
-        self.clock = Clock() if use_clock else None
-        self.relay = Relay(reactor=self.clock if use_clock else reactor, **kwargs)
-        self.mock = Actor()
-        self.relay.connect(to=self.mock)
+        self.clock = Clock()
 
-        self.relay.start()
+        self.root = RootActor()
+
+        self.mock = MockActor.spawn()
+        self.mock._parent = self.root
+
+        self.relay = Relay.spawn(reactor=self.clock, **kwargs)
+        self.relay._parent = self.root
+        self.relay.connect(self.mock)
+
         self.addCleanup(self.relay.stop)
 
     def test_interface(self):
         x = self.relay
+        r = self.root
 
-        assert IActor.providedBy(x)
+        x.send((1, ('send', ('whatev', None))))
+        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
+        r.clear()
 
-        with assert_raises(InterfaceException):
-            x.send(message=(1, ('send', ('whatev', None))))
-        with assert_raises(InterfaceException):
-            x.send(message=('send', ('whatev', 1)))
+        x.send(('send', ('whatev', 1)))
+        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
+        r.clear()
 
-        with assert_not_raises(RoutingException):
-            x.send(message=(1, ('send', ('whatev', 1))))
+        x.send((1, ('send', ('whatev', 1))))
+        assert not r.messages
 
-        with assert_raises(InterfaceException):
-            x.send(message=(1, ('init', (None, ))))
-        with assert_not_raises(InterfaceException):
-            x.send(message=(1, ('init', ('some-id', ))))
+        x.send((1, ('init', (None, ))))
+        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
+        r.clear()
+
+        x.send((1, ('init', ('some-id', ))))
+        assert not r.messages
 
     def test_delivery(self):
         x = self.relay
         mock = self.mock
+        r = self.root
 
-        x.send(message=('node-1', ('init', [1])))
-        x.send(message=('node-2', ('send', ['msg-1', 1])))
+        x.send(('node-1', ('init', [1])))
+        x.send(('node-2', ('send', ['msg-1', 1])))
+        assert mock.clear()[-1] == ('node-1', 'msg-1')
 
-        _, msg = deferred_result(mock.get())
-        assert msg == 'msg-1'
+        x.send(('node-2', ('send', ['msg-2', 3])))
+        assert not mock.messages
 
-        x.send(message=('node-2', ('send', ['msg-2', 3])))
+        x.send(('node-3', ('init', [3])))
+        assert mock.clear()[-1] == ('node-3', 'msg-2')
 
-        msg_d = mock.get()
-        assert not msg_d.called
+        x.send(('node-2', ('send', ['msg-3', 3])))
+        assert mock.clear()[-1] == ('node-3', 'msg-3')
 
-        x.send(message=('node-3', ('init', [3])))
+        x.send(('node-3', ('uninit', [])))
+        x.send(('node-2', ('send', ['whatev', 3])))
+        assert not mock.messages
 
-        sender, msg = deferred_result(msg_d)
-        assert msg == 'msg-2'
-
-        x.send(message=('node-2', ('send', ['msg-3', 3])))
-        sender, msg = deferred_result(mock.get())
-        assert msg == 'msg-3'
-
-        x.send(message=('node-3', ('uninit', [])))
-        x.send(message=('node-2', ('send', ['whatev', 3])))
-        msg_d = mock.get()
-        assert not msg_d.called
-
-        with assert_raises(RoutingException):
-            x.send(message=(3, ('uninit', [])))
+        x.send((3, ('uninit', [])))
+        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
+        r.clear()
 
     def test_message_timeout(self):
-        self._create_relay(use_clock=True, max_message_age=10)
+        self._create_relay(max_message_age=10)
 
-        self.relay.send(message=('node-1', ('send', ['msg-1', 2])))
+        self.relay.send(('node-1', ('send', ['msg-1', 2])))
         self.clock.advance(11)
-        self.relay.send(message=('node-2', ('init', [2])))
-        msg_d = self.mock.get()
-        assert not msg_d.called, "messages younger than max_message_age are delivered"
+        self.relay.send(('node-2', ('init', [2])))
+        assert not self.mock.messages, "messages older than max_message_age are not delivered"
 
-        self.relay.send(message=('node-1', ('send', ['msg-2', 3])))
+        self.relay.send(('node-1', ('send', ['msg-2', 3])))
         self.clock.advance(9)
-        self.relay.send(message=('node-3', ('init', [3])))
-        assert msg_d.called, "messages younger than max_message_age are delivered"
+        self.relay.send(('node-3', ('init', [3])))
+        assert self.mock.messages, "messages younger than max_message_age are delivered"
 
 
 if __name__ == '__main__':

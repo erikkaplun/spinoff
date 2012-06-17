@@ -2,10 +2,9 @@ from twisted.internet.defer import inlineCallbacks
 from twisted.trial import unittest
 from txzmq import ZmqFactory
 
-from spinoff.actor.actor import Actor
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import TimeoutError, sleep, with_timeout
-from spinoff.util.testing import assert_not_raises
+from spinoff.util.testing import assert_not_raises, MockActor
 
 
 _wait_msg = lambda d: with_timeout(4.0, d)
@@ -23,7 +22,7 @@ class TestCaseBase(unittest.TestCase):
 
     def _make(self, cls, endpoint, identity=None, with_mock=False):
         if with_mock:
-            mock = Actor()
+            mock = MockActor.spawn()
             ret = mock.spawn(cls, self._z_factory, endpoint, identity)
             ret.connect(mock)
             self._z_components.append(ret)
@@ -60,7 +59,7 @@ class RouterDealerTestCase(TestCaseBase):
 
             router.send(message=(dealer.identity, msg))
             with assert_not_raises(TimeoutError, "should have received a message"):
-                assert msg == (yield _wait_msg(mock.get()))
+                assert msg == (yield mock.wait())
 
     def test_router_with_1_dealer(self):
         return self._do_test_router_with_n_dealers(1)
