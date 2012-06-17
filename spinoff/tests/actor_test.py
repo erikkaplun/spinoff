@@ -162,6 +162,19 @@ def test_pausing_and_resuming():
     assert stopped[0]
 
 
+def test_stopping_cancels_the_deferred_on_hold():
+    cancelled = [False]
+    mock_d = Deferred(lambda _: cancelled.__setitem__(0, True))
+
+    @actor
+    def X(self):
+        yield mock_d
+
+    X.spawn().stop()
+
+    assert cancelled[0]
+
+
 def test_coroutine_does_not_have_to_catch_coroutinestopped():
     @actor
     def X(self):
