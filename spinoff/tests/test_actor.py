@@ -497,15 +497,11 @@ def test_actor_joins_child():
     # join a child with error
 
     @actor
-    def ErrorChild(self):
-        raise Exception()
-
-    @actor
     def Parent3(self):
-        c = self.spawn(ErrorChild)
+        c = self.spawn(run_with_error)
         try:
             yield self.join(c)
-        except Exception:
+        except MockException:
             assert False
 
     Parent3.spawn()
