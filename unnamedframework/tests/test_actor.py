@@ -315,7 +315,7 @@ def test_actor_parent():
 
 
 def test_root_actor_errors_are_returned_asynchronously():
-    a = make_actor_cls(run_with_error)()
+    a = run_with_error()
     with assert_not_raises(MockException):
         d = a.start()
     with assert_raises(MockException):
@@ -324,7 +324,7 @@ def test_root_actor_errors_are_returned_asynchronously():
 
 def test_child_actor_errors_are_sent_to_parent():
     a1 = Actor()
-    a2 = a1.spawn(make_actor_cls(run_with_error))
+    a2 = a1.spawn(run_with_error)
     msg = deferred_result(a1.get())
     assert msg[0:2] == ('child-failed', a2) and isinstance(msg[2], MockException)
 
@@ -511,16 +511,10 @@ def test_actor_joins_child():
     Parent3.spawn()
 
 
-def make_actor_cls(run_fn):
-    class MockActor(Actor):
-        run = run_fn
-    MockActor.__name__ = run_fn.__name__
-    return MockActor
-
-
 class MockException(Exception):
     pass
 
 
+@actor
 def run_with_error(self):
     raise MockException()
