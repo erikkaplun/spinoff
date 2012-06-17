@@ -191,8 +191,8 @@ class RootActor(object):
         self.messages = []
 
     def send(self, msg):
-        if isinstance(msg[-1], AssertionError):
-            raise msg[-1]
+        if msg[0] == 'error' and isinstance(msg[-2], AssertionError):
+            raise msg[-2]
         else:
             self.messages.append(msg)
 

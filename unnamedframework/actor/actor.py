@@ -116,7 +116,7 @@ class BaseActor(object):
             try:
                 self.handle(message)
             except BaseException as e:
-                self.parent.send(('error', self, e))
+                self.parent.send(('error', self, e, True))
         else:
             if self._state is NOT_STARTED:
                 raise ActorNotRunning("Message sent to an actor that hasn't been started ")
@@ -169,7 +169,7 @@ class BaseActor(object):
         self._state = STOPPED
 
         if not self.d.called:
-            self.exit(('exit', self, 'stopped'))
+            self.exit(('stopped', self))
 
     def exit(self, msg):
         self.parent.send(msg)
@@ -258,9 +258,12 @@ class Actor(BaseActor):
         def finally_(result):
             if not isinstance(result, Failure):
                 d = self._on_complete()
-                d.addBoth(lambda _: self.exit(('exit', self, 'done')))
+                d.addBoth(lambda _: self.exit(('done', self)))
             else:
-                self.exit(('exit', self, 'error', result.value))
+                for child in self._children:
+                    child.stop()
+                self._state = STOPPED
+                self.exit(('error', self, result.value, False))
 
     def run(self):
         pass
@@ -356,14 +359,14 @@ class Actor(BaseActor):
                 except StopIteration:
                     raise
                 except BaseException as e:
-                    self.exit(('exit', self, 'stopped-unclean', e))
+                    self.exit(('stopped', self, 'unclean', e))
                     raise StopIteration()
             except StopIteration:
                 pass
             except _DefGen_Return:
                 pass
             else:
-                self.exit(('exit', self, 'stopped-refuse'))
+                self.exit(('stopped', self, 'refused'))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
