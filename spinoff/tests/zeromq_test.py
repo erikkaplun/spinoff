@@ -3,7 +3,7 @@ from twisted.trial import unittest
 
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import TimeoutError, sleep, with_timeout
-from spinoff.util.testing import assert_not_raises, MockActor
+from spinoff.util.testing import assert_not_raises
 from spinoff.util.testing import run
 
 
