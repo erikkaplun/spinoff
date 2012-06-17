@@ -192,12 +192,9 @@ class RootActor(MockActor):
             super(RootActor, self).handle(msg)
 
 
-def run(a_clses, *args, **kwargs):
-    root = RootActor()
-    actors = []
-    for a_cls in (a_clses if isinstance(a_clses, list) else [a_clses]):
-        a = a_cls(*args, **kwargs)
-        a._parent = root
-        a.start()
-        actors.append(a)
-    return root, actors[0] if len(actors) == 1 else actors
+def run(a_cls, *args, **kwargs):
+    root = RootActor.spawn()
+    a = a_cls(*args, **kwargs)
+    a._parent = root
+    a.start()
+    return root, a
