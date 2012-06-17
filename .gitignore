@@ -6,3 +6,4 @@ dist
 _trial_temp
 *.pid
 *.log
+twisted/plugins/dropin.cache
