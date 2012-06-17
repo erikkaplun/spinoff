@@ -19,8 +19,8 @@ from unnamedframework.util._defer import inlineCallbacks
 
 __all__ = [
     'IActor', 'IProducer', 'IConsumer', 'Actor', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
-    'ActorsAsService', 'CoroutineStopped', 'CoroutineNotRunning', 'CoroutineAlreadyStopped', 'CoroutineAlreadyRunning',
-    'CoroutineRefusedToStop']
+    'ActorsAsService', 'ActorStopped', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
+    'ActorRefusedToStop']
 
 
 EMPTY = object()
@@ -246,7 +246,7 @@ class Actor(object):
 
     def pause(self):
         if self._state is not RUNNING:
-            raise CoroutineNotRunning()
+            raise ActorNotRunning()
         self._state = PAUSED
         for child in self._children:
             if child._state is RUNNING:
@@ -254,9 +254,9 @@ class Actor(object):
 
     def resume(self):
         if self._state is RUNNING:
-            raise CoroutineAlreadyRunning("Microprocess already running")
+            raise ActorAlreadyRunning("Actor already running")
         if self._state is STOPPED:
-            raise CoroutineAlreadyStopped("Microprocess has been stopped")
+            raise ActorAlreadyStopped("Actor has been stopped")
         self._state = RUNNING
         if self._current_d:
             if isinstance(self._paused_result, Failure):
@@ -271,9 +271,9 @@ class Actor(object):
 
     def stop(self):
         if self._state is NOT_STARTED:
-            raise Exception("Microprocess not started")
+            raise Exception("Actor not started")
         if self._state is STOPPED:
-            raise CoroutineAlreadyStopped("Microprocess already stopped")
+            raise ActorAlreadyStopped("Actor already stopped")
         if self._state is RUNNING:
             self.pause()
 
@@ -288,27 +288,27 @@ class Actor(object):
         if self._gen:
             try:
                 try:
-                    self._gen.throw(CoroutineStopped())
-                except CoroutineStopped:
+                    self._gen.throw(ActorStopped())
+                except ActorStopped:
                     raise StopIteration()
             except StopIteration:
                 pass
             except _DefGen_Return as ret:  # XXX: is there a way to let inlineCallbacks handle this for us?
                 self.d.callback(ret.value)
             else:
-                raise CoroutineRefusedToStop("Coroutine was expected to exit but did not")
+                raise ActorRefusedToStop("Actor was expected to exit but did not")
 
         for child in self._children:
             child.stop()
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
-            warnings.warn("Pending exception in paused microprocess")
+            warnings.warn("Pending exception in paused actor")
             # self._paused_result.printTraceback()
 
         self._state = STOPPED
 
         if self.parent:
-            self.parent.send(('exit', self, CoroutineStopped))
+            self.parent.send(('exit', self, ActorStopped))
 
     def debug_state(self, name=None):
         for message, _ in self._inbox.pending:
@@ -372,21 +372,21 @@ def actor(fn):
     return ret
 
 
-class CoroutineStopped(Exception):
+class ActorStopped(Exception):
     pass
 
 
-class CoroutineRefusedToStop(Exception):
+class ActorRefusedToStop(Exception):
     pass
 
 
-class CoroutineAlreadyRunning(Exception):
+class ActorAlreadyRunning(Exception):
     pass
 
 
-class CoroutineNotRunning(Exception):
+class ActorNotRunning(Exception):
     pass
 
 
-class CoroutineAlreadyStopped(Exception):
+class ActorAlreadyStopped(Exception):
     pass
