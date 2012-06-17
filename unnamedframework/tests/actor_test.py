@@ -149,6 +149,23 @@ def test_pausing_and_resuming():
     proc2.pause()
     proc2.resume()
 
+    ### resuming when the async call has failed
+    mock_d = Deferred()
+    exception_caught = [False]
+
+    @actor
+    def Y(self):
+        try:
+            yield mock_d
+        except MockException:
+            exception_caught[0] = True
+
+    x = Y.spawn()
+    x.pause()
+    mock_d.errback(MockException())
+    x.resume()
+    assert exception_caught[0]
+
     ### can't resume twice
     with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an actor twice"):
         proc2.resume()

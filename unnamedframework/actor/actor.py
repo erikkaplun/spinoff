@@ -266,7 +266,7 @@ class Actor(object):
         self._state = RUNNING
         if self._current_d:
             if isinstance(self._paused_result, Failure):
-                self._current_d.errbackback(self._paused_result)
+                self._current_d.errback(self._paused_result)
             else:
                 self._current_d.callback(self._paused_result)
             self._current_d = self._paused_result = None
