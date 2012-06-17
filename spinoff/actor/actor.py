@@ -18,7 +18,7 @@ from spinoff.util._defer import inlineCallbacks
 
 
 __all__ = [
-    'IActor', 'IProducer', 'IConsumer', 'Actor', 'BaseActor', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
+    'IActor', 'IProducer', 'IConsumer', 'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorStopped', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
     'ActorRefusedToStop']
 
