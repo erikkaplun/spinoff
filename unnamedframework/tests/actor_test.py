@@ -266,14 +266,11 @@ def test_get():
     x, = deferred_result(msg_d)
     assert tmp == x
 
-
-def test_cancel_get():
     c = Actor()
     d = c.get()
     with assert_raises(QueueUnderflow):
         c.get()
 
-    ###
     c = Actor()
     d = c.get()
     d.addErrback(lambda f: f.trap(CancelledError))
