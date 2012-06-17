@@ -123,12 +123,10 @@ def test_connect_and_put():
     def Mock(self):
         received_msg.append((yield self.get()))
 
-    mock = Mock()
-    RootActor(mock)
-    mock.start()
+    root, mock = run(Mock)
 
     c = actor(lambda self: self.put('msg-1'))()
-    RootActor(c)
+    c._parent = root
     c.connect(mock)
     c.start()
 
@@ -147,7 +145,8 @@ def test_flow():
         called[0] += 1
 
     proc = Proc()
-    root = RootActor(proc)
+    root = RootActor.spawn()
+    proc._parent = root
     assert not called[0], "creating an actor should not automatically start the coroutine in it"
 
     proc.start()
