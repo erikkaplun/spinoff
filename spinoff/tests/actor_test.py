@@ -107,7 +107,7 @@ def test_actor_refuses_to_stop():
     assert [('stopped', a, 'refused')] == root.messages, root.messages
 
 
-def test_exception_while_stopping():
+def test_failure_while_stopping():
     mock_d = Deferred()
 
     @actor
@@ -218,7 +218,7 @@ def test_yielding_a_non_deferred():
     run(Actor2)
 
 
-def test_pending_exceptions_are_discarded_with_a_warning():
+def test_pending_failures_are_discarded_with_a_warning():
     mock_d = Deferred()
 
     @actor
