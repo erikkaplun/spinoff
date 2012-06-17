@@ -15,7 +15,7 @@ from unnamedframework.util import pattern as match
 warnings.simplefilter('always')
 
 
-def test_basic():
+def test_connect_and_put():
     c = Actor()
     mock = Actor()
     c.connect(mock)
