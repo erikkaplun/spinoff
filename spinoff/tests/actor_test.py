@@ -81,7 +81,7 @@ def test_pending_exceptions_are_discarded_with_a_warning():
     p = X.spawn()
     p.pause()
 
-    mock_d.errback(fail(Exception()))
+    mock_d.errback(Exception())
     with assert_one_warning():
         p.stop()
 
