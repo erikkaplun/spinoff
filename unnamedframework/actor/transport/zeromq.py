@@ -2,6 +2,7 @@ import pickle
 
 from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
+from txzmq import ZmqFactory
 
 from unnamedframework.actor.actor import Actor
 
@@ -11,11 +12,15 @@ class ZmqProxyBase(Actor):
     CONNECTION_CLASS = None
     DEFAULT_ENDPOINT_TYPE = 'connect'
 
-    def __init__(self, factory, endpoint=None, identity=None):
+    _FACTORY = None
+
+    def __init__(self, endpoint=None, identity=None):
         super(ZmqProxyBase, self).__init__()
         self._identity = identity
         self._endpoints = []
-        self._conn = self.CONNECTION_CLASS(factory, identity=identity)
+        if not self._FACTORY:
+            self._FACTORY = ZmqFactory()
+        self._conn = self.CONNECTION_CLASS(self._FACTORY, identity=identity)
         self._conn.gotMessage = self._zmq_msg_received
 
         if endpoint:
