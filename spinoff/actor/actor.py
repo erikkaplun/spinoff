@@ -163,25 +163,18 @@ class Actor(object):
             #     ))
             return ret
         else:
-            self = cls_or_self
-            if 'actor_cls' in kwargs:
-                actor_cls = kwargs.pop('actor_cls')
-            elif len(args) >= 0:
-                actor_cls = args[0]
-                args = args[1:]
-            else:
-                raise TypeError("spawn() requires an actor class to be passed as the "
-                                "first argument or actor_cls keyword argument")
+            return cls_or_self._spawn_child(*args, **kwargs)
 
-            if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
-                actor_cls = actor(actor_cls)
+    def _spawn_child(self, actor_cls, *args, **kwargs):
+        if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
+            actor_cls = actor(actor_cls)
 
-            child = actor_cls(*args, **kwargs)
-            child._parent = self
-            d = child.start()
-            self._children.append(child)
-            d.addBoth(lambda _: self._children.remove(child))
-            return child
+        child = actor_cls(*args, **kwargs)
+        child._parent = self
+        d = child.start()
+        self._children.append(child)
+        d.addBoth(lambda _: self._children.remove(child))
+        return child
 
     def join(self, other):
         return other.d
