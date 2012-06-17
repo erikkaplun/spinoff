@@ -177,8 +177,7 @@ class Actor(object):
                 actor_cls = actor(actor_cls)
 
             child = actor_cls(*args, **kwargs)
-            if hasattr(child, '_parent'):
-                child._parent = self
+            child._parent = self
             d = child.start()
             self._children.append(child)
             d.addBoth(lambda _: self._children.remove(child))
