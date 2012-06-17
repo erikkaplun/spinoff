@@ -511,25 +511,6 @@ def test_actor_joins_child():
     Parent3.spawn()
 
 
-# def test_spawn_microprocess():
-#     bla = [False]
-
-#     @microprocess
-#     def P(self):
-#         bla[0] = True
-#         yield Deferred()
-
-#     @actor
-#     def A(self):
-#         self.spawn(P)
-#         yield Deferred()
-
-#     a = A.spawn()
-#     assert bla[0]
-
-#     a.stop()
-
-
 def make_actor_cls(run_fn):
     class MockActor(Actor):
         run = run_fn
