@@ -101,13 +101,19 @@ class Actor(object):
             prev_result = None
             try:
                 while True:
-                    x = gen.send(prev_result)
+                    if not isinstance(prev_result, BaseException):
+                        x = gen.send(prev_result)
+                    else:
+                        x = gen.throw(prev_result)
                     if isinstance(x, Deferred):
                         d = Deferred()
                         x.addBoth(fire_current_d, d)
                         self._on_hold_d = x
                         x = d
-                    prev_result = yield x
+                    try:
+                        prev_result = yield x
+                    except BaseException as e:
+                        prev_result = e
             except StopIteration:
                 # by exiting the while loop, and thus the function, inlineCallbacks will in turn get a StopIteration
                 # from us.
