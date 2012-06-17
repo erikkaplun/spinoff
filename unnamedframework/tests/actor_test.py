@@ -3,7 +3,7 @@ from __future__ import print_function
 import random
 import warnings
 
-from twisted.internet.defer import QueueUnderflow, Deferred
+from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 from twisted.internet.task import Clock
 
 from unnamedframework.actor import actor, BaseActor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
@@ -75,8 +75,23 @@ def test_exception_with_children():
     pass
 
 
-def test_actor_ignores_stop():
-    pass
+def test_actor_refuses_to_stop():
+    mock_d = Deferred()
+
+    @actor
+    def A(self):
+        try:
+            yield mock_d
+        except ActorStopped:
+            pass
+        yield succeed(None)
+        assert False
+
+    root, a = run(A)
+
+    a.pause()
+    a.stop()
+    assert [('exit', a, 'stopped-refuse')] == root.messages, root.messages
 
 
 def test_exception_while_stopping():
