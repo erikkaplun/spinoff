@@ -56,6 +56,22 @@ def test_flow():
     assert not proc.is_alive
 
 
+def test_exception():
+    mock_d = Deferred()
+    exception_caught = [False]
+
+    @actor
+    def Y(self):
+        try:
+            yield mock_d
+        except MockException:
+            exception_caught[0] = True
+
+    Y.spawn()
+    mock_d.errback(MockException())
+    assert exception_caught[0]
+
+
 def test_yielding_a_non_deferred():
     @actor
     def Actor1(self):
