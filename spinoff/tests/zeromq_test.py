@@ -1,6 +1,5 @@
 from twisted.internet.defer import inlineCallbacks
 from twisted.trial import unittest
-from txzmq import ZmqFactory
 
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import TimeoutError, sleep, with_timeout
@@ -18,17 +17,16 @@ class TestCaseBase(unittest.TestCase):
 
     def setUp(self):
         self._z_components = []
-        self._z_factory = ZmqFactory()
 
     def _make(self, cls, endpoint, identity=None, with_mock=False):
         if with_mock:
             mock = MockActor.spawn()
-            ret = mock.spawn(cls, self._z_factory, endpoint, identity)
+            ret = mock.spawn(cls, endpoint, identity)
             ret.connect(mock)
             self._z_components.append(ret)
             ret = ret, mock
         else:
-            ret = cls.spawn(self._z_factory, endpoint, identity)
+            ret = cls.spawn(endpoint, identity)
             self._z_components.append(ret)
         return ret
 
