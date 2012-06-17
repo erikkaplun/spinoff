@@ -1,13 +1,8 @@
-from twisted.internet import reactor
 from twisted.internet.task import Clock
 from twisted.trial import unittest
 
-from unnamedframework.actor import IActor, RoutingException, Actor, InterfaceException
-from unnamedframework.util.testing import assert_raises, assert_not_raises, deferred_result
-
 from unnamedframework.actor.device.relay import Relay
-from unnamedframework.util.testing import MockActor
-from unnamedframework.util.testing import run, RootActor
+from unnamedframework.util.testing import MockActor, RootActor
 
 
 class HttpGatewayTest(unittest.TestCase):
