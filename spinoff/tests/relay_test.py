@@ -13,14 +13,9 @@ class HttpGatewayTest(unittest.TestCase):
     def _create_relay(self, use_clock=False, **kwargs):
         self.clock = Clock()
 
-        self.root = RootActor()
-
-        self.mock = MockActor.spawn()
-        self.mock._parent = self.root
-
-        self.relay = Relay.spawn(reactor=self.clock, **kwargs)
-        self.relay._parent = self.root
-        self.relay.connect(self.mock)
+        self.root = RootActor.spawn()
+        self.mock = self.root.spawn(MockActor)
+        self.relay = self.root.spawn(Relay, self.mock, reactor=self.clock, **kwargs)
 
         self.addCleanup(self.relay.stop)
 

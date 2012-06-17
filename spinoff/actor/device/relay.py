@@ -5,13 +5,14 @@ from spinoff.actor import BaseActor, RoutingException, InterfaceException
 
 class Relay(BaseActor):
 
-    def __init__(self, max_message_age=None, reactor=reactor, cleanup_interval=60, *args, **kwargs):
+    def __init__(self, client, max_message_age=None, reactor=reactor, cleanup_interval=60, *args, **kwargs):
         super(Relay, self).__init__(*args, **kwargs)
         self._nodes = {}
         self._node_addrs = {}
         self._pending_messages = {}
         self._max_message_age = max_message_age
         self._reactor = reactor
+        self.connect(client)
 
     def handle(self, message):
         if not isinstance(message, tuple) and len(message) >= 2:
