@@ -156,7 +156,7 @@ class Actor(object):
         if not isinstance(cls_or_self, Actor):
             cls = cls_or_self
             ret = cls(*args, **kwargs)
-            d = ret.start()
+            ret.start()
             # d.addErrback(lambda f: (
             #     f.printTraceback(sys.stderr),
             #     f
