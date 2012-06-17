@@ -93,7 +93,7 @@ def test_fail_deferred():
         deferred_result(proc.d)
 
 
-def test_pending_exceptions_on_pause_are_discarded_with_a_warning():
+def test_pending_exceptions_are_discarded_with_a_warning():
     mock_d = Deferred()
 
     @actor
