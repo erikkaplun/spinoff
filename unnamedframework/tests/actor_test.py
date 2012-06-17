@@ -100,14 +100,10 @@ def test_pending_exceptions_on_pause_are_discarded_with_a_warning():
     def X(self):
         yield mock_d
 
-    p = X()
-    p.start()
+    p = X.spawn()
     p.pause()
-    try:
-        raise Exception()
-    except Exception:
-        mock_d.errback()
 
+    mock_d.errback(fail(Exception()))
     with assert_one_warning():
         p.stop()
 
