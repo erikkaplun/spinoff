@@ -183,23 +183,13 @@ class MockActor(BaseActor):
         return self.waiting
 
 
-class RootActor(object):
+class RootActor(MockActor):
 
-    def __init__(self, actor=None):
-        if actor:
-            actor._parent = self
-        self.messages = []
-
-    def send(self, msg):
+    def handle(self, msg):
         if msg[0] == 'error' and isinstance(msg[-2], AssertionError):
             raise msg[-2]
         else:
-            self.messages.append(msg)
-
-    def clear(self):
-        ret = self.messages
-        self.messages = []
-        return ret
+            super(RootActor, self).handle(msg)
 
 
 def run(a_clses, *args, **kwargs):
