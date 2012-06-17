@@ -22,7 +22,6 @@ class TestCaseBase(unittest.TestCase):
         if with_mock:
             mock = MockActor.spawn()
             ret = mock.spawn(cls, endpoint, identity)
-            ret.connect(mock)
             self._z_components.append(ret)
             ret = ret, mock
         else:
