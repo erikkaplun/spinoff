@@ -47,7 +47,7 @@ def test_base_actor():
     assert not root.messages
 
     x.stop()
-    assert [('exit', x, 'stopped')] == root.messages
+    assert [('stopped', x)] == root.messages
 
 
 def test_base_actor_error():
@@ -59,20 +59,33 @@ def test_base_actor_error():
         b.send('whatev')
     assert not b.d.called
 
-    exit_msg = [None]
-
     @actor
     def P(self):
         b = self.spawn(B)
         b.send('whatev')
-        exit_msg[0] = deferred_result(self.get())
+        msg = deferred_result(self.get())
+        assert msg[:2] == ('error', b) and isinstance(msg[2], MockException) and msg[-1] is True, msg
     run(P)
 
-    assert exit_msg[0][0] == 'error' and isinstance(exit_msg[0][2], MockException), exit_msg
 
+def test_failure_with_children():
+    child_stopped = [False]
 
-def test_exception_with_children():
-    pass
+    @actor
+    def Child(self):
+        try:
+            yield Deferred()
+        except ActorStopped:
+            child_stopped[0] = True
+
+    @actor
+    def A(self):
+        self.spawn(Child)
+        raise MockException()
+
+    run(A)
+
+    assert child_stopped[0]
 
 
 def test_actor_refuses_to_stop():
@@ -91,7 +104,7 @@ def test_actor_refuses_to_stop():
 
     a.pause()
     a.stop()
-    assert [('exit', a, 'stopped-refuse')] == root.messages, root.messages
+    assert [('stopped', a, 'refused')] == root.messages, root.messages
 
 
 def test_exception_while_stopping():
@@ -107,7 +120,7 @@ def test_exception_while_stopping():
     r, a = run(A)
     with assert_not_raises(MockException):
         a.stop()
-    assert len(r.messages) == 1 and r.messages[0][0:3] == ('exit', a, 'stopped-unclean')
+    assert len(r.messages) == 1 and r.messages[0][0:3] == ('stopped', a, 'unclean')
 
 
 def test_connect_and_put():
@@ -157,7 +170,8 @@ def test_flow():
     mock_d.callback(None)
     assert called[0] == 2, "the coroutine in an actor should complete as normal"
     assert not proc.is_alive
-    assert root.messages == [('exit', proc, 'done')]
+    assert root.messages == [('done', proc)]
+    assert not proc.is_alive
 
 
 def test_exception():
@@ -174,6 +188,19 @@ def test_exception():
     run(Y)
     mock_d.errback(MockException())
     assert exception_caught[0]
+
+
+def test_failure():
+    exc = MockException()
+
+    @actor
+    def A(self):
+        raise exc
+
+    root, a = run(A)
+    assert not a.is_alive
+
+    assert [('error', a, exc, False)] == root.messages
 
 
 def test_yielding_a_non_deferred():
@@ -238,7 +265,7 @@ def test_pausing_resuming_and_stopping():
     proc.resume()
 
     assert proc.d.called
-    assert root.messages == [('exit', proc, 'done')]
+    assert root.messages == [('done', proc)]
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
@@ -247,7 +274,8 @@ def test_pausing_resuming_and_stopping():
     proc2.pause()
     proc2.resume()
 
-    assert ('exit', proc2, 'done') not in root.messages
+    assert not stopped[0]
+    assert not root.messages
 
     ### resuming when the async call has failed
     mock_d = Deferred()
@@ -279,7 +307,7 @@ def test_pausing_resuming_and_stopping():
         proc3.stop()
 
     assert stopped[0]
-    assert [('exit', proc3, 'stopped')] == root.messages
+    assert [('stopped', proc3)] == root.messages
 
     with assert_raises(ActorAlreadyStopped):
         proc3.start()
@@ -294,7 +322,7 @@ def test_pausing_resuming_and_stopping():
     proc4.stop()
 
     assert stopped[0]
-    assert [('exit', proc4, 'stopped')] == root.messages, root.messages
+    assert [('stopped', proc4)] == root.messages, root.messages
 
 
 def test_stopping_cancels_the_deferred_on_hold():
@@ -318,7 +346,7 @@ def test_actor_does_not_have_to_catch_actorstopped():
     root, proc = run(X)
     with assert_not_raises(ActorStopped):
         proc.stop()
-    assert [('exit', proc, 'stopped')] == root.messages
+    assert [('stopped', proc)] == root.messages
 
 
 def test_actor_must_exit_after_being_stopped():
@@ -332,7 +360,7 @@ def test_actor_must_exit_after_being_stopped():
                 pass
     root, proc = run(X)
     proc.stop()
-    assert [('exit', proc, 'stopped-refuse')] == root.messages, \
+    assert [('stopped', proc, 'refused')] == root.messages, \
         "actor should not be allowed to continue working when stopped"
 
     # actor that complies with the rule
@@ -345,7 +373,7 @@ def test_actor_must_exit_after_being_stopped():
                 break
     root, proc2 = run(Proc2)
     proc2.stop()
-    assert [('exit', proc2, 'stopped')] == root.messages, root.messages
+    assert [('stopped', proc2)] == root.messages, root.messages
 
 
 def test_actor_with_args():
@@ -366,7 +394,7 @@ def test_actor_doesnt_require_generator():
         pass
 
     root, proc = run(Proc)
-    assert [('exit', proc, 'done')] == root.messages
+    assert [('done', proc)] == root.messages
 
     @actor
     def Proc2(self):
@@ -445,18 +473,18 @@ def test_spawn_child_actor():
         assert c.parent == self
 
         c.stop()
-        assert deferred_result(self.get()) == ('exit', c, 'stopped'), \
-            "child actor forced exit should be sent to its parent"
+        msg = deferred_result(self.get())
+        assert msg == ('stopped', c), "child actor forced exit should be sent to its parent"
 
         c = self.spawn(run_with_error)
         msg = deferred_result(self.get())
-        assert msg[:3] == ('exit', c, 'error') and isinstance(msg[-1], MockException), \
+        assert msg[:2] == ('error', c) and msg[3] is False and isinstance(msg[-2], MockException), \
             "child actor errors should be sent to its parent"
 
         for retval in [random.random(), None]:
             c = self.spawn(lambda self: retval)
             msg = deferred_result(self.get())
-            assert ('exit', c, 'done') == msg, "child actor return value is ignored"
+            assert ('done', c) == msg, "child actor return value is ignored"
 
     run(Parent)
 
