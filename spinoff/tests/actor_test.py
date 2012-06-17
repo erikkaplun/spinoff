@@ -157,11 +157,6 @@ def test_flow():
     root = RootActor(proc)
     assert not called[0], "creating an actor should not automatically start the coroutine in it"
 
-    assert callable(getattr(proc, 'start', None)), "actors should be startable"
-    assert callable(getattr(proc, 'pause', None)), "actors should be pausable"
-    assert callable(getattr(proc, 'resume', None)), "actors should be resumable"
-    assert callable(getattr(proc, 'stop', None)), "actors should be stoppable"
-
     proc.start()
 
     with assert_raises(ActorAlreadyRunning):
