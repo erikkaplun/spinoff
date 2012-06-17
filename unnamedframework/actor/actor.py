@@ -8,7 +8,7 @@ from functools import wraps
 from twisted.application.service import Service
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return
+from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError
 from unnamedframework.util.async import combine
 from zope.interface import Interface, implements
 from unnamedframework.util.python import combomethod
@@ -88,6 +88,7 @@ class Actor(object):
     _gen = None
     _paused_result = None
     _current_d = None
+    _on_hold_d = None
 
     def __init__(self, *args, **kwargs):
         @wraps(self.run)
@@ -104,6 +105,7 @@ class Actor(object):
                     if isinstance(x, Deferred):
                         d = Deferred()
                         x.addBoth(fire_current_d, d)
+                        self._on_hold_d = x
                         x = d
                     prev_result = yield x
             except StopIteration:
@@ -274,6 +276,14 @@ class Actor(object):
             raise CoroutineAlreadyStopped("Microprocess already stopped")
         if self._state is RUNNING:
             self.pause()
+
+        if self._on_hold_d:
+            try:
+                self._on_hold_d.cancel()
+                assert isinstance(self._paused_result.value, CancelledError)
+                self._paused_result = None
+            except Exception:
+                pass
 
         if self._gen:
             try:
