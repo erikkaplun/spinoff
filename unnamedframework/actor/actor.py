@@ -318,7 +318,6 @@ class Actor(BaseActor):
         self._waiting = (filter, d)
         return d
 
-
     def resume(self):
         super(Actor, self).resume()
 
