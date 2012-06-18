@@ -115,7 +115,7 @@ class BaseActor(object):
         if self._state is RUNNING:
             try:
                 self.handle(message)
-            except BaseException as e:
+            except Exception as e:
                 self.parent.send(('error', self, e, True))
         else:
             if self._state is NOT_STARTED:
@@ -224,7 +224,7 @@ class Actor(BaseActor):
             prev_result = None
             try:
                 while True:
-                    if not isinstance(prev_result, BaseException):
+                    if not isinstance(prev_result, Exception):
                         x = gen.send(prev_result)
                     else:
                         x = gen.throw(prev_result)
@@ -358,7 +358,7 @@ class Actor(BaseActor):
                     raise StopIteration()
                 except StopIteration:
                     raise
-                except BaseException as e:
+                except Exception as e:
                     self.exit(('stopped', self, 'unclean', e))
                     raise StopIteration()
             except StopIteration:
