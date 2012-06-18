@@ -38,13 +38,12 @@ class ActorRunnerMaker(object):
             mod = __import__(module_path, globals(), locals(), [actor_cls_name], -1)
         except ImportError:
             print >> sys.stderr, "error: could not import %s:" % actor
-            failure.Failure().printTraceback()
+            failure.Failure().printTraceback(file=sys.stderr)
             sys.exit(1)
 
         actor_cls = getattr(mod, actor_cls_name)
 
-        ret = ActorRunner(actor_cls())
-        return ret
+        return ActorRunner(actor_cls)
 
 
 serviceMaker = ActorRunnerMaker()
