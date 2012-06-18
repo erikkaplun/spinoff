@@ -3,8 +3,7 @@ from twisted.trial import unittest
 
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import TimeoutError, sleep, with_timeout
-from spinoff.util.testing import assert_not_raises
-from spinoff.util.testing import run
+from spinoff.util.testing import assert_not_raises, run
 
 
 _wait_msg = lambda d: with_timeout(4.0, d)

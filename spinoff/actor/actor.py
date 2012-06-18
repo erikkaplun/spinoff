@@ -1,20 +1,20 @@
 from __future__ import print_function
 
 import sys
-import warnings
 import types
+import warnings
 from functools import wraps
 
 from twisted.application.service import Service
+from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError
 from twisted.python import log
 from twisted.python.failure import Failure
-from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError
-from spinoff.util.async import combine
 from zope.interface import Interface, implements
-from spinoff.util.python import combomethod
-import spinoff.util.pattern as match
 
+import spinoff.util.pattern as match
 from spinoff.util._defer import inlineCallbacks
+from spinoff.util.async import combine
+from spinoff.util.python import combomethod
 
 
 __all__ = [

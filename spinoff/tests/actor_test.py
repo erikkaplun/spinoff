@@ -4,12 +4,11 @@ import random
 import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed
-from twisted.internet.task import Clock
 
 from spinoff.actor import actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
-from spinoff.util.async import CancelledError, sleep
-from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
 from spinoff.util import pattern as match
+from spinoff.util.async import CancelledError
+from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
 
 
 warnings.simplefilter('always')
