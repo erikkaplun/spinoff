@@ -196,9 +196,9 @@ class RootActor(MockActor):
                     raise msg[2][0]
 
 
-def run(a_cls, *args, **kwargs):
+def run(a_cls):
     root = RootActor.spawn()
-    a = a_cls(*args, **kwargs)
+    a = a_cls() if isinstance(a_cls, type) else a_cls
     a._parent = root
     a.start()
     root.raise_errors()

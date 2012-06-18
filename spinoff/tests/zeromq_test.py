@@ -20,7 +20,7 @@ class TestCaseBase(unittest.TestCase):
         self._z_components = []
 
     def _make(self, cls, endpoint, identity=None, with_mock=False):
-        ret = run(cls, endpoint, identity)
+        ret = run(cls(endpoint, identity))
         self._z_components.append(ret[1])
         return ret
 
