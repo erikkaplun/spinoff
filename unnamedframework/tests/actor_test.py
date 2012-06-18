@@ -57,7 +57,7 @@ def test_base_actor_error():
         b = self.spawn(B)
         b.send('whatev')
         msg = deferred_result(self.get())
-        assert msg[:2] == ('error', b) and isinstance(msg[2], MockException) and msg[-1] is True, msg
+        assert msg == ('error', b, (match.InstanceOf(MockException), match.Any), True)
     run(P)
 
 
@@ -76,7 +76,7 @@ def test_failure_with_children():
         self.spawn(Child)
         raise MockException()
 
-    run(A)
+    run(A, raise_only_asserts=True)
 
     assert child_stopped[0]
 
@@ -102,6 +102,7 @@ def test_actor_refuses_to_stop():
 
 def test_failure_while_stopping():
     mock_d = Deferred()
+    print(mock_d)
 
     @actor
     def A(self):
@@ -111,6 +112,7 @@ def test_failure_while_stopping():
             raise MockException()
 
     r, a = run(A)
+    assert a.is_running
     with assert_not_raises(MockException):
         a.stop()
     assert len(r.messages) == 1 and r.messages[0][0:3] == ('stopped', a, 'unclean')
@@ -157,7 +159,7 @@ def test_flow():
     mock_d.callback(None)
     assert called[0] == 2, "the coroutine in an actor should complete as normal"
     assert not proc.is_alive
-    assert root.messages == [('done', proc)]
+    assert root.messages == [('stopped', proc)]
     assert not proc.is_alive
 
 
@@ -184,10 +186,10 @@ def test_failure():
     def A(self):
         raise exc
 
-    root, a = run(A)
+    root, a = run(A, raise_only_asserts=True)
     assert not a.is_alive
 
-    assert [('error', a, exc, False)] == root.messages
+    assert [('error', a, (exc, match.Any), False)] == root.messages
 
 
 def test_yielding_a_non_deferred():
@@ -252,7 +254,7 @@ def test_pausing_resuming_and_stopping():
     proc.resume()
 
     assert proc.d.called
-    assert root.messages == [('done', proc)]
+    assert root.messages == [('stopped', proc)]
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
@@ -371,7 +373,7 @@ def test_actor_with_args():
         yield
         passed_values[:] = [a, b]
 
-    run(Proc, 1, b=2)
+    run(Proc(1, b=2))
     assert passed_values == [1, 2]
 
 
@@ -381,12 +383,12 @@ def test_actor_doesnt_require_generator():
         pass
 
     root, proc = run(Proc)
-    assert [('done', proc)] == root.messages
+    assert [('stopped', proc)] == root.messages
 
     @actor
     def Proc2(self):
         raise MockException()
-    root, proc = run(Proc2)
+    root, proc = run(Proc2, raise_only_asserts=True)
 
 
 def test_get():
@@ -465,13 +467,13 @@ def test_spawn_child_actor():
 
         c = self.spawn(run_with_error)
         msg = deferred_result(self.get())
-        assert msg[:2] == ('error', c) and msg[3] is False and isinstance(msg[-2], MockException), \
+        assert msg[:2] == ('error', c) and msg[3] is False and isinstance(msg[-2][0], MockException), \
             "child actor errors should be sent to its parent"
 
         for retval in [random.random(), None]:
             c = self.spawn(lambda self: retval)
             msg = deferred_result(self.get())
-            assert ('done', c) == msg, "child actor return value is ignored"
+            assert ('stopped', c) == msg, "child actor return value is ignored %s" % repr(msg)
 
     run(Parent)
 
@@ -538,7 +540,7 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
     assert child_stopped[0]
 
 
-def test_actor_finishing_before_child_waits_for_child():
+def test_actor_finishing_before_child_stops_its_children():
     child_stopped = [False]
 
     @actor
@@ -553,64 +555,9 @@ def test_actor_finishing_before_child_waits_for_child():
         self.spawn(Child)
 
     root, p = run(Parent)
-    assert not child_stopped[0]
-    assert p.is_running
-
-
-def test_actor_joins_child():
-    clock = Clock()
-
-    child_died_naturally = [False]
-
-    @actor
-    def Child(self):
-        try:
-            yield sleep(1.0, clock)
-        except ActorStopped:
-            pass
-        else:
-            child_died_naturally[0] = True
-
-    @actor
-    def Parent(self):
-        child = self.spawn(Child)
-        yield self.join(child)
-
-    root, p = run(Parent)
-    assert p.is_running, "an actor should be waiting for a joining child actor to complete"
-
-    clock.advance(1.0)
-    assert not p.is_alive, "an actor should die when a joining child actor completes"
-
-    assert child_died_naturally[0], "a joining child of an actor should die a natural death"
-
-    ##########################
-    # join all children
-
-    @actor
-    def Parent2(self):
-        for _ in range(3):
-            self.spawn(Child)
-        yield self.join_children()
-
-    root, p = run(Parent2)
-    assert p.is_running
-
-    clock.advance(1.0)
-    assert not p.is_alive
-
-    ##########################
-    # join a child with error
-
-    @actor
-    def Parent3(self):
-        c = self.spawn(run_with_error)
-        try:
-            yield self.join(c)
-        except MockException:
-            assert False
-
-    run(Parent3)
+    assert child_stopped[0]
+    assert not p.is_running
+    assert [('stopped', p)] == root.messages
 
 
 class MockException(Exception):

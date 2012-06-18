@@ -116,7 +116,7 @@ class BaseActor(object):
             try:
                 self.handle(message)
             except Exception as e:
-                self.parent.send(('error', self, e, True))
+                self.parent.send(('error', self, (e, sys.exc_info()[2]), True))
         else:
             if self._state is NOT_STARTED:
                 raise ActorNotRunning("Message sent to an actor that hasn't been started ")
@@ -162,9 +162,6 @@ class BaseActor(object):
 
         for child in self._children:
             child.stop(silent=True)
-
-        if hasattr(self, '_on_stop'):
-            self._on_stop()
 
         self._state = STOPPED
 
@@ -257,14 +254,15 @@ class Actor(BaseActor):
 
         @d.addBoth
         def finally_(result):
-            if not isinstance(result, Failure):
-                d = self._on_complete()
-                d.addBoth(lambda _: self.exit(('done', self)))
-            else:
-                for child in self._children:
-                    child.stop()
-                self._state = STOPPED
-                self.exit(('error', self, result.value, False))
+            if isinstance(result, Failure):
+                self.exit(('error', self, (result.value, result.tb or result.getTraceback()), False))
+            super(Actor, self).stop()
+
+        return d
+
+    def stop(self, silent=False):
+        self._on_stop()
+        super(Actor, self).stop()
 
     def run(self):
         pass
@@ -279,12 +277,6 @@ class Actor(BaseActor):
         else:
             self._current_d = d
             self._paused_result = result
-
-    def join(self, other):
-        return other.d
-
-    def join_children(self):
-        return combine([x.d for x in self._children])
 
     def handle(self, message):
         if self._waiting:
@@ -326,11 +318,6 @@ class Actor(BaseActor):
         self._waiting = (filter, d)
         return d
 
-    def _on_complete(self):
-        # mark this actor as stopped only when all children have been joined
-        ret = self.join_children()
-        ret.addCallback(lambda result: setattr(self, '_state', STOPPED))
-        return ret
 
     def resume(self):
         super(Actor, self).resume()
