@@ -397,33 +397,44 @@ class ActorsAsService(Service):
 
 class ActorRunner(Service):
 
-    def __init__(self, actor):
-        self._actor = actor
+    def __init__(self, actor_cls):
+        self._actor_cls = actor_cls
+        self._actor = None
 
     def startService(self):
-        actor_path = '%s.%s' % (type(self._actor).__module__, type(self._actor).__name__)
+        actor_path = self._actor_path = '%s.%s' % (self._actor_cls.__module__, self._actor_cls.__name__)
 
         log.msg("running: %s" % actor_path)
 
-        try:
-            d = self._actor.start()
-        except Exception:
-            sys.stderr.write("failed to start: %s\n" % actor_path)
-            Failure().printTraceback(file=sys.stderr)
-            return
+        def start_actor():
+            try:
+                self._actor = self._actor_cls()
+                self._actor._parent = self
+                self._actor.start()
+            except Exception:
+                sys.stderr.write("failed to start: %s\n" % actor_path)
+                Failure().printTraceback(file=sys.stderr)
+                return
 
-        @d.addBoth
-        def finally_(result):
-            if isinstance(result, Failure):
-                sys.stderr.write("failed: %s\n" % actor_path)
-                result.printTraceback(file=sys.stderr)
-            else:
-                sys.stderr.write("finished: %s\n" % actor_path)
+        from twisted.internet import reactor
+        reactor.callLater(0.0, start_actor)
 
-            # os.kill(os.getpid(), signal.SIGKILL)
+    def send(self, message):
+        if message[0] == 'error':
+            assert message[1] == self._actor
+            sys.stderr.write("failed: %s\n" % self._actor_path)
+            raise message[2]
+        elif message[0] == 'done':
+            assert message[1] == self._actor
+            sys.stderr.write("finished: %s\n" % self._actor_path)
+        else:
+            sys.stderr.write("received message: %s\n" % repr(message))
+
+        # os.kill(os.getpid(), signal.SIGKILL)
 
     def stopService(self):
-        if self._actor.is_alive:
+        sys.stderr.write("exiting...\n")
+        if self._actor and self._actor.is_alive:
             self._actor.stop()
 
 
