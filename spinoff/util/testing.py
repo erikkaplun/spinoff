@@ -185,11 +185,15 @@ class MockActor(BaseActor):
 
 class RootActor(MockActor):
 
-    def handle(self, msg):
-        if msg[0] == 'error' and isinstance(msg[-2], AssertionError):
-            raise msg[-2]
-        else:
-            super(RootActor, self).handle(msg)
+    def raise_errors(self):
+        for msg in self.messages:
+            if msg[0] == 'error':  # and isinstance(msg[-2], AssertionError):
+                # see: http://twistedmatrix.com/trac/ticket/5178
+                if not isinstance(msg[2][1], basestring):
+                    raise msg[2][0], None, msg[2][1]
+                else:
+                    print(msg[2][1])
+                    raise msg[2][0]
 
 
 def run(a_cls, *args, **kwargs):
@@ -197,4 +201,5 @@ def run(a_cls, *args, **kwargs):
     a = a_cls(*args, **kwargs)
     a._parent = root
     a.start()
+    root.raise_errors()
     return root, a
