@@ -185,9 +185,9 @@ class MockActor(BaseActor):
 
 class RootActor(MockActor):
 
-    def raise_errors(self):
+    def raise_errors(self, only_asserts=False):
         for msg in self.messages:
-            if msg[0] == 'error':  # and isinstance(msg[-2], AssertionError):
+            if msg[0] == 'error' and (not only_asserts or isinstance(msg[-2], AssertionError)):
                 # see: http://twistedmatrix.com/trac/ticket/5178
                 if not isinstance(msg[2][1], basestring):
                     raise msg[2][0], None, msg[2][1]
@@ -196,10 +196,10 @@ class RootActor(MockActor):
                     raise msg[2][0]
 
 
-def run(a_cls):
+def run(a_cls, raise_only_asserts=True):
     root = RootActor.spawn()
     a = a_cls() if isinstance(a_cls, type) else a_cls
     a._parent = root
     a.start()
-    root.raise_errors()
+    root.raise_errors(only_asserts=raise_only_asserts)
     return root, a
