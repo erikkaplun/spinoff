@@ -152,7 +152,7 @@ class BaseActor(object):
                 self.send(pending_message)
             self._pending = []
 
-    def stop(self):
+    def stop(self, silent=False):
         if self._state is NOT_STARTED:
             raise Exception("Actor not started")
         if self._state is STOPPED:
@@ -161,14 +161,14 @@ class BaseActor(object):
             self.pause()
 
         for child in self._children:
-            child.stop()
+            child.stop(silent=True)
 
         if hasattr(self, '_on_stop'):
             self._on_stop()
 
         self._state = STOPPED
 
-        if not self.d.called:
+        if not silent and not self.d.called:
             self.exit(('stopped', self))
 
     def exit(self, msg):
