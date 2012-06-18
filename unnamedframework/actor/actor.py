@@ -210,6 +210,7 @@ class Actor(BaseActor):
     _paused_result = None
     _current_d = None
     _on_hold_d = None
+    _cancelling_hold_d = False
 
     def __init__(self, *args, **kwargs):
         super(Actor, self).__init__()
@@ -270,7 +271,7 @@ class Actor(BaseActor):
 
     def _fire_current_d(self, result, d):
         self._on_hold_d = None
-        if self._state is RUNNING:
+        if self._state is  RUNNING and not self._cancelling_hold_d:
             if isinstance(result, Failure):
                 d.errback(result)
             else:
@@ -344,7 +345,11 @@ class Actor(BaseActor):
     def _on_stop(self):
         if self._on_hold_d:
             try:
-                self._on_hold_d.cancel()
+                self._cancelling_hold_d = True
+                try:
+                    self._on_hold_d.cancel()
+                finally:
+                    self._cancelling_hold_d = False
                 assert isinstance(self._paused_result.value, CancelledError)
                 self._paused_result = None
             except Exception:
