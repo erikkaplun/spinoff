@@ -101,7 +101,7 @@ class BaseActor(object):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
             actor_cls = actor(actor_cls)
 
-        if not isinstance(actor_cls, Actor):
+        if not isinstance(actor_cls, BaseActor):
             child = actor_cls(*args, **kwargs)
         else:
             child = actor_cls
@@ -147,8 +147,8 @@ class BaseActor(object):
         self._state = RUNNING
 
         for child in self._children:
-            assert child.is_paused
-            child.resume()
+            if not child.is_running:
+                child.resume()
 
         if self._pending:
             for pending_message in self._pending:

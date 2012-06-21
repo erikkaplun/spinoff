@@ -5,7 +5,7 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 
-from spinoff.actor import actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
+from spinoff.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from spinoff.util import pattern as match
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
@@ -494,6 +494,17 @@ def test_spawn_child_actor():
     root, parent2 = run(Parent2, raise_only_asserts=False)
 
     assert chld_stopped[0]
+
+    class Parent3(Actor):
+        def __init__(self):
+            super(Parent3, self).__init__()
+            self.spawn(Child)
+
+    root = RootActor.spawn()
+    parent3 = Parent3()
+    parent3._parent = root
+    with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
+        parent3.start()
 
 
 def test_pausing_actor_with_children_pauses_the_children():
