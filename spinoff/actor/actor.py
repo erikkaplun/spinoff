@@ -101,7 +101,10 @@ class BaseActor(object):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
             actor_cls = actor(actor_cls)
 
-        child = actor_cls(*args, **kwargs)
+        if not isinstance(actor_cls, Actor):
+            child = actor_cls(*args, **kwargs)
+        else:
+            child = actor_cls
         child._parent = self
         child.start()
         self._children.append(child)

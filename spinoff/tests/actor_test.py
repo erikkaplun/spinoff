@@ -476,6 +476,25 @@ def test_spawn_child_actor():
 
     run(Parent)
 
+    chld_stopped = [False]
+    arg = random.random()
+
+    @actor
+    def ChildWithArgs(self, foo):
+        assert foo == arg
+        try:
+            yield Deferred()
+        except ActorStopped:
+            chld_stopped[0] = True
+
+    @actor
+    def Parent2(self):
+        self.spawn(ChildWithArgs(arg))
+
+    root, parent2 = run(Parent2, raise_only_asserts=False)
+
+    assert chld_stopped[0]
+
 
 def test_pausing_actor_with_children_pauses_the_children():
     children = []
