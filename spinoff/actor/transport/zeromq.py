@@ -55,8 +55,9 @@ class ZmqProxyBase(Actor):
                              ' ' + self._identity if self._identity else '',
                              ' ' + endpoints_repr if endpoints_repr else '')
 
-    def stop(self):
+    def stop(self, *args, **kwargs):
         self._conn.shutdown()
+        super(ZmqProxyBase, self).stop(*args, **kwargs)
 
 
 class ZmqRouter(ZmqProxyBase):
