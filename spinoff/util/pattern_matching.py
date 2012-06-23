@@ -5,11 +5,11 @@ class _Values(list):
 def match(pattern, data, flatten=True):
     def _match(pattern, data, success):
         def _is_ignore(pattern):
-            return pattern is not ANY
+            return not (isinstance(pattern, _Matcher) and not pattern.ignore)
 
         is_tuple = isinstance(pattern, tuple)
         if not is_tuple:
-            return ((pattern == data or pattern is ANY or pattern is IGNORE) if success else False,
+            return (pattern == data if success else False,
                     data if not _is_ignore(pattern) else NOTHING)
 
         values = NOTHING
@@ -38,18 +38,52 @@ def match(pattern, data, flatten=True):
 
 
 class _Marker(object):
-    def __init__(self, name):
-        self.name = name
-
     def __repr__(self):
-        return self.name
+        return self.__str__()
 
     def __str__(self):
         return self.name
 
+    def clone(self):
+        return type(self)()
 
-ANY = _Marker('ANY')
-IGNORE = _Marker('IGNORE')
+
+class _Matcher(_Marker):
+    ignore = False
+
+    def __req__(self, x):
+        return self.__eq__(x)
 
 
-NOTHING = _Marker('NOTHING')
+class _ANY(_Matcher):
+    name = 'ANY'
+
+    def __eq__(self, x):
+        return True
+ANY = _ANY()
+
+
+def IGNORE(x):
+    if isinstance(x, _Matcher):
+        x = x.clone()
+        x.ignore = True
+    return x
+
+
+class IS_INSTANCE(_Matcher):
+    def __init__(self, t):
+        self.t = t
+
+    def __eq__(self, x):
+        return isinstance(x, self.t)
+
+    def __str__(self):
+        return 'IS_INSTANCE(%s)' % self.t
+
+    def clone(self):
+        return type(self)(self.t)
+
+
+class _NOTHING(_Marker):
+    name = 'NOTHING'
+NOTHING = _NOTHING()
