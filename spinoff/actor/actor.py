@@ -6,7 +6,7 @@ import warnings
 from functools import wraps
 
 from twisted.application.service import Service
-from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError
+from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError, succeed
 from twisted.python import log
 from twisted.python.failure import Failure
 from zope.interface import Interface, implements
@@ -305,15 +305,12 @@ class Actor(BaseActor):
         if self._inbox:
             if filter is None:
                 return self._inbox.pop(0)
-            ret = EMPTY
             for msg in self._inbox:
-                m, values = match.match(filter, msg)
+                m = match(filter, msg)
+                m, values = m[0], m[1:]
                 if m:
-                    ret = values
-                    break
-            if ret is not EMPTY:
-                self._inbox.remove(ret)
-                return ret
+                    self._inbox.remove(msg)
+                    return succeed(values)
 
         d = Deferred(lambda d: setattr(self, '_waiting', None))
         if self._waiting:
