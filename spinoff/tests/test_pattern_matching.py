@@ -3,21 +3,31 @@ from spinoff.util.testing import assert_not_raises
 from spinoff.util.pattern_matching import NOTHING
 
 
+FLATTEN = False
+
+
 def NO(pattern, data):
     x = match(pattern, data)
     assert isinstance(x, tuple) and not x[0] or not x, x
 
 
 def YES(out, pattern, data):
-    x = match(pattern, data)
-    if out is not NOTHING:
-        assert x[0], "should have matched"
-        assert x[1] == out, "should have returned the correct values but returned %s" % repr(x[1])
+    x = match(pattern, data, flatten=FLATTEN)
+    if not FLATTEN:
+        if out is not NOTHING:
+            assert x[0], "should have matched"
+            assert x[1] == out, "should have returned the correct values but returned %s" % repr(x[1])
+        else:
+            assert x
     else:
-        assert x
+        assert x if out == () else x[0], "should have matched"
+        assert out == () or x[1:] == out, "should have returned the correct values but returned %s" % repr(x[1:])
 
 
-def test():
+def test_without_flatten():
+    global FLATTEN
+    FLATTEN = False
+
     NO('foo', 'bar')
     YES(NOTHING, 'foo', 'foo')
     NO((), 'whatev')
@@ -49,5 +59,38 @@ def test():
     with assert_not_raises(ValueError):
         _, ((_, (_, (_,))),) = match(
             ('foo', (ANY, (ANY, (ANY, )))),
-            ('WRONG', (1, (2, (3,))))
+            ('WRONG', (1, (2, (3,)))),
+            flatten=False
             )
+
+
+def test_flatten():
+    global FLATTEN
+    FLATTEN = True
+
+    YES((), 'foo', 'foo')
+    YES((), (), ())
+
+    YES(('whatev',), ANY, 'whatev')
+    YES((('whatev', 'whatev'), ), ANY, ('whatev', 'whatev'))
+
+    YES((), ('foo',), ('foo',))
+
+    YES((('foo',),), ANY, ('foo',))
+    YES(('foo',), (ANY,), ('foo',))
+    YES((), (IGNORE,), ('whatev',))
+    YES(('foo',), (ANY, IGNORE), ('foo', 'whatev',))
+    YES((), (IGNORE, IGNORE), ('whatev', 'whatev',))
+    YES(('foo', 'bar'), (ANY, ANY), ('foo', 'bar',))
+
+    YES((), ('foo', IGNORE), ('foo', 'whatev',))
+
+    YES((), ('foo', (IGNORE, )), ('foo', ('whatev', )))
+    YES((1, 2, 3,), ('foo', (ANY, (ANY, (ANY, )))), ('foo', (1, (2, (3,)))))
+    YES((2, 3,), ('foo', (IGNORE, (ANY, (ANY, )))), ('foo', (1, (2, (3,)))))
+    YES((3,), ('foo', (IGNORE, (IGNORE, (ANY, )))), ('foo', (1, (2, (3,)))))
+
+    ok, v1, v2 = match(('foo', ('bar', ANY, ('baz', ANY))),
+                       ('foo', ('bar', 123, ('baz', 456))),
+                       flatten=True)
+    assert ok and (v1, v2) == (123, 456)
