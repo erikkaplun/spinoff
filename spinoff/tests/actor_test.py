@@ -6,7 +6,7 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 
 from spinoff.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
-from spinoff.util import pattern as match
+from spinoff.util.pattern_matching import match, ANY
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
 
@@ -406,20 +406,22 @@ def test_get():
     ###
     received_msg = []
     tmp = random.random()
-    root, x = run(_make_getter(filter=('foo', match._)))
+    root, x = run(_make_getter(('foo', ANY)))
     x.send(('foo', tmp))
-    # x, = deferred_result(c.get(filter=('foo', match._)))
-    assert [(tmp,)] == received_msg, received_msg
+    root.raise_errors(only_asserts=False)
+    assert [tmp] == received_msg, received_msg
 
     ###
     received_msg = []
     tmp = random.random()
-    root, c = run(_make_getter(filter=('baz', match._)))
+    root, c = run(_make_getter(('baz', ANY)))
     c.send(('foo', tmp))
+    root.raise_errors(only_asserts=False)
     assert received_msg == []
 
     c.send(('baz', tmp))
-    assert received_msg == [(tmp,)]
+    root.raise_errors(only_asserts=False)
+    assert received_msg == [tmp]
 
 
 def test_get_removes_message_from_inbox():

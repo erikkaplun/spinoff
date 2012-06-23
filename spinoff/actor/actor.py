@@ -11,7 +11,7 @@ from twisted.python import log
 from twisted.python.failure import Failure
 from zope.interface import Interface, implements
 
-import spinoff.util.pattern as match
+from spinoff.util.pattern_matching import match
 from spinoff.util._defer import inlineCallbacks
 from spinoff.util.async import combine
 from spinoff.util.python import combomethod
@@ -287,7 +287,7 @@ class Actor(BaseActor):
             if self._waiting[0] is None:
                 found = message
             elif found is EMPTY:
-                m, values = match.match(self._waiting[0], message)
+                m, values = match(self._waiting[0], message)
                 if m:
                     found = values
             if found is not EMPTY:

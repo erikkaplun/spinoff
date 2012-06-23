@@ -71,7 +71,9 @@ class ZmqRouter(ZmqProxyBase):
     def run(self):
         while True:
             message = yield self.get()
-            assert isinstance(message, tuple) and len(message) == 2
+            if not isinstance(message, tuple) or len(message) != 2:
+                self.parent.send(('error', self, ('unhandled-message', message), None))
+                continue
             recipient_id, message = message
             self._conn.sendMsg(recipient_id, json.dumps(message))
 
