@@ -1,4 +1,4 @@
-import json
+import pickle
 
 from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
@@ -27,12 +27,12 @@ class ZmqProxyBase(Actor):
             self.add_endpoints([endpoint])
 
     def _zmq_msg_received(self, message):
-        message = json.loads(message[0])
+        message = pickle.loads(message[0])
         self.parent.send(message)
 
     def run(self):
         while True:
-            self._conn.sendMsg(json.dumps((yield self.get())))
+            self._conn.sendMsg(pickle.dumps((yield self.get())))
 
     def add_endpoints(self, endpoints):
         endpoints = [
@@ -65,7 +65,7 @@ class ZmqRouter(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, sender_id, message):
-        message = json.loads(message[0])
+        message = pickle.loads(message[0])
         self.parent.send((sender_id, message))
 
     def run(self):
@@ -75,7 +75,7 @@ class ZmqRouter(ZmqProxyBase):
                 self.parent.send(('error', self, ('unhandled-message', message), None))
                 continue
             recipient_id, message = message
-            self._conn.sendMsg(recipient_id, json.dumps(message))
+            self._conn.sendMsg(recipient_id, pickle.dumps(message))
 
 
 class ZmqDealer(ZmqProxyBase):
@@ -87,7 +87,7 @@ class ZmqRep(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, message_id, message):
-        self.parent.send((message_id, json.loads(message)))
+        self.parent.send((message_id, pickle.loads(message)))
 
     def run(self):
         while True:
@@ -96,7 +96,7 @@ class ZmqRep(ZmqProxyBase):
                 message_id, message = message
             except ValueError:
                 raise Exception("ZmqRouter requires messages of the form (request_id, response)")
-            msg_data_out = json.dumps(message)
+            msg_data_out = pickle.dumps(message)
             self._conn.sendMsg(message_id, msg_data_out)
 
 
@@ -105,5 +105,5 @@ class ZmqReq(ZmqProxyBase):
 
     def run(self):
         while True:
-            msg_data_in = yield self._conn.sendMsg(json.dumps((yield self.get())))
-            self.parent.send(json.loads(msg_data_in[0]))
+            msg_data_in = yield self._conn.sendMsg(pickle.dumps((yield self.get())))
+            self.parent.send(pickle.loads(msg_data_in[0]))
