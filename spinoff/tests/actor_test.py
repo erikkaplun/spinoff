@@ -6,7 +6,7 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 
 from spinoff.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
-from spinoff.util.pattern_matching import match, ANY
+from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
 
@@ -55,8 +55,8 @@ def test_base_actor_error():
     def P(self):
         b = self.spawn(B)
         b.send('whatev')
-        msg = deferred_result(self.get())
-        assert msg == ('error', b, (match.InstanceOf(MockException), match.Any), True)
+        msg_d = self.get(('error', b, (IS_INSTANCE(MockException), ANY), True))
+        assert msg_d.called
     run(P)
 
 
@@ -188,7 +188,7 @@ def test_failure():
     root, a = run(A, raise_only_asserts=True)
     assert not a.is_alive
 
-    assert [('error', a, (exc, match.Any), False)] == root.messages
+    assert [('error', a, (exc, ANY), False)] == root.messages
 
 
 def test_yielding_a_non_deferred():
