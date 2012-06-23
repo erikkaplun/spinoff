@@ -1,7 +1,9 @@
-def match(pattern, data):
-    def _match(pattern, data, success):
-        values = NOTHING
+class _Values(list):
+    pass
 
+
+def match(pattern, data, flatten=True):
+    def _match(pattern, data, success):
         def _is_ignore(pattern):
             return pattern is not ANY
 
@@ -10,25 +12,44 @@ def match(pattern, data):
             return ((pattern == data or pattern is ANY or pattern is IGNORE) if success else False,
                     data if not _is_ignore(pattern) else NOTHING)
 
-        else:
-            data_is_tuple = isinstance(data, tuple)
-            for pi in pattern:
-                success, subvalues = _match(pi, data[0] if data_is_tuple and data else None, success)
-                if subvalues is not NOTHING:
-                    if values is NOTHING:
-                        values = []
-                    values.append(subvalues)
-                data = data[1:] if data_is_tuple and data else None
-            if data:
-                success = False
-        return success, tuple(values) if values is not NOTHING else NOTHING
+        values = NOTHING
+        data_is_tuple = isinstance(data, tuple)
+
+        for pi in pattern:
+            success, subvalues = _match(pi, data[0] if data_is_tuple and data else None, success)
+            if subvalues is not NOTHING:
+                if values is NOTHING:
+                    values = _Values()
+                if flatten and isinstance(subvalues, _Values):
+                    values += subvalues
+                else:
+                    values.append(tuple(subvalues) if isinstance(subvalues, _Values) else subvalues)
+            data = data[1:] if data_is_tuple and data else None
+        if data:
+            success = False
+
+        return success, values if values is not NOTHING else NOTHING
 
     ret = _match(pattern, data, True)
-    return ret[0] if ret[1] is NOTHING else ret
+    if flatten and isinstance(ret[1], _Values):
+        return (ret[0],) + tuple(ret[1])
+    else:
+        return ret[0] if ret[1] is NOTHING else (ret[0], tuple(ret[1]) if isinstance(ret[1], _Values) else ret[1])
 
 
-ANY = object()
-IGNORE = object()
+class _Marker(object):
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return self.name
+
+    def __str__(self):
+        return self.name
 
 
-NOTHING = object()
+ANY = _Marker('ANY')
+IGNORE = _Marker('IGNORE')
+
+
+NOTHING = _Marker('NOTHING')
