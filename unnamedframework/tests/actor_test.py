@@ -591,6 +591,26 @@ def test_actor_finishing_before_child_stops_its_children():
     assert [('stopped', p)] == root.messages
 
 
+def test_actor_failinig_stops_its_children():
+    child_stopped = [False]
+
+    @actor
+    def Child(self):
+        try:
+            yield Deferred()
+        except ActorStopped:
+            child_stopped[0] = True
+
+    @actor
+    def Parent(self):
+        self.spawn(Child)
+        raise Exception()
+
+    root, p = run(Parent, raise_only_asserts=True)
+    root.messages.remove(('error', p, (IS_INSTANCE(Exception), ANY), ANY))
+    assert child_stopped[0]
+
+
 class MockException(Exception):
     pass
 
