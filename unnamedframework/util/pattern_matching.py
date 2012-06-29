@@ -1,3 +1,6 @@
+import inspect
+
+
 class _Values(list):
     pass
 
@@ -87,3 +90,18 @@ class IS_INSTANCE(_Matcher):
 class _NOTHING(_Marker):
     name = 'NOTHING'
 NOTHING = _NOTHING()
+
+
+class Match(_Matcher):
+    def __init__(self, fn):
+        self.fn = fn
+        try:
+            self.name = 'MATCH(%s)' % inspect.getsource(fn).strip()
+        except IOError:
+            self.name = 'MATCH(%s)' % fn
+
+    def __eq__(self, x):
+        return self.fn(x)
+
+    def clone(self):
+        return Match(self.fn)
