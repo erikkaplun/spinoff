@@ -509,7 +509,7 @@ def test_spawn_child_actor():
         parent3.start()
 
 
-def test_pausing_actor_with_children_pauses_the_children():
+def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_children():
     children = []
     child_stopped = [False]
 
