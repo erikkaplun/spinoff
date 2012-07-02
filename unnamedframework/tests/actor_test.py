@@ -15,49 +15,49 @@ warnings.simplefilter('always')
 
 
 def test_base_actor_not_started():
-    parent = MockActor()
+    actor = MockActor()
 
     with assert_raises(ActorNotRunning):
-        parent.send('whatev')
+        actor.send('whatev')
 
 
 def test_base_actor():
-    root, x = run(MockActor)
+    root, actor = run(MockActor)
 
     msg = random.random()
-    x.send(msg)
-    assert x.clear() == [msg]
+    actor.send(msg)
+    assert actor.clear() == [msg]
 
-    x.pause()
+    actor.pause()
     msg = random.random()
-    x.send(msg)
-    assert x.clear() == []
+    actor.send(msg)
+    assert actor.clear() == []
 
-    x.resume()
-    assert x.clear() == [msg]
+    actor.resume()
+    assert actor.clear() == [msg]
 
     assert not root.messages
 
-    x.stop()
-    assert [('stopped', x)] == root.messages
+    actor.stop()
+    assert [('stopped', actor)] == root.messages
 
 
 def test_base_actor_error():
     @baseactor
-    def B(self, message):
+    def SomeActor(self, message):
         raise MockException()
-    _, b = run(B)
+    _, some_actor = run(SomeActor)
     with assert_not_raises(MockException):
-        b.send('whatev')
-    assert not b.d.called
+        some_actor.send('whatev')
+    assert not some_actor.d.called
 
     @actor
-    def P(self):
-        b = self.spawn(B)
-        b.send('whatev')
-        msg_d = self.get(('error', b, (IS_INSTANCE(MockException), ANY), True))
+    def Parent(self):
+        some_actor = self.spawn(SomeActor)
+        some_actor.send('whatev')
+        msg_d = self.get(('error', some_actor, (IS_INSTANCE(MockException), ANY), True))
         assert msg_d.called
-    run(P)
+    run(Parent)
 
 
 def test_failure_with_children():
