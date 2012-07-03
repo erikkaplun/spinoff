@@ -185,10 +185,9 @@ def test_failure():
     def A(self):
         raise exc
 
-    root, a = run(A, raise_only_asserts=True)
-    assert not a.is_alive
-
-    assert [('error', a, (exc, ANY), False)] == root.messages
+    with RootActor(A) as root:
+        root.consume_message(('error', root.actor, (exc, ANY), False))
+        assert not root.actor.is_alive
 
 
 def test_yielding_a_non_deferred():
@@ -606,8 +605,9 @@ def test_actor_failinig_stops_its_children():
         self.spawn(Child)
         raise Exception()
 
-    root, p = run(Parent, raise_only_asserts=True)
-    root.messages.remove(('error', p, (IS_INSTANCE(Exception), ANY), ANY))
+    with RootActor(Parent) as root:
+        root.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
+
     assert child_stopped[0]
 
 
