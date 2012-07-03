@@ -46,18 +46,12 @@ def test_base_actor_error():
     @baseactor
     def SomeActor(self, message):
         raise MockException()
-    _, some_actor = run(SomeActor)
-    with assert_not_raises(MockException):
-        some_actor.send('whatev')
-    assert not some_actor.d.called
 
-    @actor
-    def Parent(self):
-        some_actor = self.spawn(SomeActor)
-        some_actor.send('whatev')
-        msg_d = self.get(('error', some_actor, (IS_INSTANCE(MockException), ANY), True))
-        assert msg_d.called
-    run(Parent)
+    with Container(SomeActor) as (container, some_actor):
+        with assert_not_raises(MockException):
+            some_actor.send('whatev')
+        assert not container.has_message(('stopped', some_actor))
+        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), ANY), True))
 
 
 def test_failure_with_children():
