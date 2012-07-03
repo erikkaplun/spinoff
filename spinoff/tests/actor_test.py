@@ -249,7 +249,7 @@ def test_pausing_resuming_and_stopping():
     proc.resume()
 
     assert proc.d.called
-    assert container.messages == [('stopped', proc)]
+    container.consume_message(('stopped', proc))
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
