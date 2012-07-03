@@ -22,7 +22,7 @@ def test_base_actor_not_started():
 
 
 def test_base_actor():
-    root, actor = run(MockActor)
+    container, actor = run(MockActor)
 
     msg = random.random()
     actor.send(msg)
@@ -36,10 +36,10 @@ def test_base_actor():
     actor.resume()
     assert actor.clear() == [msg]
 
-    assert not root.messages
+    assert not container.messages
 
     actor.stop()
-    assert [('stopped', actor)] == root.messages
+    assert [('stopped', actor)] == container.messages
 
 
 def test_base_actor_error():
@@ -93,11 +93,11 @@ def test_actor_refuses_to_stop():
         yield succeed(None)
         assert False
 
-    root, a = run(A)
+    container, a = run(A)
 
     a.pause()
     a.stop()
-    assert [('stopped', a, 'refused')] == root.messages, root.messages
+    assert [('stopped', a, 'refused')] == container.messages, container.messages
 
 
 def test_failure_while_stopping():
@@ -125,10 +125,10 @@ def test_connect_and_put():
     def Mock(self):
         received_msg.append((yield self.get()))
 
-    root, mock = run(Mock)
+    container, mock = run(Mock)
 
     c = actor(lambda self: self.put('msg-1'))()
-    c._parent = root
+    c._parent = container
     c.connect(mock)
     c.start()
 
@@ -182,8 +182,8 @@ def test_failure():
     def A(self):
         raise exc
 
-    with Container(A) as (root, a):
-        root.consume_message(('error', a, (exc, ANY), False))
+    with Container(A) as (container, a):
+        container.consume_message(('error', a, (exc, ANY), False))
         assert not a.is_alive
 
 
@@ -209,7 +209,7 @@ def test_pending_failures_are_discarded_with_a_warning():
     def X(self):
         yield mock_d
 
-    root, p = run(X)
+    container, p = run(X)
     p.pause()
 
     mock_d.errback(Exception())
@@ -232,7 +232,7 @@ def test_pausing_resuming_and_stopping():
             stopped[0] = True
 
     ### resuming when the async called has been fired
-    root, proc = run(X)
+    container, proc = run(X)
 
     proc.pause()
     assert not proc.is_running
@@ -249,17 +249,17 @@ def test_pausing_resuming_and_stopping():
     proc.resume()
 
     assert proc.d.called
-    assert root.messages == [('stopped', proc)]
+    assert container.messages == [('stopped', proc)]
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
-    root, proc2 = run(X)
+    container, proc2 = run(X)
 
     proc2.pause()
     proc2.resume()
 
     assert not stopped[0]
-    assert not root.messages
+    assert not container.messages
 
     ### resuming when the async call has failed
     mock_d = Deferred()
@@ -272,7 +272,7 @@ def test_pausing_resuming_and_stopping():
         except MockException:
             exception_caught[0] = True
 
-    root, x = run(Y)
+    container, x = run(Y)
     x.pause()
     mock_d.errback(MockException())
     x.resume()
@@ -284,14 +284,14 @@ def test_pausing_resuming_and_stopping():
 
     ### stopping
     mock_d = Deferred()
-    root, proc3 = run(X)
+    container, proc3 = run(X)
 
     proc3.stop()
     with assert_raises(ActorAlreadyStopped):
         proc3.stop()
 
     assert stopped[0]
-    assert [('stopped', proc3)] == root.messages
+    assert [('stopped', proc3)] == container.messages
 
     with assert_raises(ActorAlreadyStopped):
         proc3.start()
@@ -300,13 +300,13 @@ def test_pausing_resuming_and_stopping():
 
     ### stopping a paused actor
     mock_d = Deferred()
-    root, proc4 = run(X)
+    container, proc4 = run(X)
 
     proc4.pause()
     proc4.stop()
 
     assert stopped[0]
-    assert [('stopped', proc4)] == root.messages, root.messages
+    assert [('stopped', proc4)] == container.messages, container.messages
 
 
 def test_stopping_cancels_the_deferred_on_hold():
@@ -317,7 +317,7 @@ def test_stopping_cancels_the_deferred_on_hold():
     def X(self):
         yield mock_d
 
-    root, x = run(X)
+    container, x = run(X)
     x.stop()
 
     assert cancelled[0]
@@ -327,10 +327,10 @@ def test_actor_does_not_have_to_catch_actorstopped():
     @actor
     def X(self):
         yield Deferred()
-    root, proc = run(X)
+    container, proc = run(X)
     with assert_not_raises(ActorStopped):
         proc.stop()
-    assert [('stopped', proc)] == root.messages
+    assert [('stopped', proc)] == container.messages
 
 
 def test_actor_must_exit_after_being_stopped():
@@ -342,9 +342,9 @@ def test_actor_must_exit_after_being_stopped():
                 yield Deferred()
             except ActorStopped:
                 pass
-    root, proc = run(X)
+    container, proc = run(X)
     proc.stop()
-    assert [('stopped', proc, 'refused')] == root.messages, \
+    assert [('stopped', proc, 'refused')] == container.messages, \
         "actor should not be allowed to continue working when stopped"
 
     # actor that complies with the rule
@@ -355,9 +355,9 @@ def test_actor_must_exit_after_being_stopped():
                 yield Deferred()
             except ActorStopped:
                 break
-    root, proc2 = run(Proc2)
+    container, proc2 = run(Proc2)
     proc2.stop()
-    assert [('stopped', proc2)] == root.messages, root.messages
+    assert [('stopped', proc2)] == container.messages, container.messages
 
 
 def test_actor_with_args():
@@ -377,8 +377,8 @@ def test_actor_doesnt_require_generator():
     def Proc(self):
         pass
 
-    root, proc = run(Proc)
-    assert [('stopped', proc)] == root.messages
+    container, proc = run(Proc)
+    assert [('stopped', proc)] == container.messages
 
     @actor
     def Proc2(self):
@@ -397,28 +397,28 @@ def test_get():
 
     ###
     received_msg = []
-    root, x = run(_make_getter())
+    container, x = run(_make_getter())
     x.send('foo')
     assert ['foo'] == received_msg
 
     ###
     received_msg = []
     tmp = random.random()
-    root, x = run(_make_getter(('foo', ANY)))
+    container, x = run(_make_getter(('foo', ANY)))
     x.send(('foo', tmp))
-    root.raise_errors(only_asserts=False)
+    container.raise_errors(only_asserts=False)
     assert [tmp] == received_msg, received_msg
 
     ###
     received_msg = []
     tmp = random.random()
-    root, c = run(_make_getter(('baz', ANY)))
+    container, c = run(_make_getter(('baz', ANY)))
     c.send(('foo', tmp))
-    root.raise_errors(only_asserts=False)
+    container.raise_errors(only_asserts=False)
     assert received_msg == []
 
     c.send(('baz', tmp))
-    root.raise_errors(only_asserts=False)
+    container.raise_errors(only_asserts=False)
     assert received_msg == [tmp]
 
 
@@ -429,7 +429,7 @@ def test_get_removes_message_from_inbox():
         msg_d = self.get()
         assert not msg_d.called
 
-    root, x = run(X)
+    container, x = run(X)
     x.send('whatev')
 
 
@@ -491,7 +491,7 @@ def test_spawn_child_actor():
     def Parent2(self):
         self.spawn(ChildWithArgs(arg))
 
-    root, parent2 = run(Parent2, raise_only_asserts=False)
+    container, parent2 = run(Parent2, raise_only_asserts=False)
 
     assert chld_stopped[0]
 
@@ -520,7 +520,7 @@ def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_ch
     def Parent(self):
         children.append(self.spawn(Child))
         yield Deferred()
-    root, a = run(Parent)
+    container, a = run(Parent)
 
     a.pause()
     assert all(x.is_paused for x in children)
@@ -555,7 +555,7 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
         self.spawn(LongLivingChild)
         yield mock_d
 
-    root, a = run(Parent)
+    container, a = run(Parent)
 
     with assert_not_raises(ActorNotRunning):
         a.pause()
@@ -581,10 +581,10 @@ def test_actor_finishing_before_child_stops_its_children():
     def Parent(self):
         self.spawn(Child)
 
-    root, p = run(Parent)
+    container, p = run(Parent)
     assert child_stopped[0]
     assert not p.is_running
-    assert [('stopped', p)] == root.messages
+    assert [('stopped', p)] == container.messages
 
 
 def test_actor_failinig_stops_its_children():
@@ -602,8 +602,8 @@ def test_actor_failinig_stops_its_children():
         self.spawn(Child)
         raise Exception()
 
-    with Container(Parent) as (root, _):
-        root.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
+    with Container(Parent) as (container, _):
+        container.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
 
     assert child_stopped[0]
 
