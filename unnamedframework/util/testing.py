@@ -8,6 +8,7 @@ from twisted.internet.defer import Deferred
 
 from unnamedframework.util.async import CancelledError
 from unnamedframework.actor.actor import BaseActor
+from unnamedframework.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
 
 
 __all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction', 'assert_num_warnings', 'assert_no_warnings', 'assert_one_warning']
@@ -183,11 +184,45 @@ class MockActor(BaseActor):
         return self.waiting
 
 
-class RootActor(MockActor):
+class Container(MockActor):
+
+    def __init__(self, actor_cls=None):
+        super(Container, self).__init__()
+        self._actor_cls = actor_cls
+
+    def __enter__(self):
+        assert self._actor_cls
+        self.start()
+        self.actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
+        a._parent = self
+        a.start()
+        return self
+
+    def __exit__(self, exc_cls, exc, tb):
+        if exc is None:
+            self.raise_errors()
+        else:
+            raise exc_cls, exc, tb
+
+    def consume_message(self, pattern, n=1):
+        assert n is 'INF' or n >= 0
+        consumed = 0
+        while n > 0 or n is 'INF':
+            for message in self.messages:
+                if match(pattern, message):
+                    self.messages.remove(message)
+                    consumed += 1
+                    break
+            else:
+                break
+            if n is not 'INF':
+                n -= 1
+        assert consumed
 
     def raise_errors(self, only_asserts=False):
+        assert not only_asserts
         for msg in self.messages:
-            if msg[0] == 'error' and (not only_asserts or isinstance(msg[-2], AssertionError)):
+            if msg[0] == 'error':
                 # see: http://twistedmatrix.com/trac/ticket/5178
                 if not isinstance(msg[2][1], basestring):
                     raise msg[2][0], None, msg[2][1]
@@ -196,10 +231,18 @@ class RootActor(MockActor):
                     raise msg[2][0]
 
 
-def run(a_cls, raise_only_asserts=True):
-    root = RootActor.spawn()
-    a = a_cls() if isinstance(a_cls, type) else a_cls
-    a._parent = root
-    a.start()
-    root.raise_errors(only_asserts=raise_only_asserts)
-    return root, a
+class RootActor(Container):
+    def __new__(cls, *args, **kwargs):
+        warnings.warn("RootActor is deprecated; use Container instead", DeprecationWarning)
+        return super(RootActor, cls).__new__(cls, *args, **kwargs)
+
+
+def run(a_cls, raise_only_asserts=False):
+    if raise_only_asserts:
+        warnings.warn("raise_only_asserts is deprecated; use Container instead", DeprecationWarning)
+    root = Container(a_cls)
+    root.__enter__()
+    if raise_only_asserts:
+        root.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY), n='INF')
+    root.__exit__(None, None, None)
+    return root, root.actor
