@@ -2,6 +2,7 @@ from unnamedframework.util.pattern_matching import match, ANY, IGNORE
 from unnamedframework.util.testing import assert_not_raises
 from unnamedframework.util.pattern_matching import NOTHING
 from unnamedframework.util.pattern_matching import IS_INSTANCE
+from unnamedframework.util.pattern_matching import NOT
 
 
 FLATTEN = True
@@ -104,3 +105,10 @@ def test_advanced():
     assert IS_INSTANCE(int) == 1
     YES((1,), IS_INSTANCE(int), 1)
     YES((), IGNORE(IS_INSTANCE(int)), 1)
+
+
+def test_not():
+    assert NOT(IS_INSTANCE(int)) == 'string'
+    for val in ['string', 123, True, None, object(), 123.456]:
+        assert NOT(ANY) != val
+    assert NOT(NOT(IS_INSTANCE(int))) == 3
