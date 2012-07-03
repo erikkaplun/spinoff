@@ -206,20 +206,20 @@ class Container(MockActor):
         else:
             raise exc_cls, exc, tb
 
-    def consume_message(self, pattern, n=1):
+    def consume_message(self, pattern, n=1, message=None):
         assert n is 'INF' or n >= 0
         consumed = 0
         while n > 0 or n is 'INF':
-            for message in self.messages:
-                if match(pattern, message):
-                    self.messages.remove(message)
+            for msg in self.messages:
+                if match(pattern, msg):
+                    self.messages.remove(msg)
                     consumed += 1
                     break
             else:
                 break
             if n is not 'INF':
                 n -= 1
-        assert consumed
+        assert consumed, message
 
     def raise_errors(self, only_asserts=False):
         assert not only_asserts
