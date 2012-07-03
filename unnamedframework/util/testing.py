@@ -221,6 +221,9 @@ class Container(MockActor):
                 n -= 1
         assert consumed, message
 
+    def has_message(self, pattern):
+        return any(match(pattern, msg) for msg in self.messages)
+
     def raise_errors(self, only_asserts=False):
         assert not only_asserts
         for msg in self.messages:
