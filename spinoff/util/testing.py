@@ -242,9 +242,9 @@ class RootActor(Container):
 def run(a_cls, raise_only_asserts=False):
     if raise_only_asserts:
         warnings.warn("raise_only_asserts is deprecated; use Container instead", DeprecationWarning)
-    root = Container(a_cls)
-    _, actor = root.__enter__()
+    container = Container(a_cls)
+    _, actor = container.__enter__()
     if raise_only_asserts:
-        root.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY), n='INF')
-    root.__exit__(None, None, None)
-    return root, actor
+        container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY), n='INF')
+    container.__exit__(None, None, None)
+    return container, actor
