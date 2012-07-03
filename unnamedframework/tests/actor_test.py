@@ -8,7 +8,7 @@ from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 from unnamedframework.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
 from unnamedframework.util.async import CancelledError
-from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, RootActor
+from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container
 
 
 warnings.simplefilter('always')
@@ -75,7 +75,8 @@ def test_failure_with_children():
         self.spawn(Child)
         raise MockException()
 
-    run(A, raise_only_asserts=True)
+    with Container(A) as (container, _):
+        container.consume_message(('error', ANY, (IS_INSTANCE(AssertionError), ANY), ANY))
 
     assert child_stopped[0]
 
@@ -145,21 +146,17 @@ def test_flow():
         yield mock_d
         called[0] += 1
 
-    proc = Proc()
-    root = RootActor.spawn()
-    proc._parent = root
-    assert not called[0], "creating an actor should not automatically start the coroutine in it"
-
-    proc.start()
-
-    with assert_raises(ActorAlreadyRunning):
+    with Container(Proc, start_automatically=False) as (container, proc):
+        assert not called[0], "creating an actor should not automatically start the coroutine in it"
         proc.start()
+        with assert_raises(ActorAlreadyRunning):
+            proc.start()
 
-    mock_d.callback(None)
-    assert called[0] == 2, "the coroutine in an actor should complete as normal"
-    assert not proc.is_alive
-    assert root.messages == [('stopped', proc)]
-    assert not proc.is_alive
+        mock_d.callback(None)
+        assert called[0] == 2, "the coroutine in an actor should complete as normal"
+        assert not proc.is_alive
+        container.consume_message(('stopped', proc))
+        assert not proc.is_alive
 
 
 def test_exception():
@@ -185,9 +182,9 @@ def test_failure():
     def A(self):
         raise exc
 
-    with RootActor(A) as root:
-        root.consume_message(('error', root.actor, (exc, ANY), False))
-        assert not root.actor.is_alive
+    with Container(A) as (root, a):
+        root.consume_message(('error', a, (exc, ANY), False))
+        assert not a.is_alive
 
 
 def test_yielding_a_non_deferred():
@@ -386,7 +383,9 @@ def test_actor_doesnt_require_generator():
     @actor
     def Proc2(self):
         raise MockException()
-    root, proc = run(Proc2, raise_only_asserts=True)
+
+    with Container(Proc2) as (container, _):
+        container.consume_message(('error', ANY, (IS_INSTANCE(AssertionError), ANY), ANY))
 
 
 def test_get():
@@ -501,11 +500,9 @@ def test_spawn_child_actor():
             super(Parent3, self).__init__()
             self.spawn(Child)
 
-    root = RootActor.spawn()
-    parent3 = Parent3()
-    parent3._parent = root
-    with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
-        parent3.start()
+    with Container(Parent3, start_automatically=False) as (_, parent3):
+        with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
+            parent3.start()
 
 
 def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_children():
@@ -605,7 +602,7 @@ def test_actor_failinig_stops_its_children():
         self.spawn(Child)
         raise Exception()
 
-    with RootActor(Parent) as root:
+    with Container(Parent) as (root, _):
         root.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
 
     assert child_stopped[0]
