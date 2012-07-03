@@ -211,7 +211,7 @@ class Container(MockActor):
         consumed = 0
         while n > 0 or n is 'INF':
             for msg in self.messages:
-                if match(pattern, msg):
+                if pattern == msg:
                     self.messages.remove(msg)
                     consumed += 1
                     break

@@ -8,7 +8,7 @@ from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 from unnamedframework.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
 from unnamedframework.util.async import CancelledError
-from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container
+from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT
 
 
 warnings.simplefilter('always')
@@ -76,7 +76,7 @@ def test_failure_with_children():
         raise MockException()
 
     with Container(A) as (container, _):
-        container.consume_message(('error', ANY, (IS_INSTANCE(AssertionError), ANY), ANY))
+        container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY))
 
     assert child_stopped[0]
 
@@ -384,7 +384,7 @@ def test_actor_doesnt_require_generator():
         raise MockException()
 
     with Container(Proc2) as (container, _):
-        container.consume_message(('error', ANY, (IS_INSTANCE(AssertionError), ANY), ANY))
+        container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY))
 
 
 def test_get():
