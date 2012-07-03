@@ -8,7 +8,7 @@ from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 from unnamedframework.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
 from unnamedframework.util.async import CancelledError
-from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT
+from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
 
 
 warnings.simplefilter('always')
@@ -47,7 +47,7 @@ def test_base_actor_error():
     def SomeActor(self, message):
         raise MockException()
 
-    with Container(SomeActor) as (container, some_actor):
+    with contain(SomeActor) as (container, some_actor):
         with assert_not_raises(MockException):
             some_actor.send('whatev')
         assert not container.has_message(('stopped', some_actor))
@@ -69,7 +69,7 @@ def test_failure_with_children():
         self.spawn(Child)
         raise MockException()
 
-    with Container(A) as (container, _):
+    with Container(A) as container:
         container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY))
 
     assert child_stopped[0]
@@ -139,7 +139,7 @@ def test_flow():
         yield mock_d
         called[0] += 1
 
-    with Container(Proc, start_automatically=False) as (container, proc):
+    with contain(Proc, start_automatically=False) as (container, proc):
         assert not called[0], "creating an actor should not automatically start the coroutine in it"
         proc.start()
         with assert_raises(ActorAlreadyRunning):
@@ -175,7 +175,7 @@ def test_failure():
     def A(self):
         raise exc
 
-    with Container(A) as (container, a):
+    with contain(A) as (container, a):
         container.consume_message(('error', a, (exc, ANY), False))
         assert not a.is_alive
 
@@ -377,7 +377,7 @@ def test_actor_doesnt_require_generator():
     def Proc2(self):
         raise MockException()
 
-    with Container(Proc2) as (container, _):
+    with Container(Proc2) as container:
         container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY))
 
 
@@ -493,7 +493,7 @@ def test_spawn_child_actor():
             super(Parent3, self).__init__()
             self.spawn(Child)
 
-    with Container(Parent3, start_automatically=False) as (_, parent3):
+    with contain(Parent3, start_automatically=False) as (_, parent3):
         with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
             parent3.start()
 
@@ -595,7 +595,7 @@ def test_actor_failinig_stops_its_children():
         self.spawn(Child)
         raise Exception()
 
-    with Container(Parent) as (container, _):
+    with Container(Parent) as container:
         container.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
 
     assert child_stopped[0]
