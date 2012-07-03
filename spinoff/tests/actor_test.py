@@ -39,7 +39,7 @@ def test_base_actor():
     assert not container.messages
 
     actor.stop()
-    assert [('stopped', actor)] == container.messages
+    container.consume_message(('stopped', actor))
 
 
 def test_base_actor_error():
@@ -97,7 +97,7 @@ def test_actor_refuses_to_stop():
 
     a.pause()
     a.stop()
-    assert [('stopped', a, 'refused')] == container.messages, container.messages
+    container.consume_message(('stopped', a, 'refused'))
 
 
 def test_failure_while_stopping():
@@ -290,7 +290,7 @@ def test_pausing_resuming_and_stopping():
         proc3.stop()
 
     assert stopped[0]
-    assert [('stopped', proc3)] == container.messages
+    container.consume_message(('stopped', proc3))
 
     with assert_raises(ActorAlreadyStopped):
         proc3.start()
@@ -305,7 +305,7 @@ def test_pausing_resuming_and_stopping():
     proc4.stop()
 
     assert stopped[0]
-    assert [('stopped', proc4)] == container.messages, container.messages
+    container.consume_message(('stopped', proc4))
 
 
 def test_stopping_cancels_the_deferred_on_hold():
@@ -329,7 +329,7 @@ def test_actor_does_not_have_to_catch_actorstopped():
     container, proc = run(X)
     with assert_not_raises(ActorStopped):
         proc.stop()
-    assert [('stopped', proc)] == container.messages
+    container.consume_message(('stopped', proc))
 
 
 def test_actor_must_exit_after_being_stopped():
@@ -343,8 +343,8 @@ def test_actor_must_exit_after_being_stopped():
                 pass
     container, proc = run(X)
     proc.stop()
-    assert [('stopped', proc, 'refused')] == container.messages, \
-        "actor should not be allowed to continue working when stopped"
+    container.consume_message(('stopped', proc, 'refused'),
+                              message="actor should not be allowed to continue working when stopped")
 
     # actor that complies with the rule
     @actor
@@ -356,7 +356,7 @@ def test_actor_must_exit_after_being_stopped():
                 break
     container, proc2 = run(Proc2)
     proc2.stop()
-    assert [('stopped', proc2)] == container.messages, container.messages
+    container.consume_message(('stopped', proc2))
 
 
 def test_actor_with_args():
@@ -377,7 +377,7 @@ def test_actor_doesnt_require_generator():
         pass
 
     container, proc = run(Proc)
-    assert [('stopped', proc)] == container.messages
+    container.consume_message(('stopped', proc))
 
     @actor
     def Proc2(self):
@@ -583,7 +583,7 @@ def test_actor_finishing_before_child_stops_its_children():
     container, p = run(Parent)
     assert child_stopped[0]
     assert not p.is_running
-    assert [('stopped', p)] == container.messages
+    container.consume_message(('stopped', p))
 
 
 def test_actor_failinig_stops_its_children():
