@@ -194,11 +194,11 @@ class Container(MockActor):
     def __enter__(self):
         assert self._actor_cls
         self.start()
-        a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
+        self._actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
         a._parent = self
         if self._start_automatically:
             a.start()
-        return self, a
+        return self
 
     def __exit__(self, exc_cls, exc, tb):
         if exc is None:
@@ -245,9 +245,16 @@ class RootActor(Container):
 def run(a_cls, raise_only_asserts=False):
     if raise_only_asserts:
         warnings.warn("raise_only_asserts is deprecated; use Container instead", DeprecationWarning)
-    container = Container(a_cls)
+    container = contain(a_cls)
     _, actor = container.__enter__()
     if raise_only_asserts:
         container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY), n='INF')
     container.__exit__(None, None, None)
     return container, actor
+
+
+class contain(Container):
+
+    def __enter__(self):
+        super(contain, self).__enter__()
+        return self, self._actor
