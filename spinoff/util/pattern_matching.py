@@ -105,3 +105,17 @@ class Match(_Matcher):
 
     def clone(self):
         return Match(self.fn)
+
+
+class NOT(_Matcher):
+    def __init__(self, matcher):
+        self.matcher = matcher
+
+    def __eq__(self, x):
+        return self.matcher != x
+
+    def __str__(self):
+        return 'NOT(%s)' % self.matcher
+
+    def clone(self):
+        return NOT(self.matcher)
