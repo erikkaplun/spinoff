@@ -102,7 +102,6 @@ def test_actor_refuses_to_stop():
 
 def test_failure_while_stopping():
     mock_d = Deferred()
-    print(mock_d)
 
     @actor
     def A(self):
