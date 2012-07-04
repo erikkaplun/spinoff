@@ -221,6 +221,9 @@ class Container(MockActor):
                 n -= 1
         assert consumed or n == 'ANY', message
 
+    def ignore_non_assertions(self):
+        self.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY), 'ANY')
+
     def has_message(self, pattern):
         return any(match(pattern, msg) for msg in self.messages)
 
