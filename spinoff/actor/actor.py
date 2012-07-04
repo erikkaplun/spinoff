@@ -19,7 +19,7 @@ from spinoff.util.python import combomethod
 
 __all__ = [
     'IActor', 'IProducer', 'IConsumer', 'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
-    'ActorsAsService', 'ActorStopped', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
+    'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
     'ActorRefusedToStop']
 
 
@@ -260,7 +260,7 @@ class Actor(BaseActor):
         def finally_(result):
             if isinstance(result, Failure):
                 self.exit(('error', self, (result.value, result.tb or result.getTraceback()), False))
-            super(Actor, self).stop()
+            self.stop()
 
     def stop(self, silent=False):
         self._on_stop()
@@ -342,21 +342,15 @@ class Actor(BaseActor):
 
         if self._gen:
             try:
-                try:
-                    self._gen.throw(ActorStopped())
-                except ActorStopped:
-                    raise StopIteration()
-                except StopIteration:
-                    raise
-                except Exception as e:
-                    self.exit(('stopped', self, 'unclean', e))
-                    raise StopIteration()
-            except StopIteration:
+                self._gen.close()
+            except GeneratorExit:
+                raise StopIteration()
+            except (StopIteration, _DefGen_Return):
                 pass
-            except _DefGen_Return:
-                pass
-            else:
+            except RuntimeError:
                 self.exit(('stopped', self, 'refused'))
+            except Exception as e:
+                self.exit(('stopped', self, 'unclean', e))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
@@ -440,10 +434,6 @@ def actor(fn):
         run = fn
     ret.__name__ = fn.__name__
     return ret
-
-
-class ActorStopped(Exception):
-    pass
 
 
 class ActorRefusedToStop(Exception):
