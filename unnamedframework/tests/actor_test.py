@@ -87,7 +87,7 @@ def test_actor_refuses_to_stop():
     with contain(A) as (container, a):
         a.pause()
         a.stop()
-        container.consume_message(('stopped', a, 'unclean', _))
+        container.consume_message(('error', a, (_, _), _))
 
 
 def test_failure_while_stopping():
@@ -104,7 +104,7 @@ def test_failure_while_stopping():
         assert a.is_running
         with assert_not_raises(MockException):
             a.stop()
-        assert len(r.messages) == 1 and r.messages[0][0:3] == ('stopped', a, 'unclean')
+        r.consume_message(('error', a, (_, _), _))
 
 
 def test_connect_and_put():
