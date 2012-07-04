@@ -207,9 +207,9 @@ class Container(MockActor):
             raise exc_cls, exc, tb
 
     def consume_message(self, pattern, n=1, message=None):
-        assert n is 'INF' or n >= 0
+        assert n in ('INF', 'ANY') or n >= 0
         consumed = 0
-        while n > 0 or n is 'INF':
+        while n > 0 or n in ('INF', 'ANY'):
             for msg in self.messages:
                 if pattern == msg:
                     self.messages.remove(msg)
@@ -217,9 +217,9 @@ class Container(MockActor):
                     break
             else:
                 break
-            if n is not 'INF':
+            if n not in ('INF', 'ANY'):
                 n -= 1
-        assert consumed, message
+        assert consumed or n == 'ANY', message
 
     def has_message(self, pattern):
         return any(match(pattern, msg) for msg in self.messages)
