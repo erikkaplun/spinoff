@@ -217,10 +217,11 @@ class Actor(BaseActor):
 
         @wraps(self.run)
         def wrap():
-            gen = self._gen = self.run(*args, **kwargs)
+            gen = self.run(*args, **kwargs)
             if not isinstance(gen, types.GeneratorType):
                 yield None
                 returnValue(gen)
+            self._gen = gen
             fire_current_d = self._fire_current_d
             prev_result = None
             try:
