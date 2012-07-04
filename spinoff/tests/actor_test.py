@@ -6,7 +6,7 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
 from spinoff.actor import Actor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
-from spinoff.util.pattern_matching import ANY, IS_INSTANCE
+from spinoff.util.pattern_matching import ANY, IS_INSTANCE, _
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
 
@@ -50,7 +50,7 @@ def test_base_actor_error():
         with assert_not_raises(MockException):
             some_actor.send('whatev')
         assert not container.has_message(('stopped', some_actor))
-        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), ANY), True))
+        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), _), True))
 
 
 def test_failure_with_children():
@@ -87,7 +87,7 @@ def test_actor_refuses_to_stop():
     with contain(A) as (container, a):
         a.pause()
         a.stop()
-        container.consume_message(('stopped', a, 'unclean', ANY))
+        container.consume_message(('stopped', a, 'unclean', _))
 
 
 def test_failure_while_stopping():
@@ -171,7 +171,7 @@ def test_failure():
         raise exc
 
     with contain(A) as (container, a):
-        container.consume_message(('error', a, (exc, ANY), False))
+        container.consume_message(('error', a, (exc, _), False))
         assert not a.is_alive
 
 
@@ -343,7 +343,7 @@ def test_actor_doesnt_require_generator():
         raise MockException()
 
     with Container(Proc2) as container:
-        container.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY), ANY))
+        container.consume_message(('error', _, (NOT(IS_INSTANCE(AssertionError)), _), _))
 
 
 def test_get():
@@ -581,7 +581,7 @@ def test_actor_failinig_stops_its_children():
         raise Exception()
 
     with Container(Parent) as container:
-        container.consume_message(('error', ANY, (IS_INSTANCE(Exception), ANY), ANY))
+        container.consume_message(('error', _, (IS_INSTANCE(Exception), _), _))
 
     assert child_stopped[0]
 
