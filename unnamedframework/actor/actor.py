@@ -261,8 +261,6 @@ class Actor(BaseActor):
                 self.exit(('error', self, (result.value, result.tb or result.getTraceback()), False))
             super(Actor, self).stop()
 
-        return d
-
     def stop(self, silent=False):
         self._on_stop()
         super(Actor, self).stop()
