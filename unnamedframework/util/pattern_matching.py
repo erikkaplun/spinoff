@@ -119,3 +119,6 @@ class NOT(_Matcher):
 
     def clone(self):
         return NOT(self.matcher)
+
+
+_ = IGNORE(ANY)
