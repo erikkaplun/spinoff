@@ -351,7 +351,7 @@ class Actor(BaseActor):
             except _DefGen_Return:
                 warnings.warn("returnValue inside an actor")
             except Exception as e:
-                self.exit(('stopped', self, 'unclean', e))
+                self.exit(('error', self, (e, sys.exc_info()[2]), False))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
