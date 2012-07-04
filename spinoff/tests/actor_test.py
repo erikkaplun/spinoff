@@ -87,7 +87,7 @@ def test_actor_refuses_to_stop():
     with contain(A) as (container, a):
         a.pause()
         a.stop()
-        container.consume_message(('stopped', a, 'refused'))
+        container.consume_message(('stopped', a, 'unclean', ANY))
 
 
 def test_failure_while_stopping():

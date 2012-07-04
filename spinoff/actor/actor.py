@@ -350,8 +350,6 @@ class Actor(BaseActor):
                 self._gen.close()
             except _DefGen_Return:
                 warnings.warn("returnValue inside an actor")
-            except RuntimeError:
-                self.exit(('stopped', self, 'refused'))
             except Exception as e:
                 self.exit(('stopped', self, 'unclean', e))
 
