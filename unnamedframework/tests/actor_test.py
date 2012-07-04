@@ -231,11 +231,11 @@ def test_pausing_resuming_and_stopping():
 
         mock_d.callback(retval)
 
-        assert not proc.d.called, "a paused actor should not be resumed when the call it's waiting on completes"
+        assert not container.has_message(('stopped', proc)), \
+            "a paused actor should not be resumed when the call it's waiting on completes"
 
         proc.resume()
 
-        assert proc.d.called
         container.consume_message(('stopped', proc))
 
     ### resuming when the async call has NOT been fired
