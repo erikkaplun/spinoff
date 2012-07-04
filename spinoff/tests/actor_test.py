@@ -3,7 +3,7 @@ from __future__ import print_function
 import random
 import warnings
 
-from twisted.internet.defer import QueueUnderflow, Deferred, succeed
+from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
 from spinoff.actor import Actor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
@@ -456,11 +456,6 @@ def test_spawn_child_actor():
         assert msg[:2] == ('error', c) and msg[3] is False and isinstance(msg[-2][0], MockException), \
             "child actor errors should be sent to its parent"
 
-        for retval in [random.random(), None]:
-            c = self.spawn(lambda self: retval)
-            msg = deferred_result(self.get())
-            assert ('stopped', c) == msg, "child actor return value is ignored %s" % repr(msg)
-
     run(Parent)
 
     child_stopped = [False]
@@ -491,6 +486,32 @@ def test_spawn_child_actor():
     with contain(Parent3, start_automatically=False) as (_, parent3):
         with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
             parent3.start()
+
+
+def test_actor_returns_value_raises_a_warning():
+    @actor
+    def SomeActor(self):
+        yield
+        returnValue(123)
+
+    with Container() as container:
+        with assert_one_warning():
+            container.spawn(actor(lambda self: 123))
+        with assert_one_warning():
+            container.spawn(SomeActor)
+
+
+def test_returnvalue_during_cleanup():
+    @actor
+    def X(self):
+        try:
+            yield Deferred()
+        except GeneratorExit:
+            returnValue(123)
+
+    with contain(X) as (contaner, x):
+        with assert_one_warning():
+            x.stop()
 
 
 def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_children():

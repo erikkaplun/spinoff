@@ -219,8 +219,10 @@ class Actor(BaseActor):
         def wrap():
             gen = self.run(*args, **kwargs)
             if not isinstance(gen, types.GeneratorType):
+                if gen is not None:
+                    warnings.warn("actor returned a value that was not None")
                 yield None
-                returnValue(gen)
+                returnValue(None)
             self._gen = gen
             fire_current_d = self._fire_current_d
             prev_result = None
@@ -243,6 +245,9 @@ class Actor(BaseActor):
                 # by exiting the while loop, and thus the function, inlineCallbacks will in turn get a StopIteration
                 # from us.
                 pass
+            except _DefGen_Return:
+                warnings.warn("returnValue inside an actor")
+                # StopIteration "raised" implicitly
         self._fn = inlineCallbacks(wrap)
 
         self._waiting = None
@@ -343,10 +348,8 @@ class Actor(BaseActor):
         if self._gen:
             try:
                 self._gen.close()
-            except GeneratorExit:
-                raise StopIteration()
-            except (StopIteration, _DefGen_Return):
-                pass
+            except _DefGen_Return:
+                warnings.warn("returnValue inside an actor")
             except RuntimeError:
                 self.exit(('stopped', self, 'refused'))
             except Exception as e:
