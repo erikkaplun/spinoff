@@ -5,7 +5,7 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed
 
-from unnamedframework.actor import Actor, actor, baseactor, ActorStopped, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
+from unnamedframework.actor import Actor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
 from unnamedframework.util.async import CancelledError
 from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
@@ -60,7 +60,7 @@ def test_failure_with_children():
     def Child(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     @actor
@@ -79,7 +79,7 @@ def test_actor_refuses_to_stop():
     def A(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             pass
         yield succeed(None)
         assert False
@@ -97,7 +97,7 @@ def test_failure_while_stopping():
     def A(self):
         try:
             yield mock_d
-        except ActorStopped:
+        except GeneratorExit:
             raise MockException()
 
     with contain(A) as (r, a):
@@ -216,7 +216,7 @@ def test_pausing_resuming_and_stopping():
         try:
             ret = yield mock_d
             assert ret == retval
-        except ActorStopped:
+        except GeneratorExit:
             stopped[0] = True
 
     ### resuming when the async called has been fired
@@ -313,7 +313,7 @@ def test_actor_does_not_have_to_catch_actorstopped():
         yield Deferred()
 
     with contain(X) as (container, proc):
-        with assert_not_raises(ActorStopped):
+        with assert_not_raises(GeneratorExit):
             proc.stop()
         container.consume_message(('stopped', proc))
 
@@ -325,7 +325,7 @@ def test_actor_must_exit_after_being_stopped():
         while True:
             try:
                 yield Deferred()
-            except ActorStopped:
+            except GeneratorExit:
                 pass
 
     with contain(X) as (container, proc):
@@ -339,7 +339,7 @@ def test_actor_must_exit_after_being_stopped():
         while True:
             try:
                 yield Deferred()
-            except ActorStopped:
+            except GeneratorExit:
                 break
     with contain(Proc2) as (container, proc2):
         proc2.stop()
@@ -471,7 +471,7 @@ def test_spawn_child_actor():
         assert foo == arg
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     @actor
@@ -501,7 +501,7 @@ def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_ch
     def Child(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     @actor
@@ -532,7 +532,7 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
     def LongLivingChild(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     mock_d = Deferred()
@@ -559,7 +559,7 @@ def test_actor_finishing_before_child_stops_its_children():
     def Child(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     @actor
@@ -579,7 +579,7 @@ def test_actor_failinig_stops_its_children():
     def Child(self):
         try:
             yield Deferred()
-        except ActorStopped:
+        except GeneratorExit:
             child_stopped[0] = True
 
     @actor
