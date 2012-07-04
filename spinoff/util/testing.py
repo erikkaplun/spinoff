@@ -192,12 +192,12 @@ class Container(MockActor):
         self._start_automatically = start_automatically
 
     def __enter__(self):
-        assert self._actor_cls
         self.start()
-        self._actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
-        a._parent = self
-        if self._start_automatically:
-            a.start()
+        if self._actor_cls:
+            self._actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
+            a._parent = self
+            if self._start_automatically:
+                a.start()
         return self
 
     def __exit__(self, exc_cls, exc, tb):
