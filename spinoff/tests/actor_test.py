@@ -463,7 +463,7 @@ def test_spawn_child_actor():
 
     run(Parent)
 
-    chld_stopped = [False]
+    child_stopped = [False]
     arg = random.random()
 
     @actor
@@ -472,7 +472,7 @@ def test_spawn_child_actor():
         try:
             yield Deferred()
         except ActorStopped:
-            chld_stopped[0] = True
+            child_stopped[0] = True
 
     @actor
     def Parent2(self):
@@ -481,7 +481,7 @@ def test_spawn_child_actor():
     with contain(Parent2) as (container, parent2):
         container.ignore_non_assertions()
 
-    assert chld_stopped[0]
+    assert child_stopped[0]
 
     class Parent3(Actor):
         def __init__(self):
