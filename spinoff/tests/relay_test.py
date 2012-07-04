@@ -2,7 +2,7 @@ from twisted.internet.task import Clock
 from twisted.trial import unittest
 
 from spinoff.actor.device.relay import Relay
-from spinoff.util.testing import MockActor, RootActor
+from spinoff.util.testing import MockActor, Container
 
 
 class HttpGatewayTest(unittest.TestCase):
@@ -13,7 +13,7 @@ class HttpGatewayTest(unittest.TestCase):
     def _create_relay(self, use_clock=False, **kwargs):
         self.clock = Clock()
 
-        self.root = RootActor.spawn()
+        self.root = Container.spawn()
         self.mock = self.root.spawn(MockActor)
         self.relay = self.root.spawn(Relay, self.mock, reactor=self.clock, **kwargs)
 
