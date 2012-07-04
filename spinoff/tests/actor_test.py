@@ -318,34 +318,6 @@ def test_actor_does_not_have_to_catch_actorstopped():
         container.consume_message(('stopped', proc))
 
 
-def test_actor_must_exit_after_being_stopped():
-    # actor that violates the rule
-    @actor
-    def X(self):
-        while True:
-            try:
-                yield Deferred()
-            except GeneratorExit:
-                pass
-
-    with contain(X) as (container, proc):
-        proc.stop()
-        container.consume_message(('stopped', proc, 'refused'),
-                                  message="actor should not be allowed to continue working when stopped")
-
-    # actor that complies with the rule
-    @actor
-    def Proc2(self):
-        while True:
-            try:
-                yield Deferred()
-            except GeneratorExit:
-                break
-    with contain(Proc2) as (container, proc2):
-        proc2.stop()
-        container.consume_message(('stopped', proc2))
-
-
 def test_actor_with_args():
     passed_values = [None, None]
 
