@@ -272,7 +272,7 @@ class Actor(BaseActor):
 
     def _fire_current_d(self, result, d):
         self._on_hold_d = None
-        if self._state is  RUNNING and not self._cancelling_hold_d:
+        if self._state is RUNNING and not self._cancelling_hold_d:
             if isinstance(result, Failure):
                 d.errback(result)
             else:
