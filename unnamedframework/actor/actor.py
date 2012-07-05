@@ -9,7 +9,6 @@ from twisted.application.service import Service
 from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError, succeed
 from twisted.python import log
 from twisted.python.failure import Failure
-from zope.interface import Interface, implements
 
 from unnamedframework.util.pattern_matching import match
 from unnamedframework.util._defer import inlineCallbacks
@@ -18,7 +17,7 @@ from unnamedframework.util.python import combomethod
 
 
 __all__ = [
-    'IActor', 'IProducer', 'IConsumer', 'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
+    'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
     'ActorRefusedToStop']
 
@@ -38,36 +37,10 @@ class InterfaceException(Exception):
     pass
 
 
-class IProducer(Interface):
-
-    def connect(component):
-        """Connects this component to another `component`.
-
-        It is legal to pass in `self` as the value of `component` if needed.
-
-        """
-
-
-class IConsumer(Interface):
-
-    def send(message):
-        """Sends an incoming `message` into one of the `inbox`es of this component.
-
-        Returns a `Deferred` which will be fired when this component has received the `message`.
-
-        """
-
-
-class IActor(IProducer, IConsumer):
-    pass
-
-
 NOT_STARTED, RUNNING, PAUSED, STOPPED = range(4)
 
 
 class BaseActor(object):
-    implements(IActor)
-
     parent = property(lambda self: self._parent)
 
     is_running = property(lambda self: self._state is RUNNING)
