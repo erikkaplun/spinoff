@@ -18,7 +18,7 @@ class TestCaseBase(unittest.TestCase):
     def setUp(self):
         self._z_components = []
 
-    def _make(self, cls, endpoint, identity=None, with_mock=False):
+    def _make(self, cls, endpoint, identity=None):
         ret = run(cls(endpoint, identity))
         self._z_components.append(ret[1])
         return ret
@@ -41,7 +41,7 @@ class RouterDealerTestCase(TestCaseBase):
         root, router = self._make_router(ADDR)
         dealers = []
         for i in range(n):
-            root, dealer = self._make_dealer(ADDR, identity='dude%s' % i, with_mock=True)
+            root, dealer = self._make_dealer(ADDR, identity='dude%s' % i)
             dealers.append((dealer, root))
         yield _wait_slow_joiners(n)
 
