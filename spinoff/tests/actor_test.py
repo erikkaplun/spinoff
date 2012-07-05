@@ -50,7 +50,7 @@ def test_base_actor_error():
         with assert_not_raises(MockException):
             some_actor.send('whatev')
         assert not container.has_message(('stopped', some_actor))
-        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), _), True))
+        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), _)))
 
 
 def test_failure_with_children():
@@ -87,7 +87,7 @@ def test_actor_refuses_to_stop():
     with contain(A) as (container, a):
         a.pause()
         a.stop()
-        container.consume_message(('error', a, (_, _), _))
+        container.consume_message(('error', a, (_, _)))
 
 
 def test_failure_while_stopping():
@@ -104,7 +104,7 @@ def test_failure_while_stopping():
         assert a.is_running
         with assert_not_raises(MockException):
             a.stop()
-        r.consume_message(('error', a, (_, _), _))
+        r.consume_message(('error', a, (_, _)))
 
 
 def test_connect_and_put():
@@ -171,7 +171,7 @@ def test_failure():
         raise exc
 
     with contain(A) as (container, a):
-        container.consume_message(('error', a, (exc, _), False))
+        container.consume_message(('error', a, (exc, _)))
         assert not a.is_alive
 
 
@@ -343,7 +343,7 @@ def test_actor_doesnt_require_generator():
         raise MockException()
 
     with Container(Proc2) as container:
-        container.consume_message(('error', _, (NOT(IS_INSTANCE(AssertionError)), _), _))
+        container.consume_message(('error', _, (NOT(IS_INSTANCE(AssertionError)), _)))
 
 
 def test_get():
@@ -425,8 +425,7 @@ def test_spawn_child_actor():
 
         c = self.spawn(run_with_error)
         msg = deferred_result(self.get())
-        assert msg[:2] == ('error', c) and msg[3] is False and isinstance(msg[-2][0], MockException), \
-            "child actor errors should be sent to its parent"
+        assert msg == ('error', c, (IS_INSTANCE(MockException), ANY))
 
     run(Parent)
 
@@ -581,7 +580,7 @@ def test_actor_failinig_stops_its_children():
         raise Exception()
 
     with Container(Parent) as container:
-        container.consume_message(('error', _, (IS_INSTANCE(Exception), _), _))
+        container.consume_message(('error', _, (IS_INSTANCE(Exception), _)))
 
     assert child_stopped[0]
 

@@ -119,7 +119,7 @@ class BaseActor(object):
             try:
                 self.handle(message)
             except Exception as e:
-                self.parent.send(('error', self, (e, sys.exc_info()[2]), True))
+                self.parent.send(('error', self, (e, sys.exc_info()[2])))
         else:
             if self._state is NOT_STARTED:
                 raise ActorNotRunning("Message sent to an actor that hasn't been started ")
@@ -264,7 +264,7 @@ class Actor(BaseActor):
         @d.addBoth
         def finally_(result):
             if isinstance(result, Failure):
-                self.exit(('error', self, (result.value, result.tb or result.getTraceback()), False))
+                self.exit(('error', self, (result.value, result.tb or result.getTraceback())))
             self.stop()
 
     def stop(self, silent=False):
@@ -351,7 +351,7 @@ class Actor(BaseActor):
             except _DefGen_Return:
                 warnings.warn("returnValue inside an actor")
             except Exception as e:
-                self.exit(('error', self, (e, sys.exc_info()[2]), False))
+                self.exit(('error', self, (e, sys.exc_info()[2])))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
