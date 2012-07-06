@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from functools import wraps
 
 from twisted.internet.task import Clock
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, succeed
 
 from unnamedframework.util.async import CancelledError
 from unnamedframework.actor.actor import BaseActor
@@ -180,6 +180,8 @@ class MockActor(BaseActor):
         return ret
 
     def wait(self):
+        if self.messages:
+            return succeed(self.messages.pop(0))
         self.waiting = Deferred()
         return self.waiting
 
