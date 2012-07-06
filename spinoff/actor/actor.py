@@ -74,7 +74,7 @@ class BaseActor(object):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
             actor_cls = actor(actor_cls)
 
-        if not isinstance(actor_cls, BaseActor):
+        if isinstance(actor_cls, type):
             child = actor_cls(*args, **kwargs)
         else:
             child = actor_cls
