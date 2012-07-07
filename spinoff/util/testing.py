@@ -7,7 +7,7 @@ from twisted.internet.task import Clock
 from twisted.internet.defer import Deferred, succeed
 
 from spinoff.util.async import CancelledError
-from spinoff.actor.actor import BaseActor
+from spinoff.actor import BaseActor
 from spinoff.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
 
 

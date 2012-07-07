@@ -1,6 +1,6 @@
 from itertools import count
 
-from spinoff.actor.actor import Actor, RoutingException, InterfaceException
+from spinoff.actor import Actor, RoutingException, InterfaceException
 
 
 class InMemRouterEndpoint(Actor):

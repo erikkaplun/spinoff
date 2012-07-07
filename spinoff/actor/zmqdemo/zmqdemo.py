@@ -3,7 +3,7 @@ import random
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory
 
-from spinoff.actor.actor import Actor, Application, Pipeline
+from spinoff.actor import Actor, Application, Pipeline
 from spinoff.actor.transport.zeromq import ZmqReq, ZmqRep
 from spinoff.util.async import sleep
 
