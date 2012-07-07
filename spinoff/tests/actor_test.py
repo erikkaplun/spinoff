@@ -257,6 +257,7 @@ def test_pausing_resuming_and_stopping():
             yield mock_d
         except MockException:
             exception_caught[0] = True
+        yield Deferred()
 
     with contain(Y) as (container, x):
         x.pause()
@@ -266,7 +267,7 @@ def test_pausing_resuming_and_stopping():
 
         ### can't resume twice
         with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an actor twice"):
-            proc2.resume()
+            x.resume()
 
     ### stopping
     mock_d = Deferred()
