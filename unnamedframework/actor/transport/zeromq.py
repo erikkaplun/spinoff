@@ -4,7 +4,7 @@ from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 from txzmq import ZmqFactory
 
-from unnamedframework.actor.actor import Actor
+from unnamedframework.actor import Actor
 
 
 class ZmqProxyBase(Actor):

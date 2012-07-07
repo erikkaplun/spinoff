@@ -19,7 +19,7 @@ from unnamedframework.util.python import combomethod
 __all__ = [
     'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
-    'ActorRefusedToStop']
+    'ActorRefusedToStop', 'ActorRunner']
 
 
 EMPTY = object()

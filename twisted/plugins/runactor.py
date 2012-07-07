@@ -5,7 +5,7 @@ from twisted.python import usage, failure
 from twisted.plugin import IPlugin
 from twisted.application.service import IServiceMaker
 
-from unnamedframework.actor.actor import ActorRunner
+from unnamedframework.actor import ActorRunner
 
 
 class Options(usage.Options):

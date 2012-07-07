@@ -7,7 +7,7 @@ from twisted.internet.task import Clock
 from twisted.internet.defer import Deferred, succeed
 
 from unnamedframework.util.async import CancelledError
-from unnamedframework.actor.actor import BaseActor
+from unnamedframework.actor import BaseActor
 from unnamedframework.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
 
 
