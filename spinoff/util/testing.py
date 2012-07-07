@@ -172,7 +172,8 @@ class MockActor(BaseActor):
     def handle(self, message):
         try:
             if self.waiting:
-                self.waiting.callback(message)
+                self.waiting, w = None, self.waiting
+                w.callback(message)
             else:
                 self.messages.append(message)
         except Exception:
