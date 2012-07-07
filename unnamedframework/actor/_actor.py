@@ -402,6 +402,7 @@ def baseactor(fn):
     class ret(BaseActor):
         handle = fn
     ret.__name__ = fn.__name__
+    ret.__module__ = fn.__module__
     return ret
 
 
@@ -409,6 +410,7 @@ def actor(fn):
     class ret(Actor):
         run = fn
     ret.__name__ = fn.__name__
+    ret.__module__ = fn.__module__
     return ret
 
 
