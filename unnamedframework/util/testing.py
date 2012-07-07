@@ -192,6 +192,9 @@ class MockActor(BaseActor):
 
 
 class Container(MockActor):
+    # XXX: there are some inconsistencies or duplications because we're not really able to cleanly override behavior
+    # from BaseActor, so __exit__ is not DRY etc. There might be a way to refactor BaseActor to allow for a more elegant
+    # implementation of this class.
 
     def __init__(self, actor_cls=None, start_automatically=True):
         super(Container, self).__init__()
@@ -201,13 +204,20 @@ class Container(MockActor):
     def __enter__(self):
         self.start()
         if self._actor_cls:
+            # we could use self.spawn here, but we need to handle start_automatically=False
             self._actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
+            self._children.append(a)
             a._parent = self
             if self._start_automatically:
                 a.start()
         return self
 
     def __exit__(self, exc_cls, exc, tb):
+        for child in list(self._children):
+            # XXX: because we have overriden handle, children are not automatically removed when stopped
+            if child.is_alive:
+                child.stop(silent=True)
+
         if exc is None:
             self.raise_errors()
         else:
