@@ -90,9 +90,11 @@ class BaseActor(object):
     def send(self, message):
         if self._state is RUNNING:
             try:
-                self.handle(message)
+                ret = self.handle(message)
             except Exception as e:
                 self.parent.send(('error', self, (e, sys.exc_info()[2])))
+            if isinstance(ret, types.GeneratorType):
+                raise RuntimeError("reactor.handle returned a generator: yield inside a reactor?")
         else:
             if self._state is NOT_STARTED:
                 raise ActorNotRunning("Message sent to an actor that hasn't been started ")
