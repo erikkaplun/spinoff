@@ -1,5 +1,6 @@
 import warnings
 import sys
+import traceback
 from contextlib import contextmanager
 from functools import wraps
 
@@ -169,10 +170,13 @@ class MockActor(BaseActor):
         self.waiting = None
 
     def handle(self, message):
-        if self.waiting:
-            self.waiting.callback(message)
-        else:
-            self.messages.append(message)
+        try:
+            if self.waiting:
+                self.waiting.callback(message)
+            else:
+                self.messages.append(message)
+        except Exception:
+            traceback.print_exc()
 
     def clear(self):
         ret = self.messages
