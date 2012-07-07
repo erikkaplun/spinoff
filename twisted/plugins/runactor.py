@@ -31,14 +31,14 @@ class ActorRunnerMaker(object):
         try:
             module_path, actor_cls_name = actor.rsplit('.', 1)
         except ValueError:
-            print >> sys.stderr, "error: bad path to actor %s" % actor
+            print >> sys.stderr, "error: invalid path to actor %s" % actor
             sys.exit(1)
 
         try:
             mod = __import__(module_path, globals(), locals(), [actor_cls_name], -1)
         except ImportError:
-            print >> sys.stderr, "error: could not import %s:" % actor
-            failure.Failure().printTraceback(file=sys.stderr)
+            print >> sys.stderr, "error: could not import %s" % actor
+            # failure.Failure().printTraceback(file=sys.stderr)
             sys.exit(1)
 
         actor_cls = getattr(mod, actor_cls_name)
