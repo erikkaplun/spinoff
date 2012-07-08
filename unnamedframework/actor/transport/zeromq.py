@@ -18,8 +18,10 @@ class ZmqProxyBase(Actor):
         super(ZmqProxyBase, self).__init__()
         self._identity = identity
         self._endpoints = []
-        if not self._FACTORY:
-            self._FACTORY = ZmqFactory()
+
+        if not ZmqProxyBase._FACTORY:
+            ZmqProxyBase._FACTORY = ZmqFactory()
+
         self._conn = self.CONNECTION_CLASS(self._FACTORY, identity=identity)
         self._conn.gotMessage = self._zmq_msg_received
 
