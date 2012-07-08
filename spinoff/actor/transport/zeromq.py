@@ -4,10 +4,10 @@ from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 from txzmq import ZmqFactory
 
-from spinoff.actor import Actor
+from spinoff.actor import BaseActor
 
 
-class ZmqProxyBase(Actor):
+class ZmqProxyBase(BaseActor):
 
     CONNECTION_CLASS = None
     DEFAULT_ENDPOINT_TYPE = 'connect'
@@ -32,9 +32,8 @@ class ZmqProxyBase(Actor):
         message = pickle.loads(message[0])
         self.parent.send(message)
 
-    def run(self):
-        while True:
-            self._conn.sendMsg(pickle.dumps((yield self.get())))
+    def handle(self, message):
+        self._conn.sendMsg(pickle.dumps(message))
 
     def add_endpoints(self, endpoints):
         endpoints = [
@@ -70,14 +69,12 @@ class ZmqRouter(ZmqProxyBase):
         message = pickle.loads(message[0])
         self.parent.send((sender_id, message))
 
-    def run(self):
-        while True:
-            message = yield self.get()
-            if not isinstance(message, tuple) or len(message) != 2:
-                self.parent.send(('error', self, ('unhandled-message', message), None))
-                continue
-            recipient_id, message = message
-            self._conn.sendMsg(recipient_id, pickle.dumps(message))
+    def handle(self, message):
+        if not isinstance(message, tuple) or len(message) != 2:
+            self.parent.send(('error', self, ('unhandled-message', message), None))
+            return
+        recipient_id, message = message
+        self._conn.sendMsg(recipient_id, pickle.dumps(message))
 
 
 class ZmqDealer(ZmqProxyBase):
@@ -91,21 +88,18 @@ class ZmqRep(ZmqProxyBase):
     def _zmq_msg_received(self, message_id, message):
         self.parent.send((message_id, pickle.loads(message)))
 
-    def run(self):
-        while True:
-            message = yield self.get()
-            try:
-                message_id, message = message
-            except ValueError:
-                raise Exception("ZmqRouter requires messages of the form (request_id, response)")
-            msg_data_out = pickle.dumps(message)
-            self._conn.sendMsg(message_id, msg_data_out)
+    def handle(self, message):
+        try:
+            message_id, message = message
+        except ValueError:
+            raise Exception("ZmqRouter requires messages of the form (request_id, response)")
+        msg_data_out = pickle.dumps(message)
+        self._conn.sendMsg(message_id, msg_data_out)
 
 
 class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
-    def run(self):
-        while True:
-            msg_data_in = yield self._conn.sendMsg(pickle.dumps((yield self.get())))
-            self.parent.send(pickle.loads(msg_data_in[0]))
+    def handle(self, message):
+        msg_data_in = yield self._conn.sendMsg(pickle.dumps(message))
+        self.parent.send(pickle.loads(msg_data_in[0]))
