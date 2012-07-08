@@ -1,5 +1,3 @@
-import pickle
-
 from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 from txzmq import ZmqFactory
@@ -29,11 +27,11 @@ class ZmqProxyBase(BaseActor):
             self.add_endpoints([endpoint])
 
     def _zmq_msg_received(self, message):
-        message = pickle.loads(message[0])
+        message = message[0]
         self.parent.send(message)
 
     def handle(self, message):
-        self._conn.sendMsg(pickle.dumps(message))
+        self._conn.sendMsg(message)
 
     def add_endpoints(self, endpoints):
         endpoints = [
@@ -66,7 +64,7 @@ class ZmqRouter(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, sender_id, message):
-        message = pickle.loads(message[0])
+        message = message[0]
         self.parent.send((sender_id, message))
 
     def handle(self, message):
@@ -74,7 +72,7 @@ class ZmqRouter(ZmqProxyBase):
             self.parent.send(('error', self, ('unhandled-message', message), None))
             return
         recipient_id, message = message
-        self._conn.sendMsg(recipient_id, pickle.dumps(message))
+        self._conn.sendMsg(recipient_id, message)
 
 
 class ZmqDealer(ZmqProxyBase):
@@ -86,14 +84,14 @@ class ZmqRep(ZmqProxyBase):
     DEFAULT_ENDPOINT_TYPE = 'bind'
 
     def _zmq_msg_received(self, message_id, message):
-        self.parent.send((message_id, pickle.loads(message)))
+        self.parent.send((message_id, message))
 
     def handle(self, message):
         try:
             message_id, message = message
         except ValueError:
             raise Exception("ZmqRouter requires messages of the form (request_id, response)")
-        msg_data_out = pickle.dumps(message)
+        msg_data_out = message
         self._conn.sendMsg(message_id, msg_data_out)
 
 
@@ -101,5 +99,5 @@ class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
     def handle(self, message):
-        msg_data_in = yield self._conn.sendMsg(pickle.dumps(message))
-        self.parent.send(pickle.loads(msg_data_in[0]))
+        msg_data_in = yield self._conn.sendMsg(message)
+        self.parent.send(msg_data_in[0])
