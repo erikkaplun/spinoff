@@ -43,3 +43,8 @@ class RouterDealerTestCase(unittest.TestCase):
 
     def test_router_with_10_dealers(self):
         return self._do_test_router_with_n_dealers(10)
+
+    def test_release_files(self):
+        for i in range(200):
+            with contain(ZmqRouter('ipc://whatev')):
+                pass
