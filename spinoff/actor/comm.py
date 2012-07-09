@@ -62,6 +62,9 @@ class ActorRef(object):
     def __ne__(self, other):
         return not (self == other)
 
+    def __repr__(self):
+        return '<ActorRef @ %s%s>' % (self.addr, '*' if self._referee else '')
+
 
 class Comm(BaseActor):
 
