@@ -6,7 +6,7 @@ import pickle
 from twisted.internet.defer import succeed
 
 from unnamedframework.actor import BaseActor
-from unnamedframework.actor.transport.zeromq import ZmqRouter
+from unnamedframework.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from unnamedframework.util.async import sleep
 
 
@@ -68,7 +68,6 @@ class Comm(BaseActor):
     _current = None
 
     def handle(self, message):
-        sender_identity, message = message
         with self:
             actor_id, payload = pickle.loads(message)
         if actor_id not in self._registry_rev:
@@ -90,11 +89,14 @@ class Comm(BaseActor):
         port = BASE_PORT + process - 1
         self.identity = '%s:%d' % (host, port)
 
-        if sock:
-            self._sock = self.spawn(sock)
+        if sock:  # this is purely for testability
+            self._outgoing_sock = self.spawn(sock)
+            # no incoming sock needed when mocks are used
         else:
-            self._sock = self.spawn(ZmqRouter(endpoint=('bind', _make_addr('*:%d' % port)),
-                                              identity=self.identity))
+            self._outgoing_sock = self.spawn(ZmqRouter(endpoint=None))
+            # incoming
+            self.spawn(ZmqDealer(endpoint=('bind', _make_addr('*:%d' % port)),
+                                 identity=self.identity))
 
     def __enter__(self):
         Comm._current = self
@@ -123,11 +125,11 @@ class Comm(BaseActor):
             return self._registry_rev[actor_id]
         else:
             self.ensure_connected(to=identity).addCallback(
-                lambda _: self._sock.send((identity, pickle.dumps((actor_id, msg)))))
+                lambda _: self._outgoing_sock.send((identity, pickle.dumps((actor_id, msg)))))
 
     def ensure_connected(self, to):
-        if isinstance(self._sock, ZmqRouter) and not self._zmq_is_connected(to=to):
-            self._sock.add_endpoints([('connect', _make_addr(to))])
+        if isinstance(self._outgoing_sock, ZmqRouter) and not self._zmq_is_connected(to=to):
+            self._outgoing_sock.add_endpoints([('connect', _make_addr(to))])
             self._connections.add(to)
             return sleep(0.005)
         else:

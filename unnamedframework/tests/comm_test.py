@@ -136,7 +136,7 @@ class CommTestCase(unittest.TestCase):
             with comm:
                 actor_id = _get_actor_id(ActorRef(actor1))
 
-            comm.send(('sender-id-ignored', pickle.dumps((actor_id, 'something'))))
+            comm.send(pickle.dumps((actor_id, 'something')))
 
             assert 'something' == deferred_result(actor1.wait())
 
@@ -151,26 +151,22 @@ class CommTestCase(unittest.TestCase):
 
             with comm1:
                 actor1_ref = ActorRef(actor1)
+                actor1_addr = actor1_ref.addr
             with comm2:
                 actor2_ref = ActorRef(actor2)
+                yield comm2.ensure_connected('127.0.0.1:11000')
+                comm2.send_msg(actor1_addr, actor2_ref)
 
-            addr = actor1_ref.addr
-            yield comm2.ensure_connected('127.0.0.1:11000')
-            comm2.send_msg(addr, actor2_ref)
-
-            with comm1:
-                # the receiving procedure must take place in the
-                # context of a comm, otherwise we'll get an error when
-                # we try to unpickle the received actorref. in this
-                # case it has to be comm1 of course.
-                yield sleep(0.005)
+            yield sleep(0.1)
 
             received_ref = deferred_result(actor1.wait())
             assert actor2_ref == received_ref
 
-            actor2_ref.send('something-else')
-            yield sleep(0.1)
+            with comm1:
+                yield comm1.ensure_connected('127.0.0.1:11001')
+                received_ref.send('something-else')
 
+            yield sleep(0.005)
             assert 'something-else' == deferred_result(actor2.wait())
 
     def test_receive_actorref_to_a_local_actor(self):
