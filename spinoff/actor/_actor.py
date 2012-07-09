@@ -384,7 +384,11 @@ class ActorRunner(Service):
         if message[0] == 'error':
             assert message[1] == self._actor
             sys.stderr.write("failed: %s\n" % self._actor_path)
-            raise message[2]
+
+            if not isinstance(message[2][1], basestring):
+                raise message[2][0], None, message[2][1]
+            else:
+                print(message[2][1], file=sys.stderr)
         elif message[0] == 'done':
             assert message[1] == self._actor
             sys.stderr.write("finished: %s\n" % self._actor_path)
