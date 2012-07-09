@@ -77,6 +77,7 @@ class Comm(BaseActor):
 
     @classmethod
     def get_for_thread(self):
+        assert self._current
         return self._current
 
     def __init__(self, host, process=1, sock=None):
@@ -98,12 +99,19 @@ class Comm(BaseActor):
             self.spawn(ZmqDealer(endpoint=('bind', _make_addr('*:%d' % port)),
                                  identity=self.identity))
 
-    def __enter__(self):
+    def install(self):
+        assert not Comm._current
         Comm._current = self
+
+    def uninstall(self):
+        Comm._current = None
+
+    def __enter__(self):
+        self.install()
         return self
 
     def __exit__(self, *args):
-        Comm._current = None
+        self.uninstall()
 
     def get_addr(self, actor):
         if actor in self._registry:
