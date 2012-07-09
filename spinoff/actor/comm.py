@@ -131,7 +131,7 @@ class Comm(BaseActor):
             _, identity_and_actor_id = addr.split('//', 1)
             identity, actor_id = identity_and_actor_id.split('/', 1)
         except ValueError:
-            raise ValueError("invalid node address: %s" % (addr, ))
+            raise ValueError("invalid actor address: %s" % (addr, ))
         if identity == self.identity:
             return self._registry_rev[actor_id]
         else:
