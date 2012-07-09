@@ -3,6 +3,7 @@ from __future__ import print_function
 import sys
 import types
 import warnings
+import weakref
 from functools import wraps
 
 from twisted.application.service import Service
@@ -50,6 +51,7 @@ class BaseActor(object):
     _state = NOT_STARTED
     _parent = None
     _out = None
+    _ref = None
 
     def __init__(self):
         self._children = []
@@ -150,6 +152,16 @@ class BaseActor(object):
     def exit(self, msg):
         self.parent.send(msg)
         self.d.callback(None)
+
+    @property
+    def ref(self):
+        if not (self._ref and self._ref()):
+            from unnamedframework.actor.comm import ActorRef
+            ref = ActorRef(self)
+            self._ref = weakref.ref(ref)
+            return ref
+        else:
+            return self._ref()
 
     def connect(self, to=None):
         assert not self._out, '%s vs %s' % (self._out, to)
