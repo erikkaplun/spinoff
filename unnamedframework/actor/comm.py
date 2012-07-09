@@ -29,13 +29,15 @@ class ActorRef(object):
     def addr(self):
         if not self._addr:
             assert self._referee
+            if not self.comm:
+                self._assign_comm()
+                assert self.comm
             self._addr = self.comm.get_addr(self._referee)
             assert self._addr
         return self._addr
 
     def _assign_comm(self):
         comm = Comm.get_for_thread()
-        assert comm
         self.comm = comm
 
     def send(self, message):
@@ -80,7 +82,6 @@ class Comm(BaseActor):
 
     @classmethod
     def get_for_thread(self):
-        assert self._current
         return self._current
 
     def __init__(self, host, process=1, sock=None):
