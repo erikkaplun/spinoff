@@ -163,6 +163,10 @@ class BaseActor(object):
         else:
             return self._ref()
 
+    def set_id(self, id):
+        from spinoff.actor.comm import Comm
+        Comm.get_for_thread().set_id(self, id)
+
     def connect(self, to=None):
         assert not self._out, '%s vs %s' % (self._out, to)
         self._out = to
