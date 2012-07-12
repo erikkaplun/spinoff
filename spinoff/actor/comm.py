@@ -76,7 +76,7 @@ class ActorRef(object):
         return not (self == other)
 
     def __repr__(self):
-        return '<ActorRef @ %s%s>' % (self.addr, '*' if self._referee else '')
+        return '<ActorRef @ %s>' % (self.addr or 'local', )
 
 
 class Comm(BaseActor):
