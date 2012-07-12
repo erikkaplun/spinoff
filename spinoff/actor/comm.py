@@ -15,37 +15,48 @@ BASE_PORT = 11000
 
 class ActorRef(object):
 
+    _comm = None
+
     def __init__(self, referee):
         self._referee = referee if not isinstance(referee, basestring) else None
         self._addr = referee if isinstance(referee, basestring) else None
 
-        # assigning a fixed comm to an ActorRef is purely for better
-        # testability, or more precisely, for consistency during
-        # testing--this way it is not possible to use the same
-        # ActorRef instance with different comms.
         self._assign_comm()
 
     @property
     def addr(self):
         if not self._addr:
             assert self._referee
-            if not self.comm:
-                self._assign_comm()
-                assert self.comm
-            self._addr = self.comm.get_addr(self._referee)
-            assert self._addr
+            comm = self._get_comm()
+            if not comm:
+                return None
+            else:
+                self._addr = comm.get_addr(self._referee)
+                assert self._addr
         return self._addr
 
     def _assign_comm(self):
-        comm = Comm.get_for_thread()
-        self.comm = comm
+        # assigning a fixed comm to an ActorRef is purely for better
+        # testability, or more precisely, for consistency during
+        # testing--this way it is not possible to use the same
+        # ActorRef instance with different comms.
+        if Comm._overridden:
+            self._comm = Comm._overridden
+
+    def _get_comm(self):
+        if not self._comm:
+            if Comm._overridden:
+                self._comm = Comm._overridden
+            else:
+                self._comm = Comm._current
+        return self._comm
 
     def send(self, message):
         if self._referee:
             self._referee.send(message)
         else:
             assert self._addr
-            local_actor = self.comm.send_msg(self._addr, message)
+            local_actor = self._get_comm().send_msg(self._addr, message)
             if local_actor:
                 self._referee = local_actor
                 local_actor.send(message)
@@ -71,6 +82,7 @@ class ActorRef(object):
 class Comm(BaseActor):
 
     _current = None
+    _overridden = None  # only for testing
 
     def handle(self, message):
         with self:
@@ -103,19 +115,14 @@ class Comm(BaseActor):
             self.spawn(ZmqDealer(endpoint=('bind', _make_addr('*:%d' % port)),
                                  identity=self.identity))
 
-    def install(self):
-        assert not Comm._current
-        Comm._current = self
-
-    def uninstall(self):
-        Comm._current = None
-
     def __enter__(self):
-        self.install()
+        assert not Comm._overridden
+        Comm._overridden = self
         return self
 
     def __exit__(self, *args):
-        self.uninstall()
+        assert Comm._overridden
+        Comm._overridden = None
 
     def get_addr(self, actor):
         if actor in self._registry:
