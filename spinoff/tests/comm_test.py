@@ -53,9 +53,6 @@ class CommTestCase(unittest.TestCase):
             assert ActorRef(actor1) == ActorRef(comm.get_addr(actor1))
 
     def test_actorref_comm_interaction(self):
-        with assert_raises(AssertionError):
-            ActorRef('whatever')
-
         for _ in range(3):
             with Comm(host='comm', sock=MockActor) as comm:
                 assert isinstance(comm, Comm)
