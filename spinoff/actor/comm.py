@@ -94,7 +94,7 @@ class Comm(BaseActor):
 
     @classmethod
     def get_for_thread(self):
-        return self._current
+        return self._current if not self._overridden else self._overridden
 
     def __init__(self, host, process=1, sock=None):
         super(Comm, self).__init__()
