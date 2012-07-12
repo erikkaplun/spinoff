@@ -61,7 +61,7 @@ class CommTestCase(unittest.TestCase):
                 assert isinstance(comm, Comm)
 
                 ref = ActorRef('whatever')
-                assert ref.comm == comm
+                assert ref._get_comm() == comm
 
     def test_send_locally(self):
         with Container() as container:
