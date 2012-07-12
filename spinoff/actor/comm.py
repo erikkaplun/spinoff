@@ -48,7 +48,7 @@ class ActorRef(object):
             if Comm._overridden:
                 self._comm = Comm._overridden
             else:
-                self._comm = Comm._current
+                return Comm._current
         return self._comm
 
     def send(self, message):
