@@ -221,7 +221,7 @@ class CommTestCase(unittest.TestCase):
             comm2.set_id(some_actor, 'some-actor')
 
             with comm1:
-                ref = ActorRef('http://127.0.0.1:11001/some-actor')
+                ref = ActorRef('tcp://127.0.0.1:11001/some-actor')
                 yield comm1.ensure_connected('127.0.0.1:11001')
                 ref.send('foobar')
 
