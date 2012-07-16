@@ -56,7 +56,7 @@ class BaseActor(object):
     def __init__(self):
         self._children = []
         self._pending = []
-        self.d = Deferred()
+        self._d = Deferred()
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
@@ -83,7 +83,7 @@ class BaseActor(object):
         child._parent = self
         child.start()
         self._children.append(child)
-        child.d.addBoth(lambda _: self._children.remove(child))
+        child._d.addBoth(lambda _: self._children.remove(child))
         return child
 
     _before_start = lambda _: None
@@ -171,7 +171,7 @@ class BaseActor(object):
 
         if not silent:
             self.parent.send(('stopped', self))
-            self.d.callback(None)
+            self._d.callback(None)
 
     @property
     def ref(self):
