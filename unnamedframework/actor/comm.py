@@ -8,6 +8,7 @@ from twisted.internet.defer import succeed
 from unnamedframework.actor import BaseActor
 from unnamedframework.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from unnamedframework.util.async import sleep
+from unnamedframework.util.pattern_matching import _
 
 
 BASE_PORT = 11000
@@ -85,35 +86,46 @@ class Comm(BaseActor):
     _overridden = None  # only for testing
 
     def handle(self, message):
-        with self:
-            actor_id, payload = pickle.loads(message)
-        if actor_id not in self._registry_rev:
-            print("received message for actor %s which does not exist (anymore)" % actor_id, file=sys.stderr)
+        if message == ('error', _, _):
+            raise RuntimeError("comm failed", message[2])
+        elif isinstance(message, str):
+            with self:
+                actor_id, payload = pickle.loads(message)
+            if actor_id not in self._registry_rev:
+                print("received message for actor %s which does not exist (anymore)" % actor_id, file=sys.stderr)
+            else:
+                self._registry_rev[actor_id].send(payload)
+            return
         else:
-            self._registry_rev[actor_id].send(payload)
+            raise UnhandledMessage
 
     @classmethod
     def get_for_thread(self):
         return self._current if not self._overridden else self._overridden
 
-    def __init__(self, host, process=1, sock=None):
+    def __init__(self, addr, sock=None):
+        assert not (addr.startswith('ipc://') or addr.startswith('inproc://')), \
+            "ipc:// and inproc:// are not supported (yet?)"
+
         super(Comm, self).__init__()
 
         self._registry = {}
         self._registry_rev = {}
         self._connections = set()
 
-        port = BASE_PORT + process - 1
-        self.identity = '%s:%d' % (host, port)
+        self.addr = addr
 
-        if sock:  # this is purely for testability
-            self._outgoing_sock = self.spawn(sock)
+        self._mock_sock = sock
+
+    def _before_start(self):
+        if self._mock_sock:  # this is purely for testability
+            self._outgoing_sock = self.spawn(self._mock_sock)
             # no incoming sock needed when mocks are used
         else:
             self._outgoing_sock = self.spawn(ZmqRouter(endpoint=None))
             # incoming
-            self.spawn(ZmqDealer(endpoint=('bind', _make_addr('*:%d' % port)),
-                                 identity=self.identity))
+            self.spawn(ZmqDealer(endpoint=('bind', self.addr),
+                                 identity=self.addr))
 
     def __enter__(self):
         assert not Comm._overridden
@@ -132,23 +144,25 @@ class Comm(BaseActor):
             self._registry[actor] = actor_id
             self._registry_rev[actor_id] = actor
 
-        return '%s/%s' % (_make_addr(self.identity), actor_id)
+        return '%s/%s' % (self.addr, actor_id)
 
-    def send_msg(self, addr, msg):
-        try:
-            _, identity_and_actor_id = addr.split('//', 1)
-            identity, actor_id = identity_and_actor_id.split('/', 1)
-        except ValueError:
-            raise ValueError("invalid actor address: %s" % (addr, ))
-        if identity == self.identity:
+    def send_msg(self, actor_addr, msg):
+        if not (actor_addr.startswith('tcp://') or actor_addr.startswith('udp://')):
+            raise ValueError("Actor addresses should start with tcp:// or udp://")
+        if not '/' in actor_addr[len('___://'):]:
+            raise ValueError("Actor addresses should have an actor ID")
+
+        node_addr, actor_id = actor_addr.rsplit('/', 1)
+
+        if node_addr == self.addr:
             return self._registry_rev[actor_id]
         else:
-            self.ensure_connected(to=identity).addCallback(
-                lambda _: self._outgoing_sock.send((identity, pickle.dumps((actor_id, msg)))))
+            self.ensure_connected(to=node_addr).addCallback(
+                lambda _: self._outgoing_sock.send((node_addr, pickle.dumps((actor_id, msg)))))
 
     def ensure_connected(self, to):
         if isinstance(self._outgoing_sock, ZmqRouter) and not self._zmq_is_connected(to=to):
-            self._outgoing_sock.add_endpoints([('connect', _make_addr(to))])
+            self._outgoing_sock.add_endpoints([('connect', to)])
             self._connections.add(to)
             return sleep(0.005)
         else:
@@ -164,8 +178,4 @@ class Comm(BaseActor):
         return to in self._connections
 
     def __repr__(self):
-        return '<Comm %s>' % (self.identity, )
-
-
-def _make_addr(identity):
-    return 'tcp://%s' % identity
+        return '<Comm %s>' % (self.addr, )
