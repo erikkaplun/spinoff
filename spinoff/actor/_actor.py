@@ -20,7 +20,7 @@ from spinoff.util.python import combomethod
 __all__ = [
     'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
-    'ActorRefusedToStop', 'ActorRunner']
+    'ActorRefusedToStop', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
 EMPTY = object()
