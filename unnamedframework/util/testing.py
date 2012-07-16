@@ -97,7 +97,7 @@ def assert_num_warnings(n):
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         yield
-        assert len(w) == n
+        assert len(w) == n, "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w)))
 
 
 def assert_no_warnings():
