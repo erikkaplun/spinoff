@@ -6,7 +6,7 @@ from unnamedframework.util.async import TimeoutError, sleep, with_timeout
 from unnamedframework.util.testing import assert_not_raises, contain
 
 
-_wait_msg = lambda d: with_timeout(4.0, d)
+_wait_msg = lambda d: with_timeout(1.0, d)
 _wait_slow_joiners = lambda n=1: sleep(0.001 * n)  # try increasing this if tests fail
 
 
