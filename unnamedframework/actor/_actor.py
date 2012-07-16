@@ -86,15 +86,31 @@ class BaseActor(object):
         child.d.addBoth(lambda _: self._children.remove(child))
         return child
 
+    _before_start = lambda _: None
+
     def start(self):
         self.resume()
+        try:
+            self._wrap_errors(self._before_start)
+        except Exception as e:
+            self.stop()
+
+    def _send_error(self, exc_and_traceback):
+        self.parent.send(('error', self, exc_and_traceback))
+
+    def _wrap_errors(self, fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            self._send_error((e, sys.exc_info()[2]))
+            raise
 
     def send(self, message):
         if self._state is RUNNING:
             try:
-                ret = self.handle(message)
-            except Exception as e:
-                self.parent.send(('error', self, (e, sys.exc_info()[2])))
+                ret = self._wrap_errors(self.handle, message)
+            except Exception:
+                pass
             else:
                 if isinstance(ret, types.GeneratorType):
                     raise RuntimeError("reactor.handle returned a generator: yield inside a reactor?")
@@ -133,6 +149,8 @@ class BaseActor(object):
                 self.send(pending_message)
             self._pending = []
 
+    _on_stop = lambda _: None
+
     def stop(self, silent=False):
         if self._state is NOT_STARTED:
             raise Exception("Actor not started")
@@ -144,14 +162,16 @@ class BaseActor(object):
         for child in self._children:
             child.stop(silent=True)
 
+        try:
+            self._wrap_errors(self._on_stop)
+        except Exception:
+            pass
+
         self._state = STOPPED
 
-        if not silent and not self.d.called:
-            self.exit(('stopped', self))
-
-    def exit(self, msg):
-        self.parent.send(msg)
-        self.d.callback(None)
+        if not silent:
+            self.parent.send(('stopped', self))
+            self.d.callback(None)
 
     @property
     def ref(self):
@@ -256,12 +276,8 @@ class Actor(BaseActor):
         @d.addBoth
         def finally_(result):
             if isinstance(result, Failure):
-                self.exit(('error', self, (result.value, result.tb or result.getTraceback())))
+                self._send_error((result.value, result.tb or result.getTraceback()))
             self.stop()
-
-    def stop(self, silent=False):
-        self._on_stop()
-        super(Actor, self).stop()
 
     def run(self):
         pass
@@ -343,7 +359,7 @@ class Actor(BaseActor):
             except _DefGen_Return:
                 warnings.warn("returnValue inside an actor")
             except Exception as e:
-                self.exit(('error', self, (e, sys.exc_info()[2])))
+                self._send_error((e, sys.exc_info()[2]))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused actor")
