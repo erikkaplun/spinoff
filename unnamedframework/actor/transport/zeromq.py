@@ -16,15 +16,15 @@ class ZmqProxyBase(BaseActor):
         super(ZmqProxyBase, self).__init__()
         self._identity = identity
         self._endpoints = []
+        self._pending_endpoints = [endpoint] if endpoint else []
 
+    def _before_start(self):
         if not ZmqProxyBase._FACTORY:
             ZmqProxyBase._FACTORY = ZmqFactory()
 
-        self._conn = self.CONNECTION_CLASS(self._FACTORY, identity=identity)
+        self._conn = self.CONNECTION_CLASS(self._FACTORY, identity=self._identity)
         self._conn.gotMessage = self._zmq_msg_received
-
-        if endpoint:
-            self.add_endpoints([endpoint])
+        self.add_endpoints(self._pending_endpoints)
 
     def _zmq_msg_received(self, message):
         message = message[0]
@@ -34,6 +34,10 @@ class ZmqProxyBase(BaseActor):
         self._conn.sendMsg(message)
 
     def add_endpoints(self, endpoints):
+        if not self.is_alive:
+            self._pending_endpoints += endpoints
+            return
+
         endpoints = [
             (e if isinstance(e, ZmqEndpoint)
              else (ZmqEndpoint(*e) if isinstance(e, tuple)
@@ -54,9 +58,9 @@ class ZmqProxyBase(BaseActor):
                              ' ' + self._identity if self._identity else '',
                              ' ' + endpoints_repr if endpoints_repr else '')
 
-    def stop(self, *args, **kwargs):
+    def _on_stop(self):
         self._conn.shutdown()
-        super(ZmqProxyBase, self).stop(*args, **kwargs)
+        super(ZmqProxyBase, self)._on_stop()
 
 
 class ZmqRouter(ZmqProxyBase):
