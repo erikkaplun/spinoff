@@ -581,7 +581,7 @@ def test_actor_failinig_stops_its_children():
         raise Exception()
 
     with Container(Parent) as container:
-        container.consume_message(('error', _, (IS_INSTANCE(Exception), _)))
+        container.consume_message(('error', _, _))
 
     assert child_stopped[0]
 
