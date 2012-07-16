@@ -236,7 +236,7 @@ class Container(MockActor):
                 break
             if n not in ('INF', 'ANY'):
                 n -= 1
-        assert consumed or n == 'ANY', message
+        assert consumed or n == 'ANY', message or ''
 
     def ignore_non_assertions(self):
         self.consume_message(('error', ANY, (NOT(IS_INSTANCE(AssertionError)), ANY)), 'ANY')
