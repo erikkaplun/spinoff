@@ -9,6 +9,7 @@ from spinoff.actor import Actor, actor, baseactor, ActorNotRunning, ActorAlready
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE, _
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
+from spinoff.actor._actor import BaseActor
 
 
 warnings.simplefilter('always')
@@ -584,6 +585,25 @@ def test_actor_failinig_stops_its_children():
         container.consume_message(('error', _, _))
 
     assert child_stopped[0]
+
+
+def test_before_start_raises():
+    class SomeActor(BaseActor):
+        def _before_start(self):
+            raise MockException
+
+    with contain(SomeActor) as (container, some_actor):
+        container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
+
+
+def test_on_stop_raises():
+    class SomeActor(BaseActor):
+        def _on_stop(self):
+            raise MockException
+
+    with contain(SomeActor) as (container, some_actor):
+        some_actor.stop()
+        container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
 
 
 class MockException(Exception):
