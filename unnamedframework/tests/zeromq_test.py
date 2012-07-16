@@ -30,7 +30,7 @@ class RouterDealerTestCase(unittest.TestCase):
 
                 router.send(message=(dealer.identity, msg))
                 with assert_not_raises(TimeoutError, "should have received a message"):
-                    assert msg == (yield container.wait())
+                    assert msg == (yield _wait_msg(container.wait()))
 
     def test_router_with_1_dealer(self):
         return self._do_test_router_with_n_dealers(1)
