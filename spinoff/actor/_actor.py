@@ -15,6 +15,7 @@ from spinoff.util.pattern_matching import match
 from spinoff.util._defer import inlineCallbacks
 from spinoff.util.async import combine
 from spinoff.util.python import combomethod
+from spinoff.util.python import enumrange
 
 
 __all__ = [
@@ -38,7 +39,7 @@ class InterfaceException(Exception):
     pass
 
 
-NOT_STARTED, RUNNING, PAUSED, STOPPED = range(4)
+NOT_STARTED, RUNNING, PAUSED, STOPPED = enumrange('NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED')
 
 
 class BaseActor(object):
