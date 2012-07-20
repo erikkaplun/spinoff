@@ -163,7 +163,7 @@ class Comm(BaseActor):
                 lambda _: self._outgoing_sock.send((node_addr, pickle.dumps((actor_id, msg)))))
 
     def ensure_connected(self, to):
-        if isinstance(self._outgoing_sock, ZmqRouter) and not self._zmq_is_connected(to=to):
+        if not self._mock_sock and not self._zmq_is_connected(to=to):
             self._outgoing_sock.add_endpoints([('connect', to)])
             self._connections.add(to)
             return sleep(0.005)
