@@ -19,6 +19,8 @@ class ActorRef(object):
     _comm = None
 
     def __init__(self, referee):
+        from ._actor import BaseActor
+        assert isinstance(referee, (basestring, BaseActor))
         self._referee = referee if not isinstance(referee, basestring) else None
         self._addr = referee if isinstance(referee, basestring) else None
 
