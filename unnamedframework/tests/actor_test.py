@@ -16,10 +16,11 @@ warnings.simplefilter('always')
 
 
 def test_base_actor_not_started():
-    actor = MockActor()
+    with contain(MockActor, start_automatically=False) as (container, actor):
+        with assert_raises(ActorNotRunning):
+            actor.send('whatev')
 
-    with assert_raises(ActorNotRunning):
-        actor.send('whatev')
+        actor.stop()
 
 
 def test_base_actor():

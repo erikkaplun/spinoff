@@ -153,8 +153,6 @@ class BaseActor(object):
     _on_stop = lambda _: None
 
     def stop(self, silent=False):
-        if self._state is NOT_STARTED:
-            raise Exception("Actor not started")
         if self._state is STOPPED:
             raise ActorAlreadyStopped("Actor already stopped")
         if self._state is RUNNING:
