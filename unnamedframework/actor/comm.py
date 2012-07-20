@@ -73,7 +73,7 @@ class ActorRef(object):
         self._assign_comm()
 
     def __eq__(self, other):
-        return self._referee == other._referee if self._referee and other._referee else self.addr == other.addr
+        return isinstance(other, ActorRef) and (self._referee == other._referee if self._referee and other._referee else self.addr == other.addr)
 
     def __ne__(self, other):
         return not (self == other)
