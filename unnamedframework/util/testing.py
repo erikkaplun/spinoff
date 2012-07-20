@@ -213,15 +213,15 @@ class Container(MockActor):
         return self
 
     def __exit__(self, exc_cls, exc, tb):
+        if exc:
+            raise exc_cls, exc, tb
+
         for child in list(self._children):
             # XXX: because we have overriden handle, children are not automatically removed when stopped
             if child.is_alive:
                 child.stop(silent=True)
 
-        if exc is None:
-            self.raise_errors()
-        else:
-            raise exc_cls, exc, tb
+        self.raise_errors()
 
     def consume_message(self, pattern, n=1, message=None):
         assert n in ('INF', 'ANY') or n >= 0
