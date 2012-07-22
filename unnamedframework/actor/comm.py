@@ -34,7 +34,7 @@ class ActorRef(object):
             if not comm:
                 return None
             else:
-                self._addr = comm.get_addr(self._referee)
+                self._addr = comm._get_addr(self._referee)
                 assert self._addr
         return self._addr
 
@@ -138,7 +138,7 @@ class Comm(BaseActor):
         assert Comm._overridden
         Comm._overridden = None
 
-    def get_addr(self, actor):
+    def _get_addr(self, actor):
         if actor in self._registry:
             actor_id = self._registry[actor]
         else:

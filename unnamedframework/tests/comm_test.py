@@ -24,14 +24,14 @@ class CommTestCase(unittest.TestCase):
     def test_get_addr(self):
         comm_a = Comm(addr='tcp://127.0.0.1:11000', sock=MockActor)
 
-        assert isinstance(comm_a.get_addr(object()), str)
+        assert isinstance(comm_a._get_addr(object()), str)
 
         actor1 = object()
         actor2 = object()
 
-        assert comm_a.get_addr(actor1) == comm_a.get_addr(actor1)
-        assert comm_a.get_addr(actor2) == comm_a.get_addr(actor2)
-        assert comm_a.get_addr(actor1) != comm_a.get_addr(actor2)
+        assert comm_a._get_addr(actor1) == comm_a._get_addr(actor1)
+        assert comm_a._get_addr(actor2) == comm_a._get_addr(actor2)
+        assert comm_a._get_addr(actor1) != comm_a._get_addr(actor2)
 
     def test_ref_addr(self):
         with Comm(addr='tcp://127.0.0.1:11000', sock=MockActor):
@@ -48,7 +48,7 @@ class CommTestCase(unittest.TestCase):
             assert ActorRef('foo2') != ActorRef('foo')
 
             actor1 = Actor()
-            assert ActorRef(actor1) == ActorRef(comm.get_addr(actor1))
+            assert ActorRef(actor1) == ActorRef(comm._get_addr(actor1))
 
     def test_actorref_comm_interaction(self):
         for _ in range(3):
@@ -169,7 +169,7 @@ class CommTestCase(unittest.TestCase):
 
             actor1 = container._spawn(MockActor)
             with comm1:
-                actor1_ref = ActorRef(comm1.get_addr(actor1))
+                actor1_ref = ActorRef(comm1._get_addr(actor1))
 
             actor1_ref.send('foobar')
             assert 'foobar' == deferred_result(actor1.wait())
@@ -180,7 +180,7 @@ class CommTestCase(unittest.TestCase):
             actor1 = container._spawn(MockActor)
 
             with comm:
-                ref = ActorRef(comm.get_addr(actor1))
+                ref = ActorRef(comm._get_addr(actor1))
 
             ref.send('foo')
             comm.send_msg = None  # the second send should not invoke comm.send_msg
@@ -203,7 +203,7 @@ class CommTestCase(unittest.TestCase):
                 comm.set_id(actor1, 'whatev')
 
             actor2 = container.spawn(MockActor)
-            comm.get_addr(deref(actor2))
+            comm._get_addr(deref(actor2))
             # can't set again even if the previous one was implicitly set
             with assert_raises(RuntimeError):
                 comm.set_id(actor2, 'whatev')
