@@ -10,8 +10,6 @@ from twisted.internet.defer import Deferred, succeed
 from spinoff.util.async import CancelledError
 from spinoff.actor import Actor
 from spinoff.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
-from spinoff.util.python import combomethod
-from spinoff.actor.comm import ActorRef
 
 
 __all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction', 'assert_num_warnings', 'assert_no_warnings', 'assert_one_warning']
@@ -30,6 +28,7 @@ def deferred(f):
         clock = Clock()
 
         d = f(clock)
+
         @d.addErrback
         def on_error(f):
             error[0] = sys.exc_info()
