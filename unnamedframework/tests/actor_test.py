@@ -384,14 +384,20 @@ def test_get():
 
 
 def test_get_removes_message_from_inbox():
+    called = []
+
     @actor
     def X(self):
+        called.append(1)
+
         yield self.get()
         msg_d = self.get()
         assert not msg_d.called
 
     with contain(X) as (_, x):
         x.send('whatev')
+
+    assert called
 
 
 def test_inbox_underflow():
