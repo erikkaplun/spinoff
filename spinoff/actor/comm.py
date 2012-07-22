@@ -12,9 +12,6 @@ from spinoff.util.async import sleep
 from spinoff.util.pattern_matching import IGNORE, ANY
 
 
-BASE_PORT = 11000
-
-
 class ActorRef(object):
 
     _comm = None
