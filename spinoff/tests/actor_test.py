@@ -5,10 +5,12 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
-from spinoff.actor import Actor, BaseActor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
+from spinoff.actor import Actor, BaseActor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning, UnhandledMessage
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE, _
 from spinoff.util.async import CancelledError
-from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain, deref
+from spinoff.util.testing import (
+    deferred_result, assert_raises, assert_not_raises, assert_one_warning,
+    MockActor, run, Container, NOT, contain, deref, assert_no_warnings)
 
 
 warnings.simplefilter('always')
@@ -624,6 +626,64 @@ def test_on_stop_raises():
     with contain(SomeActor) as (container, some_actor):
         deref(some_actor).stop()
         container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
+
+
+def test_unhandled_message():
+    @baseactor
+    def A(self, message):
+        raise UnhandledMessage
+
+    with contain(A) as (container, a):
+        a.send('foo')
+        assert ('error', a, ANY) not in container.messages, \
+            "UnhandledMessage exceptions should not be treated as errors"
+
+
+def test_unhandled_error_message():
+    # actor that does not handle child errors
+    @baseactor
+    def A(self, message):
+        raise UnhandledMessage
+
+    with contain(A) as (_, a):
+        with assert_one_warning("Unhandled child errors should emit a warning"):
+            a.send(('error', 'whatever', (Exception(), 'dummy traceback')))
+
+    # actor that handles child errors
+    @baseactor
+    def B(self, message):
+        pass
+
+    with contain(B) as (_, a):
+        with assert_no_warnings():
+            a.send(('error', 'whatever', (Exception(), 'dummy traceback')))
+
+
+def test_supervision():
+    """Essentially just tests error message handling but with actual actors."""
+
+    @actor
+    def Child(self):
+        raise MockException()
+
+    @baseactor
+    def GoodParent(self, message):
+        pass
+    GoodParent.def_before_start(lambda self: self.spawn(Child))
+
+    @baseactor
+    def BadParent(self, message):
+        raise UnhandledMessage
+    BadParent.def_before_start(lambda self: self.spawn(Child))
+
+    with assert_no_warnings():
+        run(GoodParent)
+
+    with assert_one_warning():
+        run(BadParent)
+
+
+# TODO: unhandled messages with Erlang style actors
 
 
 class MockException(Exception):
