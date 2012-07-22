@@ -14,8 +14,7 @@ from twisted.python.failure import Failure
 from spinoff.util.pattern_matching import match
 from spinoff.util._defer import inlineCallbacks
 from spinoff.util.async import combine
-from spinoff.util.python import combomethod
-from spinoff.util.python import enumrange
+from spinoff.util.python import combomethod, enumrange
 
 
 __all__ = [
@@ -97,7 +96,7 @@ class BaseActor(object):
         self.resume()
         try:
             self._wrap_errors(self._before_start)
-        except Exception as e:
+        except Exception:
             self.stop()
 
     def _send_error(self, exc_and_traceback):

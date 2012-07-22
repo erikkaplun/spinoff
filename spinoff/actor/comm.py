@@ -151,7 +151,7 @@ class Comm(BaseActor):
     def send_msg(self, actor_addr, msg):
         if not (actor_addr.startswith('tcp://') or actor_addr.startswith('udp://')):
             raise ValueError("Actor addresses should start with tcp:// or udp://")
-        if not '/' in actor_addr[len('___://'):]:
+        if '/' not in actor_addr[len('___://'):]:
             raise ValueError("Actor addresses should have an actor ID")
 
         node_addr, actor_id = actor_addr.rsplit('/', 1)

@@ -5,12 +5,10 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
-from spinoff.actor import Actor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
+from spinoff.actor import Actor, BaseActor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE, _
 from spinoff.util.async import CancelledError
-from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
-from spinoff.actor._actor import BaseActor
-from spinoff.util.testing import deref
+from spinoff.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain, deref
 
 
 warnings.simplefilter('always')
