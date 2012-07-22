@@ -6,10 +6,6 @@ from unnamedframework.util.async import TimeoutError, sleep, with_timeout
 from unnamedframework.util.testing import assert_not_raises, contain
 
 
-_wait_msg = lambda d: with_timeout(1.0, d)
-_wait_slow_joiners = lambda n=1: sleep(0.001 * n)  # try increasing this if tests fail
-
-
 ADDR = 'ipc://test'
 
 
@@ -24,14 +20,14 @@ class RouterDealerTestCase(unittest.TestCase):
                 dealer = container.spawn(ZmqDealer(ADDR, identity=identity))
                 dealers.append((dealer, identity))
 
-            yield _wait_slow_joiners(n)
+            yield sleep(0.001 * n)  # try increasing this if tests fail(n)
 
             for dealer, identity in dealers:
                 msg = 'PING%s' % i
 
                 router.send(message=(identity, msg))
                 with assert_not_raises(TimeoutError, "should have received a message"):
-                    assert msg == (yield _wait_msg(container.wait()))
+                    assert msg == (yield with_timeout(1.0, container.wait()))
 
     def test_router_with_1_dealer(self):
         return self._do_test_router_with_n_dealers(1)
