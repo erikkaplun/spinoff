@@ -5,7 +5,7 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
-from unnamedframework.actor import Process, Actor, process, actor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning, UnhandledMessage
+from unnamedframework.actor import Process, Actor, process, actor, NotRunning, AlreadyStopped, AlreadyRunning, UnhandledMessage
 from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE, IGNORE
 from unnamedframework.util.async import CancelledError
 from unnamedframework.util.testing import (
@@ -18,7 +18,7 @@ warnings.simplefilter('always')
 
 def test_base_actor_not_started():
     with contain(MockActor, start_automatically=False) as (container, x):
-        with assert_raises(ActorNotRunning):
+        with assert_raises(NotRunning):
             x.send('whatev')
 
         deref(x).stop()
@@ -140,7 +140,7 @@ def test_flow():
     with contain(Proc, start_automatically=False) as (container, proc):
         assert not called[0], "creating an process should not automatically start the coroutine in it"
         deref(proc).start()
-        with assert_raises(ActorAlreadyRunning):
+        with assert_raises(AlreadyRunning):
             deref(proc).start()
 
         mock_d.callback(None)
@@ -243,7 +243,7 @@ def test_pausing_resuming_and_stopping():
         assert deref(proc).is_alive
         assert deref(proc).is_paused
 
-        with assert_raises(ActorNotRunning):
+        with assert_raises(NotRunning):
             deref(proc).pause()
 
         mock_d.callback(retval)
@@ -283,22 +283,22 @@ def test_pausing_resuming_and_stopping():
         assert exception_caught[0]
 
         ### can't resume twice
-        with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an process twice"):
+        with assert_raises(AlreadyRunning, "it should not be possible to resume an process twice"):
             deref(x).resume()
 
     ### stopping
     mock_d = Deferred()
     with contain(X) as (container, proc3):
         deref(proc3).stop()
-        with assert_raises(ActorAlreadyStopped):
+        with assert_raises(AlreadyStopped):
             deref(proc3).stop()
 
         assert stopped[0]
         container.consume_message(('stopped', proc3))
 
-        with assert_raises(ActorAlreadyStopped):
+        with assert_raises(AlreadyStopped):
             deref(proc3).start()
-        with assert_raises(ActorAlreadyStopped):
+        with assert_raises(AlreadyStopped):
             deref(proc3).resume()
 
     ### stopping a paused process
@@ -479,7 +479,7 @@ def test_spawn_child_actor():
             self.spawn(Child)
 
     with contain(Parent3, start_automatically=False) as (_, parent3):
-        with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
+        with assert_not_raises(AlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
             deref(parent3).start()
 
 
@@ -560,9 +560,9 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
         yield mock_d
 
     with contain(Parent) as (container, a):
-        with assert_not_raises(ActorNotRunning):
+        with assert_not_raises(NotRunning):
             deref(a).pause()
-        with assert_not_raises(ActorAlreadyStopped):
+        with assert_not_raises(AlreadyStopped):
             deref(a).resume()
         deref(a).stop()
         assert child_stopped[0]
