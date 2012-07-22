@@ -91,7 +91,6 @@ class Actor(object):
         return child
 
     _before_start = lambda _: None
-    def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
 
     def start(self):
         self.resume()
@@ -467,6 +466,10 @@ def process(fn):
     ret.__name__ = fn.__name__
     ret.__module__ = fn.__module__
     return ret
+
+
+Actor.def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
+Actor.def_on_stop = classmethod(lambda cls, fn: setattr(cls, '_on_stop', fn))
 
 
 class ActorRefusedToStop(Exception):
