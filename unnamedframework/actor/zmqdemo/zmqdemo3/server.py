@@ -3,12 +3,12 @@ import random
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqFactory, ZmqEndpoint
 
-from unnamedframework.actor import Actor, Application, Pipeline, make_cycle
+from unnamedframework.actor import Process, Application, Pipeline, make_cycle
 from unnamedframework.actor.transport.zeromq import ZmqRep, ZmqDealer, ZmqRouter, ZmqReq
 from unnamedframework.util.async import sleep
 
 
-class TestServer(Actor):
+class TestServer(Process):
 
     def __repr__(self):
         return '<TestServer>'

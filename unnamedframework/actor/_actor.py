@@ -18,7 +18,7 @@ from unnamedframework.util.python import combomethod, enumrange
 
 
 __all__ = [
-    'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
+    'Process', 'Actor', 'process', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning', 'UnhandledMessage',
     'ActorRefusedToStop', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
@@ -41,7 +41,7 @@ class InterfaceException(Exception):
 NOT_STARTED, RUNNING, PAUSED, STOPPED = enumrange('NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED')
 
 
-class BaseActor(object):
+class Actor(object):
     parent = property(lambda self: self._parent)
 
     is_running = property(lambda self: self._state is RUNNING)
@@ -60,7 +60,7 @@ class BaseActor(object):
 
     @combomethod
     def _spawn(cls_or_self, *args, **kwargs):
-        if not isinstance(cls_or_self, BaseActor):
+        if not isinstance(cls_or_self, Actor):
             cls = cls_or_self
             ret = cls(*args, **kwargs)
             ret.start()
@@ -78,7 +78,7 @@ class BaseActor(object):
 
     def _spawn_child(self, actor_cls, *args, **kwargs):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
-            actor_cls = actor(actor_cls)
+            actor_cls = process(actor_cls)
 
         if isinstance(actor_cls, type):
             child = actor_cls(*args, **kwargs)
@@ -111,14 +111,14 @@ class BaseActor(object):
             raise
 
     def send(self, message):
-        warnings.warn("Actor.send should not be used")
+        warnings.warn("Process.send should not be used")
         self._send(message)
 
     def _send(self, message):
         if self._state is RUNNING:
-            def _handle():
+            def _receive():
                 try:
-                    return self.handle(message)
+                    return self.receive(message)
                 except UnhandledMessage:
                     is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
                     if is_match:
@@ -128,7 +128,7 @@ class BaseActor(object):
                         warnings.warn("Unhandled error:\n%s" % formatted_traceback)
 
             try:
-                ret = self._wrap_errors(_handle)
+                ret = self._wrap_errors(_receive)
             except Exception:
                 pass
             else:
@@ -136,14 +136,14 @@ class BaseActor(object):
                     raise RuntimeError("reactor.handle returned a generator: yield inside a reactor?")
         else:
             if self._state is NOT_STARTED:
-                raise ActorNotRunning("Message sent to an actor that hasn't been started ")
+                raise ActorNotRunning("Message sent to an process that hasn't been started ")
             if self._state is not STOPPED:
                 self._pending.append(message)
             else:
-                raise ActorNotRunning("Message sent to a stopped actor")
+                raise ActorNotRunning("Message sent to a stopped process")
 
-    def handle(self, message):
-        print("Actor %s received %s" % (self, message))
+    def receive(self, message):
+        print("Process %s received %s" % (self, message))
 
     def pause(self):
         if self._state is not RUNNING:
@@ -155,9 +155,9 @@ class BaseActor(object):
 
     def resume(self):
         if self._state is RUNNING:
-            raise ActorAlreadyRunning("Actor already running")
+            raise ActorAlreadyRunning("Process already running")
         if self._state is STOPPED:
-            raise ActorAlreadyStopped("Actor has been stopped")
+            raise ActorAlreadyStopped("Process has been stopped")
         self._state = RUNNING
 
         for child in self._children:
@@ -173,7 +173,7 @@ class BaseActor(object):
 
     def stop(self, silent=False):
         if self._state is STOPPED:
-            raise ActorAlreadyStopped("Actor already stopped")
+            raise ActorAlreadyStopped("Process already stopped")
         if self._state is RUNNING:
             self.pause()
 
@@ -212,7 +212,7 @@ class BaseActor(object):
     def put(self, message):
         """Puts a `message` into one of the `outbox`es of this component.
 
-        If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
+        If the specified `outbox` has not been previously connected to anywhere (see `Process.connect`), a
         `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
         to an inbox of another component and be queued there (if/as needed).
 
@@ -220,13 +220,13 @@ class BaseActor(object):
 
         """
         if not self._out:
-            raise NoRoute("Actor %s has no outgoing connection" % repr(self))
+            raise NoRoute("Process %s has no outgoing connection" % repr(self))
 
         self._out.send(message)
 
 
-class Actor(BaseActor):
-    """A Python generator/coroutine wrapped up to support pausing, resuming and stopping.
+class Process(Actor):
+    """An actor that contains a Python generator/coroutine with added support for pausing, resuming and stopping.
 
     Currently only supports coroutines `yield`ing Twisted `Deferred` objects.
 
@@ -243,14 +243,14 @@ class Actor(BaseActor):
     _cancelling_hold_d = False
 
     def __init__(self, *args, **kwargs):
-        super(Actor, self).__init__()
+        super(Process, self).__init__()
 
         @wraps(self.run)
         def wrap():
             gen = self.run(*args, **kwargs)
             if not isinstance(gen, types.GeneratorType):
                 if gen is not None:
-                    warnings.warn("actor returned a value that was not None")
+                    warnings.warn("process returned a value that was not None")
                 yield None
                 returnValue(None)
             self._gen = gen
@@ -276,7 +276,7 @@ class Actor(BaseActor):
                 # from us.
                 pass
             except _DefGen_Return:
-                warnings.warn("returnValue inside an actor")
+                warnings.warn("returnValue inside an process")
                 # StopIteration "raised" implicitly
         self._fn = inlineCallbacks(wrap)
 
@@ -287,7 +287,7 @@ class Actor(BaseActor):
         self._run_kwargs = {}
 
     def start(self):
-        super(Actor, self).start()
+        super(Process, self).start()
 
         d = maybeDeferred(self._fn)
 
@@ -311,7 +311,7 @@ class Actor(BaseActor):
             self._current_d = d
             self._paused_result = result
 
-    def handle(self, message):
+    def receive(self, message):
         if self._waiting:
             found = EMPTY
             if self._waiting[0] is None:
@@ -328,7 +328,7 @@ class Actor(BaseActor):
         self._inbox.append(message)
 
     def deliver(self, message):
-        warnings.warn("Actor.deliver has been deprecated in favor of Actor.send", DeprecationWarning)
+        warnings.warn("Process.deliver has been deprecated in favor of Process.send", DeprecationWarning)
         return self.send(message)
 
     def get(self, filter=None):
@@ -349,7 +349,7 @@ class Actor(BaseActor):
         return d
 
     def resume(self):
-        super(Actor, self).resume()
+        super(Process, self).resume()
 
         if self._current_d:
             if isinstance(self._paused_result, Failure):
@@ -375,12 +375,12 @@ class Actor(BaseActor):
             try:
                 self._gen.close()
             except _DefGen_Return:
-                warnings.warn("returnValue inside an actor")
+                warnings.warn("returnValue inside an process")
             except Exception as e:
                 self._send_error((e, sys.exc_info()[2]))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
-            warnings.warn("Pending exception in paused actor")
+            warnings.warn("Pending exception in paused process")
             # self._paused_result.printTraceback()
 
     def debug_state(self, name=None):
@@ -388,7 +388,7 @@ class Actor(BaseActor):
             print('*** \t%s' % message)
 
     def as_service(self):
-        warnings.warn("Actor.as_service is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
+        warnings.warn("Process.as_service is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
         return ActorsAsService([self])
 
 
@@ -453,16 +453,16 @@ class ActorRunner(Service):
             self._actor.stop()
 
 
-def baseactor(fn):
-    class ret(BaseActor):
-        handle = fn
+def actor(fn):
+    class ret(Actor):
+        receive = fn
     ret.__name__ = fn.__name__
     ret.__module__ = fn.__module__
     return ret
 
 
-def actor(fn):
-    class ret(Actor):
+def process(fn):
+    class ret(Process):
         run = fn
     ret.__name__ = fn.__name__
     ret.__module__ = fn.__module__

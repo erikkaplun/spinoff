@@ -2,14 +2,14 @@ from twisted.internet.defer import Deferred
 from twisted.internet.task import Clock
 from twisted.trial import unittest
 
-from unnamedframework.actor import Actor
+from unnamedframework.actor import Process
 from unnamedframework.util.async import sleep
 from unnamedframework.util.async import with_heartbeat
 from unnamedframework.util.testing import MockFunction
 
 
 def make_mock(heartbeat_fn, reactor, methods={}, interval=1.0):
-    class Mock(Actor):
+    class Mock(Process):
         send_heartbeat = staticmethod(heartbeat_fn)
 
         for method_name, method_fn in methods.items():
