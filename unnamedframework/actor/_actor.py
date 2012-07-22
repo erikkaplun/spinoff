@@ -11,7 +11,7 @@ from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeD
 from twisted.python import log
 from twisted.python.failure import Failure
 
-from unnamedframework.util.pattern_matching import match
+from unnamedframework.util.pattern_matching import match, ANY, IGNORE
 from unnamedframework.util._defer import inlineCallbacks
 from unnamedframework.util.async import combine
 from unnamedframework.util.python import combomethod, enumrange
@@ -19,7 +19,7 @@ from unnamedframework.util.python import combomethod, enumrange
 
 __all__ = [
     'Actor', 'BaseActor', 'actor', 'baseactor', 'NoRoute', 'RoutingException', 'InterfaceException',
-    'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning',
+    'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning', 'UnhandledMessage',
     'ActorRefusedToStop', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
@@ -116,8 +116,19 @@ class BaseActor(object):
 
     def _send(self, message):
         if self._state is RUNNING:
+            def _handle():
+                try:
+                    return self.handle(message)
+                except UnhandledMessage:
+                    is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
+                    if is_match:
+                        formatted_traceback = (traceback
+                                               if isinstance(traceback, basestring) else
+                                               traceback.format_tb(traceback))
+                        warnings.warn("Unhandled error:\n%s" % formatted_traceback)
+
             try:
-                ret = self._wrap_errors(self.handle, message)
+                ret = self._wrap_errors(_handle)
             except Exception:
                 pass
             else:
@@ -471,4 +482,8 @@ class ActorNotRunning(Exception):
 
 
 class ActorAlreadyStopped(Exception):
+    pass
+
+
+class UnhandledMessage(Exception):
     pass
