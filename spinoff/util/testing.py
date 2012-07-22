@@ -10,6 +10,8 @@ from twisted.internet.defer import Deferred, succeed
 from spinoff.util.async import CancelledError
 from spinoff.actor import BaseActor
 from spinoff.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
+from spinoff.util.python import combomethod
+from spinoff.actor.comm import ActorRef
 
 
 __all__ = ['deferred', 'assert_raises', 'assert_not_raises', 'MockFunction', 'assert_num_warnings', 'assert_no_warnings', 'assert_one_warning']
@@ -205,11 +207,12 @@ class Container(MockActor):
         self.start()
         if self._actor_cls:
             # we could use self.spawn here, but we need to handle start_automatically=False
-            self._actor = a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
+            a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
             self._children.append(a)
-            a._parent = self
+            a._parent = self.ref
             if self._start_automatically:
                 a.start()
+            self._actor = a.ref
         return self
 
     def __exit__(self, exc_cls, exc, tb):
@@ -278,3 +281,8 @@ class contain(Container):
     def __enter__(self):
         super(contain, self).__enter__()
         return self, self._actor
+
+
+def deref(ref):
+    assert ref._referee
+    return ref._referee

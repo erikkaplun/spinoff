@@ -56,13 +56,13 @@ class ActorRef(object):
 
     def send(self, message):
         if self._referee:
-            self._referee.send(message)
+            self._referee._send(message)
         else:
             assert self._addr
             local_actor = self._get_comm().send_msg(self._addr, message)
             if local_actor:
                 self._referee = local_actor
-                local_actor.send(message)
+                local_actor._send(message)
 
     def __getstate__(self):
         return self.addr
@@ -96,7 +96,7 @@ class Comm(BaseActor):
             if actor_id not in self._registry_rev:
                 print("received message for actor %s which does not exist (anymore)" % actor_id, file=sys.stderr)
             else:
-                self._registry_rev[actor_id].send(payload)
+                self._registry_rev[actor_id]._send(payload)
             return
         else:
             raise UnhandledMessage
@@ -121,13 +121,13 @@ class Comm(BaseActor):
 
     def _before_start(self):
         if self._mock_sock:  # this is purely for testability
-            self._outgoing_sock = self.spawn(self._mock_sock)
+            self._outgoing_sock = self._spawn(self._mock_sock)
             # no incoming sock needed when mocks are used
         else:
-            self._outgoing_sock = self.spawn(ZmqRouter(endpoint=None))
+            self._outgoing_sock = self._spawn(ZmqRouter(endpoint=None))
             # incoming
-            self.spawn(ZmqDealer(endpoint=('bind', self.addr),
-                                 identity=self.addr))
+            self._spawn(ZmqDealer(endpoint=('bind', self.addr),
+                                  identity=self.addr))
 
     def __enter__(self):
         assert not Comm._overridden
@@ -160,7 +160,7 @@ class Comm(BaseActor):
             return self._registry_rev[actor_id]
         else:
             self.ensure_connected(to=node_addr).addCallback(
-                lambda _: self._outgoing_sock.send((node_addr, pickle.dumps((actor_id, msg)))))
+                lambda _: self._outgoing_sock._send((node_addr, pickle.dumps((actor_id, msg)))))
 
     def ensure_connected(self, to):
         if not self._mock_sock and not self._zmq_is_connected(to=to):
@@ -170,7 +170,10 @@ class Comm(BaseActor):
         else:
             return succeed(None)
 
-    def set_id(self, actor, id):
+    def set_id(self, ref, id):
+        assert isinstance(ref, ActorRef)
+        assert ref._referee, "Can only set ID for local actors"
+        actor = ref._referee
         if actor in self._registry:
             raise RuntimeError("actor already registered")
         self._registry[actor] = id

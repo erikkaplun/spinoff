@@ -60,7 +60,7 @@ class BaseActor(object):
         self._d = Deferred()
 
     @combomethod
-    def spawn(cls_or_self, *args, **kwargs):
+    def _spawn(cls_or_self, *args, **kwargs):
         if not isinstance(cls_or_self, BaseActor):
             cls = cls_or_self
             ret = cls(*args, **kwargs)
@@ -73,6 +73,10 @@ class BaseActor(object):
         else:
             return cls_or_self._spawn_child(*args, **kwargs)
 
+    @combomethod
+    def spawn(cls_or_self, *args, **kwargs):
+        return cls_or_self._spawn(*args, **kwargs).ref
+
     def _spawn_child(self, actor_cls, *args, **kwargs):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
             actor_cls = actor(actor_cls)
@@ -81,7 +85,7 @@ class BaseActor(object):
             child = actor_cls(*args, **kwargs)
         else:
             child = actor_cls
-        child._parent = self
+        child._parent = self.ref
         child.start()
         self._children.append(child)
         child._d.addBoth(lambda _: self._children.remove(child))
@@ -97,7 +101,7 @@ class BaseActor(object):
             self.stop()
 
     def _send_error(self, exc_and_traceback):
-        self.parent.send(('error', self, exc_and_traceback))
+        self.parent.send(('error', self.ref, exc_and_traceback))
 
     def _wrap_errors(self, fn, *args, **kwargs):
         try:
@@ -107,6 +111,10 @@ class BaseActor(object):
             raise
 
     def send(self, message):
+        warnings.warn("Actor.send should not be used")
+        self._send(message)
+
+    def _send(self, message):
         if self._state is RUNNING:
             try:
                 ret = self._wrap_errors(self.handle, message)
@@ -147,7 +155,7 @@ class BaseActor(object):
 
         if self._pending:
             for pending_message in self._pending:
-                self.send(pending_message)
+                self._send(pending_message)
             self._pending = []
 
     _on_stop = lambda _: None
@@ -169,7 +177,7 @@ class BaseActor(object):
         self._state = STOPPED
 
         if not silent:
-            self.parent.send(('stopped', self))
+            self.parent.send(('stopped', self.ref))
             self._d.callback(None)
 
     @property

@@ -20,15 +20,16 @@ class RouterDealerTestCase(unittest.TestCase):
         with contain(ZmqRouter(ADDR)) as (container, router):
             dealers = []
             for i in range(n):
-                dealer = container.spawn(ZmqDealer(ADDR, identity='dude%s' % i))
-                dealers.append(dealer)
+                identity = 'dude%s' % i
+                dealer = container.spawn(ZmqDealer(ADDR, identity=identity))
+                dealers.append((dealer, identity))
 
             yield _wait_slow_joiners(n)
 
-            for dealer in dealers:
+            for dealer, identity in dealers:
                 msg = 'PING%s' % i
 
-                router.send(message=(dealer.identity, msg))
+                router.send(message=(identity, msg))
                 with assert_not_raises(TimeoutError, "should have received a message"):
                     assert msg == (yield _wait_msg(container.wait()))
 
