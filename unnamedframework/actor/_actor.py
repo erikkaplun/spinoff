@@ -110,7 +110,7 @@ class Actor(object):
             raise
 
     def send(self, message):
-        warnings.warn("Process.send should not be used")
+        warnings.warn("Actor.send should not be used")
         self._send(message)
 
     def _send(self, message):
@@ -132,17 +132,17 @@ class Actor(object):
                 pass
             else:
                 if isinstance(ret, types.GeneratorType):
-                    raise RuntimeError("reactor.handle returned a generator: yield inside a reactor?")
+                    raise RuntimeError("Actor.receive returned a generator: yield inside Actor.receive?")
         else:
             if self._state is NOT_STARTED:
-                raise NotRunning("Message sent to an process that hasn't been started ")
+                raise NotRunning("Message sent to an actor that hasn't been started ")
             if self._state is not STOPPED:
                 self._pending.append(message)
             else:
-                raise NotRunning("Message sent to a stopped process")
+                raise NotRunning("Message sent to a stopped actor")
 
     def receive(self, message):
-        print("Process %s received %s" % (self, message))
+        print("Actor %s received %s" % (self, message))
 
     def pause(self):
         if self._state is not RUNNING:
@@ -154,9 +154,9 @@ class Actor(object):
 
     def resume(self):
         if self._state is RUNNING:
-            raise AlreadyRunning("Process already running")
+            raise AlreadyRunning("Actor already running")
         if self._state is STOPPED:
-            raise AlreadyStopped("Process has been stopped")
+            raise AlreadyStopped("Actor has been stopped")
         self._state = RUNNING
 
         for child in self._children:
@@ -172,7 +172,7 @@ class Actor(object):
 
     def stop(self, silent=False):
         if self._state is STOPPED:
-            raise AlreadyStopped("Process already stopped")
+            raise AlreadyStopped("Actor already stopped")
         if self._state is RUNNING:
             self.pause()
 
@@ -209,9 +209,9 @@ class Actor(object):
         self._out = to
 
     def put(self, message):
-        """Puts a `message` into one of the `outbox`es of this component.
+        """Puts a `message` into one of the `outbox`es of this actor.
 
-        If the specified `outbox` has not been previously connected to anywhere (see `Process.connect`), a
+        If the specified `outbox` has not been previously connected to anywhere (see `Actor.connect`), a
         `NoRoute` will be raised, i.e. outgoing messages cannot be queued locally and must immediately be delivered
         to an inbox of another component and be queued there (if/as needed).
 
@@ -219,7 +219,7 @@ class Actor(object):
 
         """
         if not self._out:
-            raise NoRoute("Process %s has no outgoing connection" % repr(self))
+            raise NoRoute("Actor %s has no outgoing connection" % repr(self))
 
         self._out.send(message)
 
