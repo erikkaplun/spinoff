@@ -6,6 +6,7 @@ import warnings
 from functools import wraps
 
 from twisted.application.service import Service
+from twisted.internet import reactor
 from twisted.internet.defer import Deferred, QueueUnderflow, returnValue, maybeDeferred, _DefGen_Return, CancelledError, succeed
 from twisted.python import log
 from twisted.python.failure import Failure
@@ -63,10 +64,6 @@ class Actor(object):
             cls = cls_or_self
             ret = cls(*args, **kwargs)
             ret.start()
-            # d.addErrback(lambda f: (
-            #     f.printTraceback(sys.stderr),
-            #     f
-            #     ))
             return ret
         else:
             return cls_or_self._spawn_child(*args, **kwargs)
@@ -365,7 +362,6 @@ class Process(Actor):
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused process")
-            # self._paused_result.printTraceback()
 
     def debug_state(self, name=None):
         for message, _ in self._inbox.pending:
@@ -411,7 +407,6 @@ class ActorRunner(Service):
                 Failure().printTraceback(file=sys.stderr)
                 return
 
-        from twisted.internet import reactor
         reactor.callLater(0.0, start_actor)
 
     def send(self, message):
@@ -428,8 +423,6 @@ class ActorRunner(Service):
             sys.stderr.write("finished: %s\n" % self._actor_path)
         else:
             sys.stderr.write("received message: %s\n" % repr(message))
-
-        # os.kill(os.getpid(), signal.SIGKILL)
 
     def stopService(self):
         sys.stderr.write("exiting...\n")
