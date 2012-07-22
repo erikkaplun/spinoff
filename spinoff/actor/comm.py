@@ -8,7 +8,7 @@ from twisted.internet.defer import succeed
 from spinoff.actor import BaseActor, UnhandledMessage
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import sleep
-from spinoff.util.pattern_matching import _
+from spinoff.util.pattern_matching import IGNORE, ANY
 
 
 BASE_PORT = 11000
@@ -88,7 +88,7 @@ class Comm(BaseActor):
     _overridden = None  # only for testing
 
     def handle(self, message):
-        if message == ('error', _, _):
+        if message == ('error', IGNORE(ANY), IGNORE(ANY)):
             raise RuntimeError("comm failed", message[2])
         elif isinstance(message, str):
             with self:

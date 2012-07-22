@@ -6,7 +6,7 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
 from spinoff.actor import Actor, BaseActor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning, UnhandledMessage
-from spinoff.util.pattern_matching import ANY, IS_INSTANCE, _
+from spinoff.util.pattern_matching import ANY, IS_INSTANCE, IGNORE
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import (
     deferred_result, assert_raises, assert_not_raises, assert_one_warning,
@@ -53,7 +53,7 @@ def test_base_actor_error():
         with assert_not_raises(MockException):
             some_actor.send('whatev')
         assert not container.has_message(('stopped', some_actor))
-        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), _)))
+        container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), IGNORE(ANY))))
 
 
 def test_failure_with_children():
@@ -90,7 +90,7 @@ def test_actor_refuses_to_stop():
     with contain(A) as (container, a):
         deref(a).pause()
         deref(a).stop()
-        container.consume_message(('error', a, (_, _)))
+        container.consume_message(('error', a, (IGNORE(ANY), IGNORE(ANY))))
 
 
 def test_failure_while_stopping():
@@ -107,7 +107,7 @@ def test_failure_while_stopping():
         assert deref(a).is_running
         with assert_not_raises(MockException):
             deref(a).stop()
-        r.consume_message(('error', a, (_, _)))
+        r.consume_message(('error', a, (IGNORE(ANY), IGNORE(ANY))))
 
 
 def test_connect_and_put():
@@ -175,7 +175,7 @@ def test_baseactor_failure():
 
     with contain(A) as (container, a):
         a.send(None)
-        container.consume_message(('error', a, (exc, _)))
+        container.consume_message(('error', a, (exc, IGNORE(ANY))))
         assert ('stopped', ANY) not in container.messages
         assert deref(a).is_alive
 
@@ -188,7 +188,7 @@ def test_failure():
         raise exc
 
     with contain(A) as (container, a):
-        container.consume_message(('error', a, (exc, _)))
+        container.consume_message(('error', a, (exc, IGNORE(ANY))))
         assert not deref(a).is_alive
 
 
@@ -361,7 +361,7 @@ def test_actor_doesnt_require_generator():
         raise MockException()
 
     with Container(Proc2) as container:
-        container.consume_message(('error', _, (NOT(IS_INSTANCE(AssertionError)), _)))
+        container.consume_message(('error', IGNORE(ANY), (NOT(IS_INSTANCE(AssertionError)), IGNORE(ANY))))
 
 
 def test_get():
@@ -604,7 +604,7 @@ def test_actor_failinig_stops_its_children():
         raise Exception()
 
     with Container(Parent) as container:
-        container.consume_message(('error', _, _))
+        container.consume_message(('error', IGNORE(ANY), IGNORE(ANY)))
 
     assert child_stopped[0]
 
@@ -615,7 +615,7 @@ def test_before_start_raises():
             raise MockException
 
     with contain(SomeActor) as (container, some_actor):
-        container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
+        container.consume_message(('error', IGNORE(ANY), (IS_INSTANCE(MockException), IGNORE(ANY))))
 
 
 def test_on_stop_raises():
@@ -625,7 +625,7 @@ def test_on_stop_raises():
 
     with contain(SomeActor) as (container, some_actor):
         deref(some_actor).stop()
-        container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
+        container.consume_message(('error', IGNORE(ANY), (IS_INSTANCE(MockException), IGNORE(ANY))))
 
 
 def test_unhandled_message():
