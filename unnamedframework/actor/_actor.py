@@ -20,7 +20,7 @@ from unnamedframework.util.python import combomethod, enumrange
 __all__ = [
     'Process', 'Actor', 'process', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
     'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning', 'UnhandledMessage',
-    'ActorRefusedToStop', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
+    'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
 EMPTY = object()
@@ -470,10 +470,6 @@ def process(fn):
 
 Actor.def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
 Actor.def_on_stop = classmethod(lambda cls, fn: setattr(cls, '_on_stop', fn))
-
-
-class ActorRefusedToStop(Exception):
-    pass
 
 
 class ActorAlreadyRunning(Exception):
