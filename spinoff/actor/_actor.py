@@ -3,7 +3,6 @@ from __future__ import print_function
 import sys
 import types
 import warnings
-import weakref
 from functools import wraps
 
 from twisted.application.service import Service
@@ -189,20 +188,6 @@ class Actor(object):
         if not silent:
             self.parent.send(('stopped', self.ref))
             self._d.callback(None)
-
-    @property
-    def ref(self):
-        if not (self._ref and self._ref()):
-            from spinoff.actor.comm import ActorRef
-            ref = ActorRef(self)
-            self._ref = weakref.ref(ref)
-            return ref
-        else:
-            return self._ref()
-
-    def set_id(self, id):
-        from spinoff.actor.comm import Comm
-        Comm.get_for_thread().set_id(self, id)
 
     def connect(self, to=None):
         assert not self._out, '%s vs %s' % (self._out, to)
