@@ -216,13 +216,17 @@ class Container(MockActor):
         return self
 
     def __exit__(self, exc_cls, exc, tb):
-        if exc:
-            raise exc_cls, exc, tb
-
         for child in list(self._children):
             # XXX: because we have overriden handle, children are not automatically removed when stopped
             if child.is_alive:
-                child.stop(silent=True)
+                try:
+                    child.stop(silent=True)
+                except Exception:
+                    print >> sys.stderr, "Exception while stopping child"
+                    traceback.print_exc()
+
+        if exc:
+            raise exc_cls, exc, tb
 
         self.raise_errors()
 
