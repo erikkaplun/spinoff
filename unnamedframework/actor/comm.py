@@ -12,9 +12,6 @@ from unnamedframework.util.async import sleep
 from unnamedframework.util.pattern_matching import IGNORE, ANY
 
 
-BASE_PORT = 11000
-
-
 class ActorRef(object):
 
     _comm = None
