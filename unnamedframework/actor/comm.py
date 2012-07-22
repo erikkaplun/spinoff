@@ -5,7 +5,7 @@ import pickle
 
 from twisted.internet.defer import succeed
 
-from unnamedframework.actor import BaseActor
+from unnamedframework.actor import BaseActor, UnhandledMessage
 from unnamedframework.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from unnamedframework.util.async import sleep
 from unnamedframework.util.pattern_matching import _
