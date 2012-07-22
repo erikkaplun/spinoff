@@ -95,19 +95,19 @@ def assert_raises(exc_class=Exception, message=None):
 
 
 @contextmanager
-def assert_num_warnings(n):
+def assert_num_warnings(n, message=None):
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         yield
-        assert len(w) == n, "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w)))
+        assert len(w) == n, message or "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w)))
 
 
-def assert_no_warnings():
-    return assert_num_warnings(0)
+def assert_no_warnings(message=None):
+    return assert_num_warnings(0, message)
 
 
-def assert_one_warning():
-    return assert_num_warnings(1)
+def assert_one_warning(message=None):
+    return assert_num_warnings(1, message)
 
 
 class MockFunction(object):
