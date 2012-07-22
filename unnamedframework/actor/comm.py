@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import sys
 import pickle
+import weakref
 
 from twisted.internet.defer import succeed
 
@@ -19,7 +20,6 @@ class ActorRef(object):
     _comm = None
 
     def __init__(self, referee):
-        from ._actor import Actor
         assert isinstance(referee, (basestring, Actor))
         self._referee = referee if not isinstance(referee, basestring) else None
         self._addr = referee if isinstance(referee, basestring) else None
@@ -184,3 +184,21 @@ class Comm(Actor):
 
     def __repr__(self):
         return '<Comm %s>' % (self.addr, )
+
+
+@property
+def ref(self):
+    if not (self._ref and self._ref()):
+        ref = ActorRef(self)
+        self._ref = weakref.ref(ref)
+        return ref
+    else:
+        return self._ref()
+
+
+def set_id(self, id):
+    Comm.get_for_thread().set_id(self, id)
+
+
+Actor.ref = ref
+Actor.set_id = set_id
