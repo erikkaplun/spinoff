@@ -1,3 +1,4 @@
+from spinoff.util.async import with_timeout
 import pickle
 import random
 
@@ -150,17 +151,14 @@ class CommTestCase(unittest.TestCase):
                 yield comm2.ensure_connected('tcp://127.0.0.1:11000')
                 comm2.send_msg(actor1_addr, actor2_ref)
 
-            yield sleep(0.1)
-
-            received_ref = deferred_result(actor1.wait())
+            received_ref = (yield with_timeout(1.0, actor1.wait()))
             assert actor2_ref == received_ref
 
             with comm1:
                 yield comm1.ensure_connected('tcp://127.0.0.1:11001')
                 received_ref.send('something-else')
 
-            yield sleep(0.005)
-            assert 'something-else' == deferred_result(actor2.wait())
+            assert 'something-else' == (yield with_timeout(1.0, actor2.wait()))
 
     def test_receive_actorref_to_a_local_actor(self):
         with Container() as container:
@@ -222,5 +220,4 @@ class CommTestCase(unittest.TestCase):
                 yield comm1.ensure_connected('tcp://127.0.0.1:11001')
                 ref.send('foobar')
 
-            yield sleep(0.005)
-            assert 'foobar' == deferred_result(deref(some_actor).wait())
+            assert 'foobar' == (yield with_timeout(1.0, deref(some_actor).wait()))
