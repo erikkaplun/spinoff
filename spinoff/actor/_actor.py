@@ -19,7 +19,7 @@ from spinoff.util.python import combomethod, enumrange
 
 __all__ = [
     'Process', 'Actor', 'process', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
-    'ActorsAsService', 'ActorNotRunning', 'ActorAlreadyStopped', 'ActorAlreadyRunning', 'UnhandledMessage',
+    'ActorsAsService', 'NotRunning', 'AlreadyStopped', 'AlreadyRunning', 'UnhandledMessage',
     'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
@@ -135,18 +135,18 @@ class Actor(object):
                     raise RuntimeError("reactor.handle returned a generator: yield inside a reactor?")
         else:
             if self._state is NOT_STARTED:
-                raise ActorNotRunning("Message sent to an process that hasn't been started ")
+                raise NotRunning("Message sent to an process that hasn't been started ")
             if self._state is not STOPPED:
                 self._pending.append(message)
             else:
-                raise ActorNotRunning("Message sent to a stopped process")
+                raise NotRunning("Message sent to a stopped process")
 
     def receive(self, message):
         print("Process %s received %s" % (self, message))
 
     def pause(self):
         if self._state is not RUNNING:
-            raise ActorNotRunning()
+            raise NotRunning()
         self._state = PAUSED
         for child in self._children:
             if child._state is RUNNING:
@@ -154,9 +154,9 @@ class Actor(object):
 
     def resume(self):
         if self._state is RUNNING:
-            raise ActorAlreadyRunning("Process already running")
+            raise AlreadyRunning("Process already running")
         if self._state is STOPPED:
-            raise ActorAlreadyStopped("Process has been stopped")
+            raise AlreadyStopped("Process has been stopped")
         self._state = RUNNING
 
         for child in self._children:
@@ -172,7 +172,7 @@ class Actor(object):
 
     def stop(self, silent=False):
         if self._state is STOPPED:
-            raise ActorAlreadyStopped("Process already stopped")
+            raise AlreadyStopped("Process already stopped")
         if self._state is RUNNING:
             self.pause()
 
@@ -472,15 +472,15 @@ Actor.def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start
 Actor.def_on_stop = classmethod(lambda cls, fn: setattr(cls, '_on_stop', fn))
 
 
-class ActorAlreadyRunning(Exception):
+class AlreadyRunning(Exception):
     pass
 
 
-class ActorNotRunning(Exception):
+class NotRunning(Exception):
     pass
 
 
-class ActorAlreadyStopped(Exception):
+class AlreadyStopped(Exception):
     pass
 
 
