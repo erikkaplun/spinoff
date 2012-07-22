@@ -2,10 +2,10 @@ from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 from txzmq import ZmqFactory
 
-from spinoff.actor import BaseActor
+from spinoff.actor import Actor
 
 
-class ZmqProxyBase(BaseActor):
+class ZmqProxyBase(Actor):
 
     CONNECTION_CLASS = None
     DEFAULT_ENDPOINT_TYPE = 'connect'
@@ -30,7 +30,7 @@ class ZmqProxyBase(BaseActor):
         message = message[0]
         self.parent.send(message)
 
-    def handle(self, message):
+    def receive(self, message):
         self._conn.sendMsg(message)
 
     def add_endpoints(self, endpoints):
@@ -71,7 +71,7 @@ class ZmqRouter(ZmqProxyBase):
         message = message[0]
         self.parent.send((sender_id, message))
 
-    def handle(self, message):
+    def receive(self, message):
         if not isinstance(message, tuple) or len(message) != 2:
             self.parent.send(('error', self, ('unhandled-message', message), None))
             return
@@ -90,7 +90,7 @@ class ZmqRep(ZmqProxyBase):
     def _zmq_msg_received(self, message_id, message):
         self.parent.send((message_id, message))
 
-    def handle(self, message):
+    def receive(self, message):
         try:
             message_id, message = message
         except ValueError:
@@ -102,6 +102,6 @@ class ZmqRep(ZmqProxyBase):
 class ZmqReq(ZmqProxyBase):
     CONNECTION_CLASS = staticmethod(ZmqRequestConnection)
 
-    def handle(self, message):
+    def receive(self, message):
         msg_data_in = yield self._conn.sendMsg(message)
         self.parent.send(msg_data_in[0])

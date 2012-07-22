@@ -1,9 +1,9 @@
 from itertools import count
 
-from spinoff.actor import Actor, RoutingException, InterfaceException
+from spinoff.actor import Process, RoutingException, InterfaceException
 
 
-class InMemRouterEndpoint(Actor):
+class InMemRouterEndpoint(Process):
 
     def __init__(self, manager):
         super(InMemRouterEndpoint, self).__init__()
@@ -13,7 +13,7 @@ class InMemRouterEndpoint(Actor):
         self._manager._delivered_to_router(message)
 
 
-class InMemDealerEndpoint(Actor):
+class InMemDealerEndpoint(Process):
 
     identity = property(lambda self: self._identity)
 

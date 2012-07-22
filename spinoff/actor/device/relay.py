@@ -1,9 +1,9 @@
 from twisted.internet import reactor
 
-from spinoff.actor import BaseActor, RoutingException, InterfaceException
+from spinoff.actor import Actor, RoutingException, InterfaceException
 
 
-class Relay(BaseActor):
+class Relay(Actor):
 
     def __init__(self, client, max_message_age=None, reactor=reactor, cleanup_interval=60, *args, **kwargs):
         super(Relay, self).__init__(*args, **kwargs)
@@ -14,7 +14,7 @@ class Relay(BaseActor):
         self._reactor = reactor
         self.connect(client)
 
-    def handle(self, message):
+    def receive(self, message):
         if not isinstance(message, tuple) and len(message) >= 2:
             raise RoutingException("Messages to Relay should be tuples whose first element is the sender ID")
 

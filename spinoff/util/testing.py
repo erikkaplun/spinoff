@@ -8,7 +8,7 @@ from twisted.internet.task import Clock
 from twisted.internet.defer import Deferred, succeed
 
 from spinoff.util.async import CancelledError
-from spinoff.actor import BaseActor
+from spinoff.actor import Actor
 from spinoff.util.pattern_matching import match, ANY, IS_INSTANCE, NOT
 from spinoff.util.python import combomethod
 from spinoff.actor.comm import ActorRef
@@ -164,14 +164,14 @@ class DebugActor(object):
         print "%s: received %s into %s" % (self.name, self.debug_fn(message), inbox)
 
 
-class MockActor(BaseActor):
+class MockActor(Actor):
 
     def __init__(self, *args, **kwargs):
         super(MockActor, self).__init__(*args, **kwargs)
         self.messages = []
         self.waiting = None
 
-    def handle(self, message):
+    def receive(self, message):
         try:
             if self.waiting:
                 self.waiting, w = None, self.waiting
@@ -195,7 +195,7 @@ class MockActor(BaseActor):
 
 class Container(MockActor):
     # XXX: there are some inconsistencies or duplications because we're not really able to cleanly override behavior
-    # from BaseActor, so __exit__ is not DRY etc. There might be a way to refactor BaseActor to allow for a more elegant
+    # from Actor, so __exit__ is not DRY etc. There might be a way to refactor Actor to allow for a more elegant
     # implementation of this class.
 
     def __init__(self, actor_cls=None, start_automatically=True):

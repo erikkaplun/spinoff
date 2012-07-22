@@ -5,7 +5,7 @@ import pickle
 
 from twisted.internet.defer import succeed
 
-from spinoff.actor import BaseActor, UnhandledMessage
+from spinoff.actor import Actor, UnhandledMessage
 from spinoff.actor.transport.zeromq import ZmqRouter, ZmqDealer
 from spinoff.util.async import sleep
 from spinoff.util.pattern_matching import IGNORE, ANY
@@ -19,8 +19,8 @@ class ActorRef(object):
     _comm = None
 
     def __init__(self, referee):
-        from ._actor import BaseActor
-        assert isinstance(referee, (basestring, BaseActor))
+        from ._actor import Actor
+        assert isinstance(referee, (basestring, Actor))
         self._referee = referee if not isinstance(referee, basestring) else None
         self._addr = referee if isinstance(referee, basestring) else None
 
@@ -82,12 +82,12 @@ class ActorRef(object):
         return '<ActorRef @ %s>' % (self.addr or 'local', )
 
 
-class Comm(BaseActor):
+class Comm(Actor):
 
     _current = None
     _overridden = None  # only for testing
 
-    def handle(self, message):
+    def receive(self, message):
         if message == ('error', IGNORE(ANY), IGNORE(ANY)):
             raise RuntimeError("comm failed", message[2])
         elif isinstance(message, str):

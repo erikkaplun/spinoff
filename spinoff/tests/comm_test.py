@@ -7,7 +7,7 @@ from twisted.internet.defer import inlineCallbacks
 
 from spinoff.actor.comm import Comm, ActorRef
 from spinoff.util.testing import MockActor, assert_raises, Container, deferred_result
-from spinoff.actor import Actor
+from spinoff.actor import Process
 from spinoff.util.async import sleep
 from spinoff.util.testing import assert_not_raises, deref
 
@@ -36,9 +36,9 @@ class CommTestCase(unittest.TestCase):
 
     def test_ref_addr(self):
         with Comm(addr='tcp://127.0.0.1:11000', sock=MockActor):
-            actor1 = Actor()
+            actor1 = Process()
             assert ActorRef(actor1).addr == ActorRef(actor1).addr
-            assert ActorRef(Actor()).addr != ActorRef(Actor()).addr
+            assert ActorRef(Process()).addr != ActorRef(Process()).addr
 
     def test_ref_equality(self):
         with Comm(addr='tcp://127.0.0.1', sock=MockActor) as comm:
@@ -48,7 +48,7 @@ class CommTestCase(unittest.TestCase):
             assert not (ActorRef('foo2') == ActorRef('foo'))
             assert ActorRef('foo2') != ActorRef('foo')
 
-            actor1 = Actor()
+            actor1 = Process()
             assert ActorRef(actor1) == ActorRef(comm._get_addr(actor1))
 
     def test_actorref_comm_interaction(self):

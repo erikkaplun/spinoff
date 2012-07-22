@@ -5,7 +5,7 @@ import warnings
 
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
-from spinoff.actor import Actor, BaseActor, actor, baseactor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning, UnhandledMessage
+from spinoff.actor import Process, Actor, process, actor, ActorNotRunning, ActorAlreadyStopped, ActorAlreadyRunning, UnhandledMessage
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE, IGNORE
 from spinoff.util.async import CancelledError
 from spinoff.util.testing import (
@@ -17,35 +17,35 @@ warnings.simplefilter('always')
 
 
 def test_base_actor_not_started():
-    with contain(MockActor, start_automatically=False) as (container, actor):
+    with contain(MockActor, start_automatically=False) as (container, x):
         with assert_raises(ActorNotRunning):
-            actor.send('whatev')
+            x.send('whatev')
 
-        deref(actor).stop()
+        deref(x).stop()
 
 
 def test_base_actor():
-    with contain(MockActor) as (container, actor):
+    with contain(MockActor) as (container, x):
         msg = random.random()
-        actor.send(msg)
-        assert deref(actor).clear() == [msg]
+        x.send(msg)
+        assert deref(x).clear() == [msg]
 
-        deref(actor).pause()
+        deref(x).pause()
         msg = random.random()
-        actor.send(msg)
-        assert deref(actor).clear() == []
+        x.send(msg)
+        assert deref(x).clear() == []
 
-        deref(actor).resume()
-        assert deref(actor).clear() == [msg]
+        deref(x).resume()
+        assert deref(x).clear() == [msg]
 
         assert not container.messages
 
-        deref(actor).stop()
-        container.consume_message(('stopped', actor))
+        deref(x).stop()
+        container.consume_message(('stopped', x))
 
 
 def test_base_actor_error():
-    @baseactor
+    @actor
     def SomeActor(self, message):
         raise MockException()
 
@@ -59,14 +59,14 @@ def test_base_actor_error():
 def test_failure_with_children():
     child_stopped = [False]
 
-    @actor
+    @process
     def Child(self):
         try:
             yield Deferred()
         except GeneratorExit:
             child_stopped[0] = True
 
-    @actor
+    @process
     def A(self):
         self.spawn(Child)
         raise MockException()
@@ -78,7 +78,7 @@ def test_failure_with_children():
 
 
 def test_actor_refuses_to_stop():
-    @actor
+    @process
     def A(self):
         try:
             yield Deferred()
@@ -96,7 +96,7 @@ def test_actor_refuses_to_stop():
 def test_failure_while_stopping():
     mock_d = Deferred()
 
-    @actor
+    @process
     def A(self):
         try:
             yield mock_d
@@ -113,12 +113,12 @@ def test_failure_while_stopping():
 def test_connect_and_put():
     received_msg = []
 
-    @actor
+    @process
     def Mock(self):
         received_msg.append((yield self.get()))
 
     with contain(Mock) as (container, mock):
-        c = actor(lambda self: self.put('msg-1'))()
+        c = process(lambda self: self.put('msg-1'))()
         c._parent = container.ref
         c.connect(mock)
         c.start()
@@ -131,20 +131,20 @@ def test_flow():
 
     mock_d = Deferred()
 
-    @actor
+    @process
     def Proc(self):
         called[0] += 1
         yield mock_d
         called[0] += 1
 
     with contain(Proc, start_automatically=False) as (container, proc):
-        assert not called[0], "creating an actor should not automatically start the coroutine in it"
+        assert not called[0], "creating an process should not automatically start the coroutine in it"
         deref(proc).start()
         with assert_raises(ActorAlreadyRunning):
             deref(proc).start()
 
         mock_d.callback(None)
-        assert called[0] == 2, "the coroutine in an actor should complete as normal"
+        assert called[0] == 2, "the coroutine in an process should complete as normal"
         assert not deref(proc).is_alive
         container.consume_message(('stopped', proc))
         assert not deref(proc).is_alive
@@ -154,7 +154,7 @@ def test_exception():
     mock_d = Deferred()
     exception_caught = [False]
 
-    @actor
+    @process
     def Y(self):
         try:
             yield mock_d
@@ -169,7 +169,7 @@ def test_exception():
 def test_baseactor_failure():
     exc = MockException()
 
-    @baseactor
+    @actor
     def A(self, message):
         raise exc
 
@@ -183,7 +183,7 @@ def test_baseactor_failure():
 def test_failure():
     exc = MockException()
 
-    @actor
+    @process
     def A(self):
         raise exc
 
@@ -193,14 +193,14 @@ def test_failure():
 
 
 def test_yielding_a_non_deferred():
-    @actor
+    @process
     def Actor1(self):
         tmp = random.random()
         ret = yield tmp
         assert ret == tmp
     run(Actor1)
 
-    @actor
+    @process
     def Actor2(self):
         ret = yield
         assert ret is None
@@ -210,7 +210,7 @@ def test_yielding_a_non_deferred():
 def test_pending_failures_are_discarded_with_a_warning():
     mock_d = Deferred()
 
-    @actor
+    @process
     def X(self):
         yield mock_d
 
@@ -228,7 +228,7 @@ def test_pausing_resuming_and_stopping():
     mock_d = Deferred()
     retval = random.random()
 
-    @actor
+    @process
     def X(self):
         try:
             ret = yield mock_d
@@ -249,7 +249,7 @@ def test_pausing_resuming_and_stopping():
         mock_d.callback(retval)
 
         assert not container.has_message(('stopped', proc)), \
-            "a paused actor should not be resumed when the call it's waiting on completes"
+            "a paused process should not be resumed when the call it's waiting on completes"
 
         deref(proc).resume()
 
@@ -268,7 +268,7 @@ def test_pausing_resuming_and_stopping():
     mock_d = Deferred()
     exception_caught = [False]
 
-    @actor
+    @process
     def Y(self):
         try:
             yield mock_d
@@ -283,7 +283,7 @@ def test_pausing_resuming_and_stopping():
         assert exception_caught[0]
 
         ### can't resume twice
-        with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an actor twice"):
+        with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an process twice"):
             deref(x).resume()
 
     ### stopping
@@ -301,7 +301,7 @@ def test_pausing_resuming_and_stopping():
         with assert_raises(ActorAlreadyStopped):
             deref(proc3).resume()
 
-    ### stopping a paused actor
+    ### stopping a paused process
     mock_d = Deferred()
     with contain(X) as (container, proc4):
         deref(proc4).pause()
@@ -315,7 +315,7 @@ def test_stopping_cancels_the_deferred_on_hold():
     cancelled = [False]
     mock_d = Deferred(lambda _: cancelled.__setitem__(0, True))
 
-    @actor
+    @process
     def X(self):
         yield mock_d
 
@@ -326,7 +326,7 @@ def test_stopping_cancels_the_deferred_on_hold():
 
 
 def test_actor_does_not_have_to_catch_actorstopped():
-    @actor
+    @process
     def X(self):
         yield Deferred()
 
@@ -339,7 +339,7 @@ def test_actor_does_not_have_to_catch_actorstopped():
 def test_actor_with_args():
     passed_values = [None, None]
 
-    @actor
+    @process
     def Proc(self, a, b):
         yield
         passed_values[:] = [a, b]
@@ -349,14 +349,14 @@ def test_actor_with_args():
 
 
 def test_actor_doesnt_require_generator():
-    @actor
+    @process
     def Proc(self):
         pass
 
     with contain(Proc) as (container, proc):
         container.consume_message(('stopped', proc))
 
-    @actor
+    @process
     def Proc2(self):
         raise MockException()
 
@@ -366,7 +366,7 @@ def test_actor_doesnt_require_generator():
 
 def test_get():
     def _make_getter(filter=None):
-        @actor
+        @process
         def ret(self):
             received_msg.append((yield self.get(filter=filter)))
         return ret
@@ -402,7 +402,7 @@ def test_get():
 def test_get_removes_message_from_inbox():
     called = []
 
-    @actor
+    @process
     def X(self):
         called.append(1)
 
@@ -417,14 +417,14 @@ def test_get_removes_message_from_inbox():
 
 
 def test_inbox_underflow():
-    @actor
+    @process
     def GetTwice(self):
         self.get()
         with assert_raises(QueueUnderflow):
             self.get()
     run(GetTwice)
 
-    @actor
+    @process
     def GetThenCancelAndGetAgain(self):
         msg_d = self.get()
         msg_d.addErrback(lambda f: f.trap(CancelledError))
@@ -434,18 +434,18 @@ def test_inbox_underflow():
 
 
 def test_spawn_child_actor():
-    @actor
+    @process
     def Child(self):
         yield Deferred()
 
-    @actor
+    @process
     def Parent(self):
         c = self.spawn(Child)
         assert deref(deref(c).parent) == self
 
         deref(c).stop()
         msg = deferred_result(self.get())
-        assert msg == ('stopped', c), "child actor forced exit should be sent to its parent"
+        assert msg == ('stopped', c), "child process forced exit should be sent to its parent"
 
         c = self.spawn(run_with_error)
         msg = deferred_result(self.get())
@@ -456,7 +456,7 @@ def test_spawn_child_actor():
     child_stopped = [False]
     arg = random.random()
 
-    @actor
+    @process
     def ChildWithArgs(self, foo):
         assert foo == arg
         try:
@@ -464,7 +464,7 @@ def test_spawn_child_actor():
         except GeneratorExit:
             child_stopped[0] = True
 
-    @actor
+    @process
     def Parent2(self):
         self.spawn(ChildWithArgs(arg))
 
@@ -473,7 +473,7 @@ def test_spawn_child_actor():
 
     assert child_stopped[0]
 
-    class Parent3(Actor):
+    class Parent3(Process):
         def __init__(self):
             super(Parent3, self).__init__()
             self.spawn(Child)
@@ -484,20 +484,20 @@ def test_spawn_child_actor():
 
 
 def test_actor_returns_value_raises_a_warning():
-    @actor
+    @process
     def SomeActor(self):
         yield
         returnValue(123)
 
     with Container() as container:
         with assert_one_warning():
-            container.spawn(actor(lambda self: 123))
+            container.spawn(process(lambda self: 123))
         with assert_one_warning():
             container.spawn(SomeActor)
 
 
 def test_returnvalue_during_cleanup():
-    @actor
+    @process
     def X(self):
         try:
             yield Deferred()
@@ -513,14 +513,14 @@ def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_ch
     children = []
     child_stopped = [False]
 
-    @actor
+    @process
     def Child(self):
         try:
             yield Deferred()
         except GeneratorExit:
             child_stopped[0] = True
 
-    @actor
+    @process
     def Parent(self):
         children.append(self.spawn(Child))
         yield Deferred()
@@ -538,13 +538,13 @@ def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_ch
 
 
 def test_pausing_and_stoping_actor_with_some_finished_children():
-    @actor
+    @process
     def Stillborn(self):
         yield
 
     child_stopped = [False]
 
-    @actor
+    @process
     def LongLivingChild(self):
         try:
             yield Deferred()
@@ -553,7 +553,7 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
 
     mock_d = Deferred()
 
-    @actor
+    @process
     def Parent(self):
         self.spawn(Stillborn)
         self.spawn(LongLivingChild)
@@ -571,14 +571,14 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
 def test_actor_finishing_before_child_stops_its_children():
     child_stopped = [False]
 
-    @actor
+    @process
     def Child(self):
         try:
             yield Deferred()
         except GeneratorExit:
             child_stopped[0] = True
 
-    @actor
+    @process
     def Parent(self):
         self.spawn(Child)
 
@@ -591,14 +591,14 @@ def test_actor_finishing_before_child_stops_its_children():
 def test_actor_failinig_stops_its_children():
     child_stopped = [False]
 
-    @actor
+    @process
     def Child(self):
         try:
             yield Deferred()
         except GeneratorExit:
             child_stopped[0] = True
 
-    @actor
+    @process
     def Parent(self):
         self.spawn(Child)
         raise Exception()
@@ -610,7 +610,7 @@ def test_actor_failinig_stops_its_children():
 
 
 def test_before_start_raises():
-    class SomeActor(BaseActor):
+    class SomeActor(Actor):
         def _before_start(self):
             raise MockException
 
@@ -619,7 +619,7 @@ def test_before_start_raises():
 
 
 def test_on_stop_raises():
-    class SomeActor(BaseActor):
+    class SomeActor(Actor):
         def _on_stop(self):
             raise MockException
 
@@ -629,7 +629,7 @@ def test_on_stop_raises():
 
 
 def test_unhandled_message():
-    @baseactor
+    @actor
     def A(self, message):
         raise UnhandledMessage
 
@@ -640,8 +640,8 @@ def test_unhandled_message():
 
 
 def test_unhandled_error_message():
-    # actor that does not handle child errors
-    @baseactor
+    # process that does not handle child errors
+    @actor
     def A(self, message):
         raise UnhandledMessage
 
@@ -649,8 +649,8 @@ def test_unhandled_error_message():
         with assert_one_warning("Unhandled child errors should emit a warning"):
             a.send(('error', 'whatever', (Exception(), 'dummy traceback')))
 
-    # actor that handles child errors
-    @baseactor
+    # process that handles child errors
+    @actor
     def B(self, message):
         pass
 
@@ -662,16 +662,16 @@ def test_unhandled_error_message():
 def test_supervision():
     """Essentially just tests error message handling but with actual actors."""
 
-    @actor
+    @process
     def Child(self):
         raise MockException()
 
-    @baseactor
+    @actor
     def GoodParent(self, message):
         pass
     GoodParent.def_before_start(lambda self: self.spawn(Child))
 
-    @baseactor
+    @actor
     def BadParent(self, message):
         raise UnhandledMessage
     BadParent.def_before_start(lambda self: self.spawn(Child))
@@ -690,6 +690,6 @@ class MockException(Exception):
     pass
 
 
-@actor
+@process
 def run_with_error(self):
     raise MockException()
