@@ -91,6 +91,7 @@ class BaseActor(object):
         return child
 
     _before_start = lambda _: None
+    def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
 
     def start(self):
         self.resume()
