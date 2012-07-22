@@ -164,6 +164,20 @@ def test_exception():
         assert exception_caught[0]
 
 
+def test_baseactor_failure():
+    exc = MockException()
+
+    @baseactor
+    def A(self, message):
+        raise exc
+
+    with contain(A) as (container, a):
+        a.send(None)
+        container.consume_message(('error', a, (exc, _)))
+        assert ('stopped', ANY) not in container.messages
+        assert deref(a).is_alive
+
+
 def test_failure():
     exc = MockException()
 
