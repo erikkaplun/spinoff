@@ -2,7 +2,7 @@ from twisted.internet.task import Clock
 from twisted.trial import unittest
 
 from unnamedframework.actor.device.relay import Relay
-from unnamedframework.util.testing import MockActor, Container
+from unnamedframework.util.testing import MockActor, Container, deref
 
 
 class HttpGatewayTest(unittest.TestCase):
@@ -13,11 +13,11 @@ class HttpGatewayTest(unittest.TestCase):
     def _create_relay(self, use_clock=False, **kwargs):
         self.clock = Clock()
 
-        self.root = Container.spawn()
+        self.root = Container._spawn()
         self.mock = self.root.spawn(MockActor)
         self.relay = self.root.spawn(Relay, self.mock, reactor=self.clock, **kwargs)
 
-        self.addCleanup(self.relay.stop)
+        self.addCleanup(deref(self.relay).stop)
 
     def test_interface(self):
         x = self.relay
@@ -48,20 +48,20 @@ class HttpGatewayTest(unittest.TestCase):
 
         x.send(('node-1', ('init', [1])))
         x.send(('node-2', ('send', ['msg-1', 1])))
-        assert mock.clear()[-1] == ('node-1', 'msg-1')
+        assert deref(mock).clear()[-1] == ('node-1', 'msg-1')
 
         x.send(('node-2', ('send', ['msg-2', 3])))
-        assert not mock.messages
+        assert not deref(mock).messages
 
         x.send(('node-3', ('init', [3])))
-        assert mock.clear()[-1] == ('node-3', 'msg-2')
+        assert deref(mock).clear()[-1] == ('node-3', 'msg-2')
 
         x.send(('node-2', ('send', ['msg-3', 3])))
-        assert mock.clear()[-1] == ('node-3', 'msg-3')
+        assert deref(mock).clear()[-1] == ('node-3', 'msg-3')
 
         x.send(('node-3', ('uninit', [])))
         x.send(('node-2', ('send', ['whatev', 3])))
-        assert not mock.messages
+        assert not deref(mock).messages
 
         x.send((3, ('uninit', [])))
         assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
@@ -73,12 +73,12 @@ class HttpGatewayTest(unittest.TestCase):
         self.relay.send(('node-1', ('send', ['msg-1', 2])))
         self.clock.advance(11)
         self.relay.send(('node-2', ('init', [2])))
-        assert not self.mock.messages, "messages older than max_message_age are not delivered"
+        assert not deref(self.mock).messages, "messages older than max_message_age are not delivered"
 
         self.relay.send(('node-1', ('send', ['msg-2', 3])))
         self.clock.advance(9)
         self.relay.send(('node-3', ('init', [3])))
-        assert self.mock.messages, "messages younger than max_message_age are delivered"
+        assert deref(self.mock).messages, "messages younger than max_message_age are delivered"
 
 
 if __name__ == '__main__':

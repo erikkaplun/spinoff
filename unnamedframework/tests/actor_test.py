@@ -10,6 +10,7 @@ from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE, _
 from unnamedframework.util.async import CancelledError
 from unnamedframework.util.testing import deferred_result, assert_raises, assert_not_raises, assert_one_warning, MockActor, run, Container, NOT, contain
 from unnamedframework.actor._actor import BaseActor
+from unnamedframework.util.testing import deref
 
 
 warnings.simplefilter('always')
@@ -20,26 +21,26 @@ def test_base_actor_not_started():
         with assert_raises(ActorNotRunning):
             actor.send('whatev')
 
-        actor.stop()
+        deref(actor).stop()
 
 
 def test_base_actor():
     with contain(MockActor) as (container, actor):
         msg = random.random()
         actor.send(msg)
-        assert actor.clear() == [msg]
+        assert deref(actor).clear() == [msg]
 
-        actor.pause()
+        deref(actor).pause()
         msg = random.random()
         actor.send(msg)
-        assert actor.clear() == []
+        assert deref(actor).clear() == []
 
-        actor.resume()
-        assert actor.clear() == [msg]
+        deref(actor).resume()
+        assert deref(actor).clear() == [msg]
 
         assert not container.messages
 
-        actor.stop()
+        deref(actor).stop()
         container.consume_message(('stopped', actor))
 
 
@@ -87,8 +88,8 @@ def test_actor_refuses_to_stop():
         assert False
 
     with contain(A) as (container, a):
-        a.pause()
-        a.stop()
+        deref(a).pause()
+        deref(a).stop()
         container.consume_message(('error', a, (_, _)))
 
 
@@ -103,9 +104,9 @@ def test_failure_while_stopping():
             raise MockException()
 
     with contain(A) as (r, a):
-        assert a.is_running
+        assert deref(a).is_running
         with assert_not_raises(MockException):
-            a.stop()
+            deref(a).stop()
         r.consume_message(('error', a, (_, _)))
 
 
@@ -118,7 +119,7 @@ def test_connect_and_put():
 
     with contain(Mock) as (container, mock):
         c = actor(lambda self: self.put('msg-1'))()
-        c._parent = container
+        c._parent = container.ref
         c.connect(mock)
         c.start()
 
@@ -138,15 +139,15 @@ def test_flow():
 
     with contain(Proc, start_automatically=False) as (container, proc):
         assert not called[0], "creating an actor should not automatically start the coroutine in it"
-        proc.start()
+        deref(proc).start()
         with assert_raises(ActorAlreadyRunning):
-            proc.start()
+            deref(proc).start()
 
         mock_d.callback(None)
         assert called[0] == 2, "the coroutine in an actor should complete as normal"
-        assert not proc.is_alive
+        assert not deref(proc).is_alive
         container.consume_message(('stopped', proc))
-        assert not proc.is_alive
+        assert not deref(proc).is_alive
 
 
 def test_exception():
@@ -174,7 +175,7 @@ def test_failure():
 
     with contain(A) as (container, a):
         container.consume_message(('error', a, (exc, _)))
-        assert not a.is_alive
+        assert not deref(a).is_alive
 
 
 def test_yielding_a_non_deferred():
@@ -200,11 +201,11 @@ def test_pending_failures_are_discarded_with_a_warning():
         yield mock_d
 
     with contain(X) as (container, p):
-        p.pause()
+        deref(p).pause()
 
         mock_d.errback(Exception())
         with assert_one_warning():
-            p.stop()
+            deref(p).stop()
 
 
 def test_pausing_resuming_and_stopping():
@@ -223,28 +224,28 @@ def test_pausing_resuming_and_stopping():
 
     ### resuming when the async called has been fired
     with contain(X) as (container, proc):
-        proc.pause()
-        assert not proc.is_running
-        assert proc.is_alive
-        assert proc.is_paused
+        deref(proc).pause()
+        assert not deref(proc).is_running
+        assert deref(proc).is_alive
+        assert deref(proc).is_paused
 
         with assert_raises(ActorNotRunning):
-            proc.pause()
+            deref(proc).pause()
 
         mock_d.callback(retval)
 
         assert not container.has_message(('stopped', proc)), \
             "a paused actor should not be resumed when the call it's waiting on completes"
 
-        proc.resume()
+        deref(proc).resume()
 
         container.consume_message(('stopped', proc))
 
     ### resuming when the async call has NOT been fired
     mock_d = Deferred()
     with contain(X) as (container, proc2):
-        proc2.pause()
-        proc2.resume()
+        deref(proc2).pause()
+        deref(proc2).resume()
 
         assert not stopped[0]
         assert not container.messages
@@ -262,35 +263,35 @@ def test_pausing_resuming_and_stopping():
         yield Deferred()
 
     with contain(Y) as (container, x):
-        x.pause()
+        deref(x).pause()
         mock_d.errback(MockException())
-        x.resume()
+        deref(x).resume()
         assert exception_caught[0]
 
         ### can't resume twice
         with assert_raises(ActorAlreadyRunning, "it should not be possible to resume an actor twice"):
-            x.resume()
+            deref(x).resume()
 
     ### stopping
     mock_d = Deferred()
     with contain(X) as (container, proc3):
-        proc3.stop()
+        deref(proc3).stop()
         with assert_raises(ActorAlreadyStopped):
-            proc3.stop()
+            deref(proc3).stop()
 
         assert stopped[0]
         container.consume_message(('stopped', proc3))
 
         with assert_raises(ActorAlreadyStopped):
-            proc3.start()
+            deref(proc3).start()
         with assert_raises(ActorAlreadyStopped):
-            proc3.resume()
+            deref(proc3).resume()
 
     ### stopping a paused actor
     mock_d = Deferred()
     with contain(X) as (container, proc4):
-        proc4.pause()
-        proc4.stop()
+        deref(proc4).pause()
+        deref(proc4).stop()
 
         assert stopped[0]
         container.consume_message(('stopped', proc4))
@@ -305,7 +306,7 @@ def test_stopping_cancels_the_deferred_on_hold():
         yield mock_d
 
     with contain(X) as (container, x):
-        x.stop()
+        deref(x).stop()
 
     assert cancelled[0]
 
@@ -317,7 +318,7 @@ def test_actor_does_not_have_to_catch_actorstopped():
 
     with contain(X) as (container, proc):
         with assert_not_raises(GeneratorExit):
-            proc.stop()
+            deref(proc).stop()
         container.consume_message(('stopped', proc))
 
 
@@ -420,9 +421,9 @@ def test_spawn_child_actor():
     @actor
     def Parent(self):
         c = self.spawn(Child)
-        assert c.parent == self
+        assert deref(deref(c).parent) == self
 
-        c.stop()
+        deref(c).stop()
         msg = deferred_result(self.get())
         assert msg == ('stopped', c), "child actor forced exit should be sent to its parent"
 
@@ -459,7 +460,7 @@ def test_spawn_child_actor():
 
     with contain(Parent3, start_automatically=False) as (_, parent3):
         with assert_not_raises(ActorAlreadyRunning, "it should be possible for actors to spawn children in the constructor"):
-            parent3.start()
+            deref(parent3).start()
 
 
 def test_actor_returns_value_raises_a_warning():
@@ -485,7 +486,7 @@ def test_returnvalue_during_cleanup():
 
     with contain(X) as (contaner, x):
         with assert_one_warning():
-            x.stop()
+            deref(x).stop()
 
 
 def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_children():
@@ -505,14 +506,14 @@ def test_pausing_resuming_and_stopping_actor_with_children_does_the_same_with_ch
         yield Deferred()
 
     with contain(Parent) as (container, a):
-        a.pause()
-        assert all(x.is_paused for x in children)
+        deref(a).pause()
+        assert all(deref(x).is_paused for x in children)
 
-        a.resume()
-        assert all(not x.is_paused for x in children)
+        deref(a).resume()
+        assert all(not deref(x).is_paused for x in children)
 
-        a.stop()
-        assert all(not x.is_alive for x in children)
+        deref(a).stop()
+        assert all(not deref(x).is_alive for x in children)
         assert child_stopped[0]
 
 
@@ -540,10 +541,10 @@ def test_pausing_and_stoping_actor_with_some_finished_children():
 
     with contain(Parent) as (container, a):
         with assert_not_raises(ActorNotRunning):
-            a.pause()
+            deref(a).pause()
         with assert_not_raises(ActorAlreadyStopped):
-            a.resume()
-        a.stop()
+            deref(a).resume()
+        deref(a).stop()
         assert child_stopped[0]
 
 
@@ -563,7 +564,7 @@ def test_actor_finishing_before_child_stops_its_children():
 
     with contain(Parent) as (container, p):
         assert child_stopped[0]
-        assert not p.is_running
+        assert not deref(p).is_running
         container.consume_message(('stopped', p))
 
 
@@ -603,7 +604,7 @@ def test_on_stop_raises():
             raise MockException
 
     with contain(SomeActor) as (container, some_actor):
-        some_actor.stop()
+        deref(some_actor).stop()
         container.consume_message(('error', _, (IS_INSTANCE(MockException), _)))
 
 

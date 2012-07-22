@@ -8,7 +8,7 @@ from unnamedframework.actor.comm import Comm, ActorRef
 from unnamedframework.util.testing import MockActor, assert_raises, Container, deferred_result
 from unnamedframework.actor import Actor
 from unnamedframework.util.async import sleep
-from unnamedframework.util.testing import assert_not_raises
+from unnamedframework.util.testing import assert_not_raises, deref
 
 
 def _get_actor_id(actorref):
@@ -60,9 +60,9 @@ class CommTestCase(unittest.TestCase):
 
     def test_send_locally(self):
         with Container() as container:
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1', sock=MockActor))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=MockActor))
 
-            actor1 = container.spawn(MockActor)
+            actor1 = container._spawn(MockActor)
             with comm:
                 actor1_ref = ActorRef(actor1)
             actor1_ref.send('foo')
@@ -71,7 +71,7 @@ class CommTestCase(unittest.TestCase):
     def test_send_remotely(self):
         with Container() as container:
             mock_sock = MockActor()
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
             random_port, random_actor_id = random.randint(8000, 10000), str(random.randint(0, 10000))
             with comm:
@@ -84,7 +84,7 @@ class CommTestCase(unittest.TestCase):
     def test_invalid_send_remotely(self):
         with Container() as container:
             mock_sock = MockActor()
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
             with assert_raises(ValueError):
                 comm.send_msg('whatever:8765/765123', 'whatev')
@@ -96,13 +96,13 @@ class CommTestCase(unittest.TestCase):
     def test_send_actorref_and_use_it_remotely(self):
         with Container() as container:
             mock_sock = MockActor()
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1:11000', sock=mock_sock))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=mock_sock))
 
             remote_mock_sock = MockActor()
-            remote_comm = container.spawn(Comm(addr='tcp://127.0.0.1:11001', sock=remote_mock_sock))
+            remote_comm = container._spawn(Comm(addr='tcp://127.0.0.1:11001', sock=remote_mock_sock))
 
             # serialize/send actorref locally
-            actor1 = container.spawn(MockActor)
+            actor1 = container._spawn(MockActor)
             with comm:
                 actor1_ref = ActorRef(actor1)
             comm.send_msg('tcp://127.0.0.1:11001/1234', actor1_ref)
@@ -123,24 +123,24 @@ class CommTestCase(unittest.TestCase):
     def test_comm_receives_message(self):
         with Container() as container:
             mock_sock = MockActor()
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
-            actor1 = container.spawn(MockActor)
+            actor1 = container._spawn(MockActor)
             with comm:
                 actor_id = _get_actor_id(ActorRef(actor1))
 
-            comm.send(pickle.dumps((actor_id, 'something')))
+            comm._send(pickle.dumps((actor_id, 'something')))
 
             assert 'something' == deferred_result(actor1.wait())
 
     @inlineCallbacks
     def test_send_receive_with_zmq(self):
         with Container() as container:
-            comm1 = container.spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            comm2 = container.spawn(Comm(addr='tcp://127.0.0.1:11001'))
+            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+            comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
 
-            actor1 = container.spawn(MockActor)
-            actor2 = container.spawn(MockActor)
+            actor1 = container._spawn(MockActor)
+            actor2 = container._spawn(MockActor)
 
             with comm1:
                 actor1_ref = ActorRef(actor1)
@@ -165,9 +165,9 @@ class CommTestCase(unittest.TestCase):
     def test_receive_actorref_to_a_local_actor(self):
         with Container() as container:
             assert container.is_running
-            comm1 = container.spawn(Comm(addr='tcp://127.0.0.1:11000'))
+            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
 
-            actor1 = container.spawn(MockActor)
+            actor1 = container._spawn(MockActor)
             with comm1:
                 actor1_ref = ActorRef(comm1.get_addr(actor1))
 
@@ -176,8 +176,8 @@ class CommTestCase(unittest.TestCase):
 
     def test_optimize_refs_to_local_addrs(self):
         with Container() as container:
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            actor1 = container.spawn(MockActor)
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+            actor1 = container._spawn(MockActor)
 
             with comm:
                 ref = ActorRef(comm.get_addr(actor1))
@@ -189,21 +189,21 @@ class CommTestCase(unittest.TestCase):
 
     def test_manual_actor_id(self):
         with Container() as container:
-            comm = container.spawn(Comm(addr='tcp://127.0.0.1:11000', sock=MockActor))
+            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=MockActor))
             actor1 = container.spawn(MockActor)
 
             comm.set_id(actor1, 'actor1')
             with comm:
                 ref = ActorRef('tcp://127.0.0.1:11000/actor1')
             ref.send('foobar')
-            assert 'foobar' == deferred_result(actor1.wait())
+            assert 'foobar' == deferred_result(deref(actor1).wait())
 
             # can't set again
             with assert_raises(RuntimeError):
                 comm.set_id(actor1, 'whatev')
 
             actor2 = container.spawn(MockActor)
-            comm.get_addr(actor2)
+            comm.get_addr(deref(actor2))
             # can't set again even if the previous one was implicitly set
             with assert_raises(RuntimeError):
                 comm.set_id(actor2, 'whatev')
@@ -211,8 +211,8 @@ class CommTestCase(unittest.TestCase):
     @inlineCallbacks
     def test_manual_actor_id_with_zmq(self):
         with Container() as container:
-            comm1 = container.spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            comm2 = container.spawn(Comm(addr='tcp://127.0.0.1:11001'))
+            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+            comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
 
             some_actor = container.spawn(MockActor)
             comm2.set_id(some_actor, 'some-actor')
@@ -223,4 +223,4 @@ class CommTestCase(unittest.TestCase):
                 ref.send('foobar')
 
             yield sleep(0.005)
-            assert 'foobar' == deferred_result(some_actor.wait())
+            assert 'foobar' == deferred_result(deref(some_actor).wait())
