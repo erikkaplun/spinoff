@@ -298,7 +298,7 @@ class Process(Actor):
             if self._waiting[0] is None:
                 found = message
             elif found is EMPTY:
-                m, values = match(self._waiting[0], message)
+                m, values = match(self._waiting[0], message, flatten=False)
                 if m:
                     found = values
             if found is not EMPTY:
