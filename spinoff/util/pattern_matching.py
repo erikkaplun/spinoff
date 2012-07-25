@@ -31,7 +31,7 @@ def match(pattern, data, flatten=True):
         if data:
             success = False
 
-        return success, values if values is not NOTHING else NOTHING
+        return success, values
 
     ret = _match(pattern, data, True)
     if flatten and isinstance(ret[1], _Values):
