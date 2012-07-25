@@ -317,8 +317,7 @@ class Process(Actor):
             if filter is None:
                 return self._inbox.pop(0)
             for msg in self._inbox:
-                m = match(filter, msg)
-                m, values = m[0], m[1:]
+                m, values = match(filter, msg, flatten=False)
                 if m:
                     self._inbox.remove(msg)
                     return succeed(values)

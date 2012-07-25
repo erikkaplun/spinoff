@@ -398,6 +398,15 @@ def test_get():
 
         container.ignore_non_assertions()
 
+    ###
+    @process
+    def X(self):
+        yield Deferred()
+
+    with contain(X) as (container, x):
+        x.send('foo')
+        deref(x).get(filter='foo')
+
 
 def test_get_removes_message_from_inbox():
     called = []
