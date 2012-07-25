@@ -9,7 +9,7 @@ FLATTEN = True
 
 
 def NO(pattern, data):
-    x = match(pattern, data)
+    x = match(pattern, data, flatten=FLATTEN)
     assert isinstance(x, tuple) and not x[0] or not x, x
 
 
