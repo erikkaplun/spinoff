@@ -384,7 +384,7 @@ def test_get():
         x.send(('foo', tmp))
         container.ignore_non_assertions()
     # container.raise_errors(only_asserts=False)
-    assert [tmp] == received_msg, received_msg
+    assert [(tmp, )] == received_msg, received_msg
 
     ###
     received_msg = []
@@ -394,7 +394,7 @@ def test_get():
         assert received_msg == []
 
         c.send(('baz', tmp))
-        assert received_msg == [tmp]
+        assert received_msg == [(tmp,)]
 
         container.ignore_non_assertions()
 
