@@ -5,39 +5,40 @@ class _Values(list):
     pass
 
 
-def match(pattern, data, flatten=True):
-    def _match(pattern, data, success):
-        def _is_ignore(pattern):
-            return not (isinstance(pattern, _Matcher) and not pattern.ignore)
+def _is_collect(pattern):
+    return (isinstance(pattern, _Matcher) and not pattern.ignore)
 
-        is_tuple = isinstance(pattern, tuple)
-        if not is_tuple:
-            return (pattern == data if success else False,
-                    data if not _is_ignore(pattern) else NOTHING)
 
-        values = NOTHING
-        data_is_tuple = isinstance(data, tuple)
+def match(pattern, subject, flatten=True):
+    # XXX: try to optimize this function
+    def _match(pattern, subject, success):
+        if not isinstance(pattern, tuple):
+            values = _Values([subject] if _is_collect(pattern) else [])
+            return (success and pattern == subject, values)
+        else:
+            values = _Values()
+            subject_is_tuple = isinstance(subject, tuple)
 
-        for pi in pattern:
-            success, subvalues = _match(pi, data[0] if data_is_tuple and data else None, success)
-            if subvalues is not NOTHING:
-                if values is NOTHING:
-                    values = _Values()
-                if flatten and isinstance(subvalues, _Values):
-                    values += subvalues
-                else:
-                    values.append(tuple(subvalues) if isinstance(subvalues, _Values) else subvalues)
-            data = data[1:] if data_is_tuple and data else None
-        if data:
-            success = False
+            for subpattern in pattern:
+                success, subvalues = _match(subpattern, subject[0] if subject_is_tuple and subject else None, success)
 
-        return success, values
+                assert isinstance(subvalues, _Values)
+                values.extend(subvalues)
 
-    ret = _match(pattern, data, True)
-    if flatten and isinstance(ret[1], _Values):
-        return (ret[0],) + tuple(ret[1])
-    else:
-        return ret[0] if ret[1] is NOTHING else (ret[0], tuple(ret[1]) if isinstance(ret[1], _Values) else ret[1])
+                subject = subject[1:] if subject_is_tuple and subject else None
+
+            # if not all of the subject has been consumed, the match has failed:
+            if subject:
+                success = False
+
+            return success, values
+
+    success, values = _match(pattern, subject, True)
+    assert isinstance(values, _Values)
+
+    return ((success, tuple(values))
+            if not flatten else
+            (success if not values else (success,) + tuple(values)))
 
 
 class _Marker(object):
@@ -85,11 +86,6 @@ class IS_INSTANCE(_Matcher):
 
     def clone(self):
         return type(self)(self.t)
-
-
-class _NOTHING(_Marker):
-    name = 'NOTHING'
-NOTHING = _NOTHING()
 
 
 class Match(_Matcher):
