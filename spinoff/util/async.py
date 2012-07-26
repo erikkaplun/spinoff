@@ -2,11 +2,11 @@ from functools import wraps
 from types import UnboundMethodType
 
 from twisted.python.failure import Failure
-from twisted.internet.defer import inlineCallbacks, Deferred, TimeoutError, CancelledError, DeferredList
+from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, DeferredList
 from twisted.internet import reactor, task
 
 
-__all__ = ['TimeoutError', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds, reactor=reactor):
@@ -32,12 +32,16 @@ def if_(condition, then, else_=None):
         return else_()
 
 
+class Timeout(Exception):
+    pass
+
+
 def with_timeout(timeout, d, reactor=reactor):
     """Returns a `Deferred` that is in all respects equivalent to `d`, e.g. when `cancel()` is called on it `Deferred`,
-    the wrapped `Deferred` will also be cancelled; however, a `TimeoutError` will be fired after the `timeout` number of
+    the wrapped `Deferred` will also be cancelled; however, a `Timeout` will be fired after the `timeout` number of
     seconds if `d` has not fired by that time.
 
-    When a `TimeoutError` is raised, `d` will be cancelled. It is up to the caller to worry about how `d` handles
+    When a `Timeout` is raised, `d` will be cancelled. It is up to the caller to worry about how `d` handles
     cancellation, i.e. whether it has full/true support for cancelling, or does cancelling it just prevent its callbacks
     from being fired but doesn't cancel the underlying operation.
 
@@ -53,7 +57,7 @@ def with_timeout(timeout, d, reactor=reactor):
     timeout_d = sleep(timeout, reactor)
     timeout_d.addCallback(lambda _: (
         d.cancel(),
-        ret.errback(Failure(TimeoutError())),
+        ret.errback(Failure(Timeout())),
         ))
 
     timeout_d.addErrback(lambda f: f.trap(CancelledError))
