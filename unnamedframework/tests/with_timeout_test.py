@@ -1,7 +1,7 @@
-from twisted.internet.defer import TimeoutError, Deferred, CancelledError, inlineCallbacks
+from twisted.internet.defer import Deferred, CancelledError, inlineCallbacks
 from twisted.internet.task import Clock
 
-from unnamedframework.util.async import with_timeout, sleep
+from unnamedframework.util.async import with_timeout, sleep, Timeout
 from unnamedframework.util.testing import deferred, errback_called, MockFunction
 
 
@@ -10,7 +10,7 @@ from unnamedframework.util.testing import deferred, errback_called, MockFunction
 def test_timeout_is_reached(clock):
     try:
         yield with_timeout(1.0, sleep(2.0, reactor=clock), reactor=clock)
-    except TimeoutError:
+    except Timeout:
         pass
     else:
         assert False, "Timeout should have been reached"
@@ -21,7 +21,7 @@ def test_timeout_is_reached(clock):
 def test_timeout_is_not_reached(clock):
     try:
         yield with_timeout(2.0, sleep(1.0, clock), reactor=clock)
-    except TimeoutError:
+    except Timeout:
         assert False, "Timeout should not have been reached"
 
 
@@ -55,7 +55,7 @@ def test_exceptions_are_passed_through(clock):
         yield with_timeout(2.0, dummy(), reactor=clock)
     except MyExc:
         pass
-    except TimeoutError:
+    except Timeout:
         assert False, "Should not have raised TimeoutError"
     else:
         assert False, "Should have raised MyExc"

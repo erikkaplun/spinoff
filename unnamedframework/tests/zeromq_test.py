@@ -2,7 +2,7 @@ from twisted.internet.defer import inlineCallbacks
 from twisted.trial import unittest
 
 from unnamedframework.actor.transport.zeromq import ZmqRouter, ZmqDealer
-from unnamedframework.util.async import TimeoutError, sleep, with_timeout
+from unnamedframework.util.async import Timeout, sleep, with_timeout
 from unnamedframework.util.testing import assert_not_raises, contain
 
 
@@ -26,7 +26,7 @@ class RouterDealerTestCase(unittest.TestCase):
                 msg = 'PING%s' % i
 
                 router.send(message=(identity, msg))
-                with assert_not_raises(TimeoutError, "should have received a message"):
+                with assert_not_raises(Timeout, "should have received a message"):
                     assert msg == (yield with_timeout(1.0, container.wait()))
 
     def test_router_with_1_dealer(self):
