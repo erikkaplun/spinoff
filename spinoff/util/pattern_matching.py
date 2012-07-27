@@ -45,9 +45,6 @@ class _Marker(object):
     def __repr__(self):
         return self.__str__()
 
-    def __str__(self):
-        return self.name
-
     def clone(self):
         return type(self)()
 
@@ -91,16 +88,18 @@ class IS_INSTANCE(Matcher):
 class MATCH(Matcher):
     def __init__(self, fn):
         self.fn = fn
-        try:
-            self.name = 'MATCH(%s)' % inspect.getsource(fn).strip()
-        except IOError:
-            self.name = 'MATCH(%s)' % fn
 
     def __eq__(self, x):
         return self.fn(x)
 
+    def __str__(self):
+        try:
+            return 'MATCH(%s)' % inspect.getsource(self.fn).strip()
+        except IOError:
+            return 'MATCH(%s)' % self.fn
+
     def clone(self):
-        return MATCH(self.fn)
+        return type(self)(self.fn)
 
 
 class NOT(Matcher):
@@ -114,7 +113,7 @@ class NOT(Matcher):
         return 'NOT(%s)' % self.matcher
 
     def clone(self):
-        return NOT(self.matcher)
+        return type(self)(self.matcher)
 
 
 class IF(Matcher):
