@@ -1,3 +1,6 @@
+import copy
+
+
 class _Values(list):
     pass
 
@@ -42,9 +45,6 @@ class _Marker(object):
     def __repr__(self):
         return self.__str__()
 
-    def clone(self):
-        return type(self)()
-
 
 class Matcher(_Marker):
     ignore = False
@@ -63,7 +63,7 @@ ANY = _ANY()
 
 def IGNORE(x):
     if isinstance(x, Matcher):
-        x = x.clone()
+        x = copy.copy(x)
         x.ignore = True
     return x
 
@@ -78,9 +78,6 @@ class IS_INSTANCE(Matcher):
     def __str__(self):
         return 'IS_INSTANCE(%s)' % self.t
 
-    def clone(self):
-        return type(self)(self.t)
-
 
 class MATCH(Matcher):
     def __init__(self, fn):
@@ -92,9 +89,6 @@ class MATCH(Matcher):
     def __str__(self):
         return 'MATCH(%s)' % self.fn
 
-    def clone(self):
-        return type(self)(self.fn)
-
 
 class NOT(Matcher):
     def __init__(self, matcher):
@@ -105,9 +99,6 @@ class NOT(Matcher):
 
     def __str__(self):
         return 'NOT(%s)' % self.matcher
-
-    def clone(self):
-        return type(self)(self.matcher)
 
 
 class IF(Matcher):
@@ -121,6 +112,3 @@ class IF(Matcher):
     def __str__(self):
         # TODO: find a way to re-build the original source code from self.cond.func_code.co_code
         return 'IF(%s, %s)' % (self.cond, self.pattern)
-
-    def clone(self):
-        return type(self)(self.cond, self.pattern)
