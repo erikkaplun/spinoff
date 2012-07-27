@@ -88,7 +88,7 @@ class IS_INSTANCE(_Matcher):
         return type(self)(self.t)
 
 
-class Match(_Matcher):
+class MATCH(_Matcher):
     def __init__(self, fn):
         self.fn = fn
         try:
@@ -100,7 +100,7 @@ class Match(_Matcher):
         return self.fn(x)
 
     def clone(self):
-        return Match(self.fn)
+        return MATCH(self.fn)
 
 
 class NOT(_Matcher):
