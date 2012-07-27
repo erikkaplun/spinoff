@@ -6,7 +6,7 @@ class _Values(list):
 
 
 def _is_collect(pattern):
-    return (isinstance(pattern, _Matcher) and not pattern.ignore)
+    return (isinstance(pattern, Matcher) and not pattern.ignore)
 
 
 def match(pattern, subject, flatten=True):
@@ -52,14 +52,14 @@ class _Marker(object):
         return type(self)()
 
 
-class _Matcher(_Marker):
+class Matcher(_Marker):
     ignore = False
 
     def __req__(self, x):
         return self.__eq__(x)
 
 
-class _ANY(_Matcher):
+class _ANY(Matcher):
     name = 'ANY'
 
     def __eq__(self, x):
@@ -68,13 +68,13 @@ ANY = _ANY()
 
 
 def IGNORE(x):
-    if isinstance(x, _Matcher):
+    if isinstance(x, Matcher):
         x = x.clone()
         x.ignore = True
     return x
 
 
-class IS_INSTANCE(_Matcher):
+class IS_INSTANCE(Matcher):
     def __init__(self, t):
         self.t = t
 
@@ -88,7 +88,7 @@ class IS_INSTANCE(_Matcher):
         return type(self)(self.t)
 
 
-class MATCH(_Matcher):
+class MATCH(Matcher):
     def __init__(self, fn):
         self.fn = fn
         try:
@@ -103,7 +103,7 @@ class MATCH(_Matcher):
         return MATCH(self.fn)
 
 
-class NOT(_Matcher):
+class NOT(Matcher):
     def __init__(self, matcher):
         self.matcher = matcher
 
@@ -117,7 +117,7 @@ class NOT(_Matcher):
         return NOT(self.matcher)
 
 
-class IF(_Matcher):
+class IF(Matcher):
     def __init__(self, cond, pattern):
         self.cond = cond
         self.pattern = pattern
