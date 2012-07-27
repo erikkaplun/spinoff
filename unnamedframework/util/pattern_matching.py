@@ -115,3 +115,19 @@ class NOT(_Matcher):
 
     def clone(self):
         return NOT(self.matcher)
+
+
+class IF(_Matcher):
+    def __init__(self, cond, pattern):
+        self.cond = cond
+        self.pattern = pattern
+
+    def __eq__(self, x):
+        return self.cond() and x == self.pattern
+
+    def __str__(self):
+        # TODO: find a way to re-build the original source code from self.cond.func_code.co_code
+        return 'IF(%s, %s)' % (self.cond, self.pattern)
+
+    def clone(self):
+        return type(self)(self.cond, self.pattern)
