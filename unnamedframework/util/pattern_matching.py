@@ -1,6 +1,3 @@
-import inspect
-
-
 class _Values(list):
     pass
 
@@ -93,10 +90,7 @@ class MATCH(Matcher):
         return self.fn(x)
 
     def __str__(self):
-        try:
-            return 'MATCH(%s)' % inspect.getsource(self.fn).strip()
-        except IOError:
-            return 'MATCH(%s)' % self.fn
+        return 'MATCH(%s)' % self.fn
 
     def clone(self):
         return type(self)(self.fn)
