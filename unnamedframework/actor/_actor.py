@@ -313,6 +313,9 @@ class Process(Actor):
         return self.send(message)
 
     def get(self, filter=None):
+        # TODO: research possibility of optimising selective receives on long queues;  the queue could be a linked list,
+        # and a dict could be used where keys are the generated receive filters, and values are pointers in the queue.
+
         if self._inbox:
             if filter is None:
                 return self._inbox.pop(0)
