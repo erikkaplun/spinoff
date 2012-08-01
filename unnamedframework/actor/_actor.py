@@ -95,14 +95,15 @@ class Actor(object):
         except Exception:
             self.stop()
 
-    def _send_error(self, exc_and_traceback):
+    def _report_error(self, exc_and_traceback):
+        """Reports an error to the supervisor of this actor."""
         self.parent.send(('error', self.ref, exc_and_traceback))
 
     def _wrap_errors(self, fn, *args, **kwargs):
         try:
             return fn(*args, **kwargs)
         except Exception as e:
-            self._send_error((e, sys.exc_info()[2]))
+            self._report_error((e, sys.exc_info()[2]))
             raise
 
     def send(self, message):
@@ -275,7 +276,7 @@ class Process(Actor):
         @d.addBoth
         def finally_(result):
             if isinstance(result, Failure):
-                self._send_error((result.value, result.tb or result.getTraceback()))
+                self._report_error((result.value, result.tb or result.getTraceback()))
             self.stop()
 
     def run(self):
@@ -360,7 +361,7 @@ class Process(Actor):
             except _DefGen_Return:
                 warnings.warn("returnValue inside an process")
             except Exception as e:
-                self._send_error((e, sys.exc_info()[2]))
+                self._report_error((e, sys.exc_info()[2]))
 
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused process")
