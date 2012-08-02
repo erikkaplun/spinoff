@@ -65,3 +65,24 @@ def enumrange(*names):
 
     """
     return enums(*[(order, name) for order, name in enumerate(names)])
+
+
+class _NoReturn(BaseException):
+    """Uused internally in the cooperation between noreturn and the customized inlineCallbacks in util._defer."""
+    def __init__(self, gen):
+        self._gen = gen
+
+
+def noreturn(gen):
+    """Marks a function call that does not return to the current caller.
+
+    Can only be used within generators wrapped with `@inlineCallbacks`. Supports calling of regular functions, and
+    functions that either return a generator or a Deferred.
+
+    When used with a function `foo` that returns a `Deferred`, it is functionally equivalent to but more memory
+    efficient than `returnValue((yield foo()))`.
+
+    See `unnamedframework.tests.noreturn_test` for usage examples.
+
+    """
+    raise _NoReturn(gen)

@@ -6,6 +6,8 @@ from twisted.internet.defer import Deferred, _DefGen_Return
 from twisted.python import failure
 from twisted.python.util import mergeFunctionMetadata
 
+from unnamedframework.util.python import _NoReturn
+
 
 def _inlineCallbacks(result, g, deferred):
     """
@@ -27,6 +29,17 @@ def _inlineCallbacks(result, g, deferred):
                 result = result.throwExceptionIntoGenerator(g)
             else:
                 result = g.send(result)
+        except _NoReturn as e:
+            if isinstance(e._gen, Deferred):
+                e._gen.chainDeferred(deferred)
+                break
+            elif isinstance(e._gen, types.GeneratorType):
+                g = e._gen
+                result = None
+                continue
+            else:
+                deferred.callback(e._gen)
+                return deferred
         except StopIteration:
             # fell off the end, or "return" statement
             deferred.callback(None)
@@ -157,10 +170,11 @@ def inlineCallbacks(f):
     def unwindGenerator(*args, **kwargs):
         try:
             gen = f(*args, **kwargs)
-        except _DefGen_Return:
+        except (_DefGen_Return, _NoReturn) as e:
+            badUsage = 'returnValue' if isinstance(e, _DefGen_Return) else 'noreturn'
             raise TypeError(
-                "inlineCallbacks requires %r to produce a generator; instead"
-                "caught returnValue being used in a non-generator" % (f,))
+                "inlineCallbacks requires %r to produce a generator; instead "
+                "caught %s being used in a non-generator" % (f, badUsage,))
         if not isinstance(gen, types.GeneratorType):
             raise TypeError(
                 "inlineCallbacks requires %r to produce a generator; "
