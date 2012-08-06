@@ -130,23 +130,16 @@ class Actor(object):
             else:
                 if isinstance(ret, types.GeneratorType):
                     raise RuntimeError("Actor.receive returned a generator: yield inside Actor.receive?")
-        else:
-            if self._state is NOT_STARTED:
-                raise NotRunning("Message sent to an actor that hasn't been started ")
-            if self._state is not STOPPED:
-                self._pending.append(message)
-            else:
-                raise NotRunning("Message sent to a stopped actor")
+        elif self._state is not STOPPED:
+            self._pending.append(message)
 
     def receive(self, message):
         print("Actor %s received %s" % (self, message))
 
     def pause(self):
-        if self._state is not RUNNING:
-            raise NotRunning()
-        self._state = PAUSED
-        for child in self._children:
-            if child._state is RUNNING:
+        if self._state is RUNNING:
+            self._state = PAUSED
+            for child in self._children:
                 child.pause()
 
     def resume(self):
@@ -169,7 +162,7 @@ class Actor(object):
 
     def stop(self, silent=False):
         if self._state is STOPPED:
-            raise AlreadyStopped("Actor already stopped")
+            return
         if self._state is RUNNING:
             self.pause()
 
