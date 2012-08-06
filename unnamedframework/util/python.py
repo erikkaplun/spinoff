@@ -1,6 +1,9 @@
 import functools
 
 
+__all__ = ['combomethod', 'EnumValue', 'enums', 'enumrange', 'noreturn']
+
+
 # thanks to:
 # http://stackoverflow.com/questions/2589690/creating-a-method-that-is-simultaneously-an-instance-and-class-method
 
