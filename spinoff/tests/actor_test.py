@@ -27,12 +27,12 @@ def test_base_actor_not_started():
 def test_base_actor():
     with contain(MockActor) as (container, x):
         msg = random.random()
-        x.send(msg)
+        x << msg
         assert deref(x).clear() == [msg]
 
         deref(x).pause()
         msg = random.random()
-        x.send(msg)
+        x << msg
         assert deref(x).clear() == []
 
         deref(x).resume()
@@ -51,7 +51,7 @@ def test_base_actor_error():
 
     with contain(SomeActor) as (container, some_actor):
         with assert_not_raises(MockException):
-            some_actor.send('whatev')
+            some_actor << 'whatev'
         assert not container.has_message(('stopped', some_actor))
         container.consume_message(('error', some_actor, (IS_INSTANCE(MockException), IGNORE(ANY))))
 
@@ -174,7 +174,7 @@ def test_baseactor_failure():
         raise exc
 
     with contain(A) as (container, a):
-        a.send(None)
+        a << None
         container.consume_message(('error', a, (exc, IGNORE(ANY))))
         assert ('stopped', ANY) not in container.messages
         assert deref(a).is_alive
@@ -374,14 +374,14 @@ def test_get():
     ###
     received_msg = []
     with contain(_make_getter()) as (container, x):
-        x.send('foo')
+        x << 'foo'
         assert ['foo'] == received_msg
 
     ###
     received_msg = []
     tmp = random.random()
     with contain(_make_getter(('foo', ANY))) as (container, x):
-        x.send(('foo', tmp))
+        x << ('foo', tmp)
         container.ignore_non_assertions()
     # container.raise_errors(only_asserts=False)
     assert [(tmp, )] == received_msg, received_msg
@@ -390,10 +390,10 @@ def test_get():
     received_msg = []
     tmp = random.random()
     with contain(_make_getter(('baz', ANY))) as (container, c):
-        c.send(('foo', tmp))
+        c << ('foo', tmp)
         assert received_msg == []
 
-        c.send(('baz', tmp))
+        c << ('baz', tmp)
         assert received_msg == [(tmp,)]
 
         container.ignore_non_assertions()
@@ -404,7 +404,7 @@ def test_get():
         yield Deferred()
 
     with contain(X) as (container, x):
-        x.send('foo')
+        x << 'foo'
         deref(x).get(filter='foo')
 
 
@@ -420,7 +420,7 @@ def test_get_removes_message_from_inbox():
         assert not msg_d.called
 
     with contain(X) as (_, x):
-        x.send('whatev')
+        x << 'whatev'
 
     assert called
 
@@ -643,7 +643,7 @@ def test_unhandled_message():
         raise UnhandledMessage
 
     with contain(A) as (container, a):
-        a.send('foo')
+        a << 'foo'
         assert ('error', a, ANY) not in container.messages, \
             "UnhandledMessage exceptions should not be treated as errors"
 
@@ -656,7 +656,7 @@ def test_unhandled_error_message():
 
     with contain(A) as (_, a):
         with assert_one_warning("Unhandled child errors should emit a warning"):
-            a.send(('error', 'whatever', (Exception(), 'dummy traceback')))
+            a << ('error', 'whatever', (Exception(), 'dummy traceback'))
 
     # process that handles child errors
     @actor
@@ -665,7 +665,7 @@ def test_unhandled_error_message():
 
     with contain(B) as (_, a):
         with assert_no_warnings():
-            a.send(('error', 'whatever', (Exception(), 'dummy traceback')))
+            a << ('error', 'whatever', (Exception(), 'dummy traceback'))
 
 
 def test_supervision():
