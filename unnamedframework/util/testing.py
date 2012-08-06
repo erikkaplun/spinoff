@@ -197,6 +197,8 @@ class Container(MockActor):
     # from Actor, so __exit__ is not DRY etc. There might be a way to refactor Actor to allow for a more elegant
     # implementation of this class.
 
+    _actor = None
+
     def __init__(self, actor_cls=None, start_automatically=True):
         super(Container, self).__init__()
         self._actor_cls = actor_cls
