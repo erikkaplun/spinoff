@@ -61,6 +61,10 @@ class ActorRef(object):
                 self._referee = local_actor
                 local_actor._send(message)
 
+    def __lshift__(self, message):
+        self.send(message)
+        return self
+
     def __getstate__(self):
         return self.addr
 
