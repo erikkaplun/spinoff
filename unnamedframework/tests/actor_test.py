@@ -243,8 +243,7 @@ def test_pausing_resuming_and_stopping():
         assert deref(proc).is_alive
         assert deref(proc).is_paused
 
-        with assert_raises(NotRunning):
-            deref(proc).pause()
+        deref(proc).pause()  # ignored
 
         mock_d.callback(retval)
 
@@ -290,8 +289,7 @@ def test_pausing_resuming_and_stopping():
     mock_d = Deferred()
     with contain(X) as (container, proc3):
         deref(proc3).stop()
-        with assert_raises(AlreadyStopped):
-            deref(proc3).stop()
+        deref(proc3).stop()  # ignored
 
         assert stopped[0]
         container.consume_message(('stopped', proc3))
