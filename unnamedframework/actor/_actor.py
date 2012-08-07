@@ -104,13 +104,13 @@ class Actor(object):
         child._d.addBoth(lambda _: self._children.remove(child))
         return child
 
-    _before_start = lambda _: None
+    _after_start = lambda _: None
     _on_restart = lambda _, new: None
 
     def _start(self):
         self._resume()
         try:
-            self._wrap_errors(self._before_start)
+            self._wrap_errors(self._after_start)
         except Exception:
             self._stop()
 
@@ -468,7 +468,7 @@ def process(fn):
     return ret
 
 
-Actor.def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
+Actor.def_after_start = classmethod(lambda cls, fn: setattr(cls, '_after_start', fn))
 Actor.def_on_stop = classmethod(lambda cls, fn: setattr(cls, '_on_stop', fn))
 
 

@@ -117,7 +117,7 @@ class Comm(Actor):
 
         self._mock_sock = sock
 
-    def _before_start(self):
+    def _after_start(self):
         if self._mock_sock:  # this is purely for testability
             self._outgoing_sock = self._spawn(self._mock_sock)
             # no incoming sock needed when mocks are used

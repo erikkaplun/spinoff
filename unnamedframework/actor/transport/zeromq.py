@@ -18,7 +18,7 @@ class ZmqProxyBase(Actor):
         self._endpoints = []
         self._pending_endpoints = [endpoint] if endpoint else []
 
-    def _before_start(self):
+    def _after_start(self):
         if not ZmqProxyBase._FACTORY:
             ZmqProxyBase._FACTORY = ZmqFactory()
 
