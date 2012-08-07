@@ -355,10 +355,6 @@ class Process(Actor):
         if self._state is PAUSED and isinstance(self._paused_result, Failure):
             warnings.warn("Pending exception in paused process")
 
-    def debug_state(self, name=None):
-        for message, _ in self._inbox.pending:
-            print('*** \t%s' % message)
-
     def as_service(self):
         warnings.warn("Process.as_service is deprecated, use `twistd runactor -a path.to.ActorClass` instead", DeprecationWarning)
         return ActorsAsService([self])
