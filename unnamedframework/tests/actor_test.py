@@ -214,8 +214,6 @@ def test_baseactor_failure():
     with contain(A) as (container, a):
         a << None
         container.consume_message(('error', a, (exc, IGNORE(ANY))))
-        assert ('stopped', ANY) not in container.messages
-        assert deref(a)._state is RUNNING
 
 
 def test_failure():
