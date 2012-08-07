@@ -151,7 +151,7 @@ class Actor(object):
                     try:
                         ret = self._wrap_errors(_receive)
                     except Exception:
-                        pass
+                        self._stop(silent=True)
                     else:
                         assert not isinstance(ret, types.GeneratorType), \
                             "Actor.receive returned a generator: yield inside Actor.receive?"
