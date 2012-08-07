@@ -540,9 +540,9 @@ def test_actor_failinig_stops_its_children():
     assert child_stopped[0]
 
 
-def test_before_start_raises():
+def test_after_start_raises():
     class SomeActor(Actor):
-        def _before_start(self):
+        def _after_start(self):
             raise MockException
 
     with contain(SomeActor) as (container, some_actor):
@@ -600,12 +600,12 @@ def test_supervision():
     @actor
     def GoodParent(self, message):
         pass
-    GoodParent.def_before_start(lambda self: self.spawn(Child))
+    GoodParent.def_after_start(lambda self: self.spawn(Child))
 
     @actor
     def BadParent(self, message):
         raise UnhandledMessage
-    BadParent.def_before_start(lambda self: self.spawn(Child))
+    BadParent.def_after_start(lambda self: self.spawn(Child))
 
     with assert_no_warnings():
         run(GoodParent)
