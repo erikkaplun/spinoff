@@ -205,26 +205,25 @@ class Container(MockActor):
         self._start_automatically = start_automatically
 
     def __enter__(self):
-        self.start()
+        self._start()
         if self._actor_cls:
             # we could use self.spawn here, but we need to handle start_automatically=False
             a = self._actor_cls() if isinstance(self._actor_cls, type) else self._actor_cls
             self._children.append(a)
             a._parent = self.ref
             if self._start_automatically:
-                a.start()
+                a._start()
             self._actor = a.ref
         return self
 
     def __exit__(self, exc_cls, exc, tb):
         for child in list(self._children):
             # XXX: because we have overriden handle, children are not automatically removed when stopped
-            if child.is_alive:
-                try:
-                    child.stop(silent=True)
-                except Exception:
-                    print >> sys.stderr, "Exception while stopping child"
-                    traceback.print_exc()
+            try:
+                child._stop(silent=True)
+            except Exception:
+                print >> sys.stderr, "Exception while stopping child"
+                traceback.print_exc()
 
         if exc:
             raise exc_cls, exc, tb
