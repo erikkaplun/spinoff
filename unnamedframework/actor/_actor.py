@@ -60,13 +60,14 @@ class Actor(object):
 
     @combomethod
     def _spawn(cls_or_self, *args, **kwargs):
-        if not isinstance(cls_or_self, Actor):
+        if isinstance(cls_or_self, Actor):
+            self = cls_or_self
+            return self._spawn_child(*args, **kwargs)
+        else:
             cls = cls_or_self
             ret = cls(*args, **kwargs)
             ret.start()
             return ret
-        else:
-            return cls_or_self._spawn_child(*args, **kwargs)
 
     @combomethod
     def spawn(cls_or_self, *args, **kwargs):
