@@ -158,11 +158,11 @@ class Comm(Actor):
             return self._registry_rev[actor_id]
         else:
             self.ensure_connected(to=node_addr).addCallback(
-                lambda _: self._outgoing_sock._send((node_addr, pickle.dumps((actor_id, msg)))))
+                lambda _: self._outgoing_sock._send(('send', (node_addr, pickle.dumps((actor_id, msg))))))
 
     def ensure_connected(self, to):
         if not self._mock_sock and not self._zmq_is_connected(to=to):
-            self._outgoing_sock.add_endpoints([('connect', to)])
+            self._outgoing_sock._send(('add-endpoints', [('connect', to)]))
             self._connections.add(to)
             return sleep(0.005)
         else:

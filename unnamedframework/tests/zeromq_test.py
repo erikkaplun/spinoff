@@ -25,7 +25,7 @@ class RouterDealerTestCase(unittest.TestCase):
             for dealer, identity in dealers:
                 msg = 'PING%s' % i
 
-                router.send(message=(identity, msg))
+                router.send(message=('send', (identity, msg)))
                 with assert_not_raises(Timeout, "should have received a message"):
                     assert msg == (yield with_timeout(1.0, container.wait()))
 
