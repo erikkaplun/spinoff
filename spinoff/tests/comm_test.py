@@ -80,7 +80,7 @@ class CommTestCase(unittest.TestCase):
             random_message = 'message-content-%s' % random.random()
             remote_ref.send(random_message)
             msg = deferred_result(mock_sock.wait())
-            assert msg == ('tcp://whatever:%d' % random_port, pickle.dumps((random_actor_id, random_message)))
+            assert msg == ('send', ('tcp://whatever:%d' % random_port, pickle.dumps((random_actor_id, random_message))))
 
     def test_invalid_send_remotely(self):
         with Container() as container:
@@ -108,18 +108,18 @@ class CommTestCase(unittest.TestCase):
                 actor1_ref = ActorRef(actor1)
             comm.send_msg('tcp://127.0.0.1:11001/1234', actor1_ref)
             outgoing_msg = deferred_result(mock_sock.wait())
-            assert outgoing_msg == ('tcp://127.0.0.1:11001', pickle.dumps(('1234', actor1_ref)))
+            assert outgoing_msg == ('send', ('tcp://127.0.0.1:11001', pickle.dumps(('1234', actor1_ref))))
 
             # deserialize it remotely
             with remote_comm:
-                msg = pickle.loads(outgoing_msg[1])
+                msg = pickle.loads(outgoing_msg[1][1])
             actor1_ref2 = msg[1]
             assert actor1_ref2.addr == actor1_ref.addr
 
             # and use it to send a message back
             actor1_ref2.send('something')
             remote_outgoing_msg = deferred_result(remote_mock_sock.wait())
-            assert remote_outgoing_msg == ('tcp://127.0.0.1:11000', pickle.dumps((_get_actor_id(actor1_ref), 'something')))
+            assert remote_outgoing_msg == ('send', ('tcp://127.0.0.1:11000', pickle.dumps((_get_actor_id(actor1_ref), 'something'))))
 
     def test_comm_receives_message(self):
         with Container() as container:
