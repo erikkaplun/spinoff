@@ -153,14 +153,13 @@ class Actor(object):
                         assert not isinstance(ret, types.GeneratorType), \
                             "Actor.receive returned a generator: yield inside Actor.receive?"
 
-    @staticmethod
-    def _unhandled(message):
+    def _unhandled(self, message):
         is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
         if is_match:
             formatted_traceback = (traceback
                                    if isinstance(traceback, basestring) else
                                    traceback.format_tb(traceback))
-            warnings.warn("Unhandled error:\n%s" % formatted_traceback)
+            warnings.warn("unhandled error to %s:\n%s" % (self, formatted_traceback))
 
     def receive(self, message):
         print("Actor %s received %s" % (self, message))
