@@ -1,3 +1,4 @@
+from unnamedframework.util.testing import assert_no_warnings
 from twisted.internet.task import Clock
 from twisted.trial import unittest
 
@@ -19,32 +20,9 @@ class HttpGatewayTest(unittest.TestCase):
 
         self.addCleanup(lambda: self.relay << 'stop')
 
-    def test_interface(self):
-        x = self.relay
-        r = self.root
-
-        x.send((1, ('send', ('whatev', None))))
-        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
-        r.clear()
-
-        x.send(('send', ('whatev', 1)))
-        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
-        r.clear()
-
-        x.send((1, ('send', ('whatev', 1))))
-        assert not r.messages
-
-        x.send((1, ('init', (None, ))))
-        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
-        r.clear()
-
-        x.send((1, ('init', ('some-id', ))))
-        assert not r.messages
-
     def test_delivery(self):
         x = self.relay
         mock = self.mock
-        r = self.root
 
         x.send(('node-1', ('init', [1])))
         x.send(('node-2', ('send', ['msg-1', 1])))
@@ -62,10 +40,6 @@ class HttpGatewayTest(unittest.TestCase):
         x.send(('node-3', ('uninit', [])))
         x.send(('node-2', ('send', ['whatev', 3])))
         assert not deref(mock).messages
-
-        x.send((3, ('uninit', [])))
-        assert len(r.messages) == 1 and r.messages[-1][:2] == ('error', x)
-        r.clear()
 
     def test_message_timeout(self):
         self._create_relay(max_message_age=10)
