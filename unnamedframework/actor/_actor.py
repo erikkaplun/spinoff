@@ -22,6 +22,9 @@ __all__ = [
     'ActorsAsService', 'UnhandledMessage', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
+DEBUG = False
+
+
 EMPTY = object()
 
 
@@ -152,6 +155,8 @@ class Actor(object):
                     else:
                         assert not isinstance(ret, types.GeneratorType), \
                             "Actor.receive returned a generator: yield inside Actor.receive?"
+            elif DEBUG:
+                print("dead letter to %s: %s" % (self, message))
 
     def _unhandled(self, message):
         is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
@@ -160,6 +165,8 @@ class Actor(object):
                                    if isinstance(traceback, basestring) else
                                    traceback.format_tb(traceback))
             warnings.warn("unhandled error to %s:\n%s" % (self, formatted_traceback))
+        elif DEBUG:
+            print("unhandled message to %s: %s" % (self, message))
 
     def receive(self, message):
         print("Actor %s received %s" % (self, message))
