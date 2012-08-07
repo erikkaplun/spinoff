@@ -77,7 +77,7 @@ class ActorRef(object):
         return not (self == other)
 
     def __repr__(self):
-        return '<actor@%s>' % (self.addr or id(self._referee), )
+        return '<actor@%s>' % (self.addr or '%s:%s' % (type(self._referee).__name__, id(self._referee)), )
 
 
 class Comm(Actor):
