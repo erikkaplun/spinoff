@@ -6,7 +6,7 @@ import warnings
 from twisted.internet.defer import QueueUnderflow, Deferred, succeed, returnValue
 
 from unnamedframework.actor import Process, Actor, process, actor, UnhandledMessage, STOPPED, RUNNING
-from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE, IGNORE
+from unnamedframework.util.pattern_matching import match, ANY, IS_INSTANCE, IGNORE
 from unnamedframework.util.async import CancelledError
 from unnamedframework.util.testing import (
     deferred_result, assert_raises, assert_not_raises, assert_one_warning,
@@ -628,6 +628,36 @@ def test_unhandled_message_with_processes():
         x << ('error', 'whatever', ('whatever', 'dummy-traceback'))
         with assert_one_warning():
             deref(x).flush()
+
+
+def test_supervisor_restarts_stopped_child():
+    child_created = [0]
+
+    @process
+    def Child(self):
+        child_created[0] += 1
+
+    @actor
+    def Supervisor(self, message):
+        is_match, child = match(('stopped', ANY), message)
+        if is_match:
+            if self._child_retries > 0:
+                self._child_retries -= 1
+                child << 'restart'
+            else:
+                self._stop()
+            return
+
+        raise UnhandledMessage
+
+    @Supervisor.def_after_start
+    def supervisor_after_start(self):
+        self._child_retries = 3
+        self.spawn(Child)
+
+    run(Supervisor)
+
+    assert child_created[0] == 3 + 1
 
 
 class MockException(Exception):
