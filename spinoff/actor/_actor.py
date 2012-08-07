@@ -19,8 +19,7 @@ from spinoff.util.python import combomethod, enumrange
 
 __all__ = [
     'Process', 'Actor', 'process', 'actor', 'NoRoute', 'RoutingException', 'InterfaceException',
-    'ActorsAsService', 'NotRunning', 'AlreadyStopped', 'AlreadyRunning', 'UnhandledMessage',
-    'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
+    'ActorsAsService', 'UnhandledMessage', 'ActorRunner', 'NOT_STARTED', 'RUNNING', 'PAUSED', 'STOPPED', ]
 
 
 EMPTY = object()
@@ -44,18 +43,41 @@ NOT_STARTED, RUNNING, PAUSED, STOPPED = enumrange('NOT_STARTED', 'RUNNING', 'PAU
 class Actor(object):
     parent = property(lambda self: self._parent)
 
-    is_running = property(lambda self: self._state is RUNNING)
-    is_alive = property(lambda self: self._state < STOPPED)
-    is_paused = property(lambda self: self._state is PAUSED)
-
     _state = NOT_STARTED
     _parent = None
     _out = None
     _ref = None
 
+    __initargs__ = ([], {})
+
+    @classmethod
+    def __new__(cls, *args, **kwargs):
+        ret = super(Actor, cls).__new__(cls)
+        if args[1:] or kwargs:
+            ret.__initargs__ = (args[1:], kwargs)
+        return ret
+
+    def _restart(self):
+        """Returns a restarted version of this actor.
+
+        This is something like a clone using __getinitargs__ but it's semantically different as it explicitly discards
+        any state other than the initial one.
+
+        """
+        self._stop(silent=True)
+        init_args, init_kwargs = self.__initargs__
+        ret = type(self)(*init_args, **init_kwargs)
+        ret._parent = self.parent
+        ref = ret._ref = self._ref
+        ref._referee = ret
+
+        self._on_restart(ret)
+
+        ret._start()
+        return ret
+
     def __init__(self):
         self._children = []
-        self._pending = []
         self._d = Deferred()
 
     @combomethod
@@ -66,7 +88,7 @@ class Actor(object):
         else:
             cls = cls_or_self
             ret = cls(*args, **kwargs)
-            ret.start()
+            ret._start()
             return ret
 
     @combomethod
@@ -77,19 +99,20 @@ class Actor(object):
         if isinstance(child, type):
             child = child()
         child._parent = self.ref
-        child.start()
+        child._start()
         self._children.append(child)
         child._d.addBoth(lambda _: self._children.remove(child))
         return child
 
     _before_start = lambda _: None
+    _on_restart = lambda _, new: None
 
-    def start(self):
-        self.resume()
+    def _start(self):
+        self._resume()
         try:
             self._wrap_errors(self._before_start)
         except Exception:
-            self.stop()
+            self._stop()
 
     def _report_error(self, exc_and_traceback):
         """Reports an error to the supervisor of this actor."""
@@ -107,63 +130,65 @@ class Actor(object):
         self._send(message)
 
     def _send(self, message):
-        if self._state is RUNNING:
-            def _receive():
-                try:
-                    return self.receive(message)
-                except UnhandledMessage:
-                    is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
-                    if is_match:
-                        formatted_traceback = (traceback
-                                               if isinstance(traceback, basestring) else
-                                               traceback.format_tb(traceback))
-                        warnings.warn("Unhandled error:\n%s" % formatted_traceback)
+        assert self._state is not NOT_STARTED, "actors that have not been started should not receive messages"
 
-            try:
-                ret = self._wrap_errors(_receive)
-            except Exception:
-                pass
-            else:
-                if isinstance(ret, types.GeneratorType):
-                    raise RuntimeError("Actor.receive returned a generator: yield inside Actor.receive?")
-        elif self._state is not STOPPED:
-            self._pending.append(message)
+        if message == 'restart':
+            self._restart()
+        else:
+            if self._state is RUNNING:
+                if message == 'stop':
+                    self._stop()
+                else:
+                    def _receive():
+                        try:
+                            return self.receive(message)
+                        except UnhandledMessage:
+                            self._unhandled(message)
+
+                    try:
+                        ret = self._wrap_errors(_receive)
+                    except Exception:
+                        pass
+                    else:
+                        assert not isinstance(ret, types.GeneratorType), \
+                            "Actor.receive returned a generator: yield inside Actor.receive?"
+
+    @staticmethod
+    def _unhandled(message):
+        is_match, traceback = match(('error', IGNORE(ANY), (IGNORE(ANY), ANY)), message)
+        if is_match:
+            formatted_traceback = (traceback
+                                   if isinstance(traceback, basestring) else
+                                   traceback.format_tb(traceback))
+            warnings.warn("Unhandled error:\n%s" % formatted_traceback)
 
     def receive(self, message):
         print("Actor %s received %s" % (self, message))
 
-    def pause(self):
+    def _pause(self):
         if self._state is RUNNING:
             self._state = PAUSED
             for child in self._children:
-                child.pause()
+                child._pause()
 
-    def resume(self):
-        if self._state is RUNNING:
-            raise AlreadyRunning("Actor already running")
-        if self._state is STOPPED:
-            raise AlreadyStopped("Actor has been stopped")
+    def _resume(self):
+        if self._state in [RUNNING, STOPPED]:
+            pass
         self._state = RUNNING
 
         for child in self._children:
-            if not child.is_running:
-                child.resume()
-
-        if self._pending:
-            for pending_message in self._pending:
-                self._send(pending_message)
-            self._pending = []
+            child._resume()
 
     _on_stop = lambda _: None
 
-    def stop(self, silent=False):
+    def _stop(self, silent=False):
         if self._state is STOPPED:
             return
         if self._state is RUNNING:
-            self.pause()
+            self._pause()
 
         for child in self._children:
-            child.stop(silent=True)
+            child._stop(silent=True)
 
         try:
             self._wrap_errors(self._on_stop)
@@ -257,8 +282,8 @@ class Process(Actor):
         self._run_args = []
         self._run_kwargs = {}
 
-    def start(self):
-        super(Process, self).start()
+    def _start(self):
+        super(Process, self)._start()
 
         d = maybeDeferred(self._fn)
 
@@ -266,7 +291,7 @@ class Process(Actor):
         def finally_(result):
             if isinstance(result, Failure):
                 self._report_error((result.value, result.tb or result.getTraceback()))
-            self.stop()
+            self._stop()
 
     def run(self):
         pass
@@ -290,7 +315,7 @@ class Process(Actor):
             elif found is EMPTY:
                 m, values = match(self._waiting[0], message, flatten=False)
                 if m:
-                    found = values
+                    found = message
             if found is not EMPTY:
                 d = self._waiting[1]
                 self._waiting = None
@@ -313,7 +338,7 @@ class Process(Actor):
                 m, values = match(filter, msg, flatten=False)
                 if m:
                     self._inbox.remove(msg)
-                    return succeed(values)
+                    return succeed(msg)
 
         d = Deferred(lambda d: setattr(self, '_waiting', None))
         if self._waiting:
@@ -321,8 +346,13 @@ class Process(Actor):
         self._waiting = (filter, d)
         return d
 
-    def resume(self):
-        super(Process, self).resume()
+    def flush(self):
+        for message in self._inbox:
+            self._unhandled(message)
+        self._inbox[:] = []
+
+    def _resume(self):
+        super(Process, self)._resume()
 
         if self._current_d:
             if isinstance(self._paused_result, Failure):
@@ -330,6 +360,10 @@ class Process(Actor):
             else:
                 self._current_d.callback(self._paused_result)
             self._current_d = self._paused_result = None
+
+    def _on_restart(self, new):
+        new._inbox = self._inbox
+        del self._inbox
 
     def _on_stop(self):
         if self._on_hold_d:
@@ -436,18 +470,6 @@ def process(fn):
 
 Actor.def_before_start = classmethod(lambda cls, fn: setattr(cls, '_before_start', fn))
 Actor.def_on_stop = classmethod(lambda cls, fn: setattr(cls, '_on_stop', fn))
-
-
-class AlreadyRunning(Exception):
-    pass
-
-
-class NotRunning(Exception):
-    pass
-
-
-class AlreadyStopped(Exception):
-    pass
 
 
 class UnhandledMessage(Exception):

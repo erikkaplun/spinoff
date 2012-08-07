@@ -162,7 +162,6 @@ class CommTestCase(unittest.TestCase):
 
     def test_receive_actorref_to_a_local_actor(self):
         with Container() as container:
-            assert container.is_running
             comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
 
             actor1 = container._spawn(MockActor)

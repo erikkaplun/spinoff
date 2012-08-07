@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import sys
 import pickle
-import weakref
 
 from twisted.internet.defer import succeed
 
@@ -78,7 +77,7 @@ class ActorRef(object):
         return not (self == other)
 
     def __repr__(self):
-        return '<ActorRef @ %s>' % (self.addr or 'local', )
+        return '<actor@%s>' % (self.addr or id(self._referee), )
 
 
 class Comm(Actor):
@@ -187,12 +186,9 @@ class Comm(Actor):
 
 @property
 def ref(self):
-    if not (self._ref and self._ref()):
-        ref = ActorRef(self)
-        self._ref = weakref.ref(ref)
-        return ref
-    else:
-        return self._ref()
+    if not self._ref:
+        self._ref = ActorRef(self)
+    return self._ref
 
 
 def set_id(self, id):

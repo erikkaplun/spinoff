@@ -17,7 +17,7 @@ class HttpGatewayTest(unittest.TestCase):
         self.mock = self.root.spawn(MockActor)
         self.relay = self.root.spawn(Relay(self.mock, reactor=self.clock, **kwargs))
 
-        self.addCleanup(deref(self.relay).stop)
+        self.addCleanup(lambda: self.relay << 'stop')
 
     def test_interface(self):
         x = self.relay

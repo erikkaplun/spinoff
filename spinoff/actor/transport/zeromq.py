@@ -2,7 +2,7 @@ from txzmq.connection import ZmqEndpoint
 from txzmq.req_rep import ZmqDealerConnection, ZmqRouterConnection, ZmqRequestConnection, ZmqReplyConnection
 from txzmq import ZmqFactory
 
-from spinoff.actor import Actor
+from spinoff.actor import Actor, NOT_STARTED
 
 
 class ZmqProxyBase(Actor):
@@ -34,7 +34,7 @@ class ZmqProxyBase(Actor):
         self._conn.sendMsg(message)
 
     def add_endpoints(self, endpoints):
-        if not self.is_alive:
+        if self._state is NOT_STARTED:
             self._pending_endpoints += endpoints
             return
 
