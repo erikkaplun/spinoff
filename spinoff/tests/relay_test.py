@@ -15,7 +15,7 @@ class HttpGatewayTest(unittest.TestCase):
 
         self.root = Container._spawn()
         self.mock = self.root.spawn(MockActor)
-        self.relay = self.root.spawn(Relay, self.mock, reactor=self.clock, **kwargs)
+        self.relay = self.root.spawn(Relay(self.mock, reactor=self.clock, **kwargs))
 
         self.addCleanup(deref(self.relay).stop)
 
