@@ -73,12 +73,12 @@ class Actor(object):
     def spawn(cls_or_self, *args, **kwargs):
         return cls_or_self._spawn(*args, **kwargs).ref
 
-    def _spawn_child(self, actor_cls, *args, **kwargs):
+    def _spawn_child(self, actor_cls):
         if isinstance(actor_cls, (types.FunctionType, types.MethodType)):
             actor_cls = process(actor_cls)
 
         if isinstance(actor_cls, type):
-            child = actor_cls(*args, **kwargs)
+            child = actor_cls()
         else:
             child = actor_cls
         child._parent = self.ref
