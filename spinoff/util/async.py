@@ -6,7 +6,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, De
 from twisted.internet import reactor, task
 
 
-__all__ = ['Timeout', 'sleep', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'sleep', 'after', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds, reactor=reactor):
@@ -20,6 +20,27 @@ def sleep(seconds, reactor=reactor):
 
     """
     return task.deferLater(reactor, seconds, lambda: None)
+
+
+def after(seconds, reactor=reactor):
+    """Readability sugar for `sleep`.
+
+    Examples:
+
+        after(2.0).do(lambda: print("Printed 2 seconds later"))
+
+        after(2.0).do(some_fn, 'arg1', some='kwarg')
+
+    """
+    return _AfterWrap(sleep(seconds, reactor))
+
+
+class _AfterWrap(object):
+    def __init__(self, d):
+        self.d = d
+
+    def do(self, fn, *args, **kwargs):
+        return self.d.addCallback(lambda _: fn(*args, **kwargs))
 
 
 exec_async = lambda f: inlineCallbacks(f)()
