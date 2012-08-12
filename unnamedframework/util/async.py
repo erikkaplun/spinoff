@@ -6,7 +6,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, De
 from twisted.internet import reactor, task
 
 
-__all__ = ['Timeout', 'sleep', 'after', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds, reactor=reactor):
@@ -33,6 +33,12 @@ def after(seconds, reactor=reactor):
 
     """
     return _AfterWrap(sleep(seconds, reactor))
+
+
+def call_when_idle(fn, *args, **kwargs):
+    # TODO: find an overhead-less way to schedule an immediate call for when the reactor becomes idle, i.e. is about to
+    # go to sleep (waiting for events).
+    reactor.callLater(0, fn, *args, **kwargs)
 
 
 class _AfterWrap(object):
