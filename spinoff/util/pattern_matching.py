@@ -52,6 +52,9 @@ class Matcher(_Marker):
     def __req__(self, x):
         return self.__eq__(x)
 
+    def __or__(self, other):
+        return OR(self, other)
+
 
 class _ANY(Matcher):
     name = 'ANY'
@@ -112,3 +115,14 @@ class IF(Matcher):
     def __str__(self):
         # TODO: find a way to re-build the original source code from self.cond.func_code.co_code
         return 'IF(%s, %s)' % (self.cond, self.pattern)
+
+
+class OR(Matcher):
+    def __init__(self, matcher1, matcher2):
+        self.matcher1, self.matcher2 = matcher1, matcher2
+
+    def __eq__(self, x):
+        return self.matcher1 == x or self.matcher2 == x
+
+    def __str__(self):
+        return '%s | %s' % (self.matcher1, self.matcher2)

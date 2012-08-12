@@ -120,3 +120,9 @@ def test_not():
     for val in ['string', 123, True, None, object(), 123.456]:
         assert NOT(ANY) != val
     assert NOT(NOT(IS_INSTANCE(int))) == 3
+
+
+def test_or():
+    assert (IS_INSTANCE(int) | IS_INSTANCE(float)) == 3
+    assert (IS_INSTANCE(int) | IS_INSTANCE(float)) == 3.3
+    assert not ((IS_INSTANCE(int) | IS_INSTANCE(float)) == 'hello')
