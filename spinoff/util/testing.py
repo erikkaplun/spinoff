@@ -85,10 +85,11 @@ def assert_not_raises(exc_class=Exception, message=None):
 def assert_raises(exc_class=Exception, message=None):
     if isinstance(exc_class, basestring):
         message, exc_class = exc_class, Exception
+    basket = [None]
     try:
-        yield
-    except exc_class:
-        pass
+        yield basket
+    except exc_class as e:
+        basket[0] = e
     else:
         raise AssertionError(message or "An exception should have been raised")
 
