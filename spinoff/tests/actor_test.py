@@ -1941,6 +1941,33 @@ def test_watching_dead_actor():
     assert message_receieved.called
 
 
+def test_watching_dying_actor():
+    release_watchee = Trigger()
+    message_receieved = Latch()
+
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            assert message == ('terminated', ANY)
+            message_receieved()
+
+    class SlowWatchee(Actor):
+        @inlineCallbacks
+        def post_stop(self):
+            yield release_watchee
+
+    watchee = spawn(SlowWatchee)
+    watchee._stop_noevent()
+
+    spawn(Watcher)
+
+    release_watchee()
+
+    assert message_receieved
+
+
 def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination():
     class Watcher(Actor):
         def pre_start(self):
