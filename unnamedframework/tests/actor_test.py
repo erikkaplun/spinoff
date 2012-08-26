@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import functools
 import weakref
+import sys
 from nose.twistedtools import deferred
 
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
@@ -459,6 +460,14 @@ def test_TODO_suspending_while_receive_is_blocked_pauses_the_receive():
     pass
 
 
+def test_TODO_stopping():
+    pass
+
+
+def test_TODO_force_stopping_does_not_wait_for_a_deferred_post_stop_to_complete():
+    pass
+
+
 def test_resuming():
     class MyActor(Actor):
         def receive(self, message):
@@ -739,6 +748,110 @@ def test_stopping_calls_post_stop():
     assert post_stop_called
 
 
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_stopping_waits_for_post_stop():
+    yield
+
+    stop_complete = Trigger()
+    parent_received = Slot()
+
+    class Parent(Actor):
+        def pre_start(self):
+            self.child = self.watch(self.spawn(Child))
+
+        def receive(self, message):
+            if message == 'stop-child':
+                self.child.stop()
+            else:
+                parent_received << message
+
+    class Child(Actor):
+        def post_stop(self):
+            return stop_complete
+
+    a = spawn(Parent)
+    a << 'stop-child'
+    assert not parent_received
+    stop_complete()
+    assert parent_received
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_actor_is_not_stopped_until_its_children_are_stopped():
+    yield
+
+    stop_complete = Trigger()
+    parent_stopped = Latch()
+
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child)
+
+        def post_stop(self):
+            parent_stopped()
+
+    class Child(Actor):
+        def post_stop(self):
+            return stop_complete
+
+    a = spawn(Parent)
+    a._stop_noevent()
+    assert not parent_stopped
+    stop_complete()
+    assert parent_stopped
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_actor_is_not_restarted_until_its_children_are_stopped():
+    yield
+
+    stop_complete = Trigger()
+    parent_started = Counter()
+
+    class Parent(Actor):
+        def pre_start(self):
+            parent_started()
+            self.spawn(Child)
+
+    class Child(Actor):
+        def post_stop(self):
+            return stop_complete
+
+    a = spawn(Parent)
+    a << '_restart'
+    assert parent_started == 1
+    stop_complete()
+    assert parent_started == 2, parent_started.value
+
+
+def test_error_reports_to_a_stopping_actor_are_ignored():
+    child = Slot()
+    release_child = Trigger()
+    post_stop_called = Latch()
+
+    class Child(Actor):
+        def receive(self, _):
+            yield release_child
+            raise MockException()
+
+    class Parent(Actor):
+        def pre_start(self):
+            child << self.spawn(Child)
+
+        def post_stop(self):
+            post_stop_called()
+
+    p = spawn(Parent)
+    child() << 'dummy'
+    p._stop_noevent()
+    assert not post_stop_called
+    with expect_failure(MockException):
+        release_child()
+
+
 def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_deferred():
     canceller_called = Latch()
     stopped = Latch()
@@ -823,14 +936,7 @@ def test_actors_are_garbage_collected_on_termination():
 
 
 def test_cells_are_garbage_collected_on_termination():
-    del_called = Latch()
-
-    class MyActor(Actor):
-        def __del__(self):
-            del_called()
-
-    ac = Guardian.spawn(MyActor)
-    assert not del_called()
+    ac = Guardian.spawn(Actor)
 
     cell = weakref.ref(ac.target)
     assert cell()
@@ -1107,7 +1213,7 @@ def test_error_in_deferred_receive_behaves_the_same_as_non_deferred():
         a << 'dummy'
 
 
-def test_exception_after_stop_is_ignored_and_does_not_invoke_supervision():
+def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
     class Child(Actor):
         def receive(self, _):
             self.stop()
@@ -1301,6 +1407,29 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
     assert child_started == 2
 
 
+def test_error_report_after_restart_is_ignored():
+    child = [None]
+    release_child = Trigger()
+
+    class Child(Actor):
+        def receive(self, _):
+            yield release_child
+            raise MockException
+
+    class Parent(Actor):
+        def pre_start(self):
+            if not child[0]:  # so that after the restart the child won't exist
+                child[0] = self.spawn(Child)
+
+    parent = spawn(Parent)
+
+    child[0] << 'dummy'
+    parent << '_restart'
+
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        release_child()
+
+
 def test_default_supervision_stops_for_create_failed():
     class Parent(Actor):
         def pre_start(self):
@@ -1445,7 +1574,7 @@ def test_error_is_escalated_if_supervision_raises_exception():
         spawn(Supervisor)
 
 
-@deferred(timeout=0.01)
+@deferred(timeout=None)
 @inlineCallbacks
 def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
     yield
@@ -1682,29 +1811,6 @@ def test_termination_message_after_restart_is_ignored():
     release_child()
 
 
-def test_error_report_after_restart_is_handled_properly():
-    child = [None]
-    release_child = Trigger()
-
-    class Child(Actor):
-        def receive(self, _):
-            yield release_child
-            raise MockException
-
-    class Parent(Actor):
-        def pre_start(self):
-            if not child[0]:  # make sure after restart, the child won't exist
-                child[0] = self.spawn(Child)
-
-    parent = spawn(Parent)
-
-    child[0] << 'dummy'
-    parent << '_restart'
-
-    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        release_child()
-
-
 ##
 ## DEATH WATCH
 
@@ -1845,7 +1951,7 @@ def test_termination_message_to_dead_actor_is_discarded():
         def pre_start(self):
             child = self.watch(self.spawn(Actor))
             child.stop()
-            self.stop()
+            self.ref._stop_noevent()
 
     d = Events.consume_one(DeadLetter)
     spawn(Parent)
@@ -1854,13 +1960,33 @@ def test_termination_message_to_dead_actor_is_discarded():
 
 def test_system_messages_to_dead_actorrefs_are_discarded():
     a = spawn(Actor)
-    a.stop()
+    a._stop_noevent()
 
     for event in ['_stop', '_suspend', '_resume', '_restart']:
         d = Events.consume_one(DeadLetter)
         a << event
         assert not d.called, "message %r sent to a dead actor should be discarded" % event
         d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+
+
+def test_termination_message_to_dead_actorref_is_discarded():
+    release_child = Trigger()
+
+    class Child(Actor):
+        def post_stop(self):
+            return release_child
+
+    class Parent(Actor):
+        def pre_start(self):
+            self.watch(self.spawn(Child))
+            self.ref._stop_noevent()
+
+    d = Events.consume_one(DeadLetter)
+    spawn(Parent)
+    release_child()
+    assert not d.called, d.result
+
+    d.addErrback(lambda f: f.trap(CancelledError)).cancel()  # just to be nice
 
 
 def test_TODO_watching_nonexistent_actor():
