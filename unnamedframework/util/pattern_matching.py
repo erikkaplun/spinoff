@@ -56,12 +56,13 @@ class Matcher(_Marker):
         return OR(self, other)
 
 
-class _ANY(Matcher):
-    name = 'ANY'
-
+class ANY(Matcher):
     def __eq__(self, x):
         return True
-ANY = _ANY()
+
+    def __str__(self):
+        return 'ANY'
+ANY = ANY()
 
 
 def IGNORE(x):
