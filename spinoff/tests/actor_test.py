@@ -1167,12 +1167,6 @@ def test_child_is_stop_if_supervise_returns_stop():
     assert escalated[0]
 
 
-def test_TODO_supervision_must_be_immediate_and_not_return_a_deferred_or_generator():
-    # currently it's already not allowed because <Deferred> and <generator> are not in the list of allowed
-    # supervision decisions anyway but the error message might be non-obvious.
-    pass
-
-
 def test_TODO_exception_escalations_are_reported_as_events():
     pass
 
