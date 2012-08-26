@@ -192,7 +192,7 @@ def ref(self):
 
 
 def set_id(self, id):
-    Comm.get_for_thread().set_id(self, id)
+    Comm.get_for_thread().set_id(self.ref, id)
 
 
 Actor.ref = ref

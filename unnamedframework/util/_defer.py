@@ -38,7 +38,8 @@ def _inlineCallbacks(result, g, deferred):
                 result = None
                 continue
             else:
-                deferred.callback(e._gen)
+                retval = e._gen
+                deferred.callback(retval)
                 return deferred
         except StopIteration:
             # fell off the end, or "return" statement

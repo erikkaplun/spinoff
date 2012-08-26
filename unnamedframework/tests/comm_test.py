@@ -1,222 +1,222 @@
-from unnamedframework.util.async import with_timeout
-import pickle
-import random
+# from unnamedframework.util.async import with_timeout
+# import pickle
+# import random
 
-from twisted.trial import unittest
-from twisted.internet.defer import inlineCallbacks
+# from twisted.trial import unittest
+# from twisted.internet.defer import inlineCallbacks
 
-from unnamedframework.actor.comm import Comm, ActorRef
-from unnamedframework.util.testing import MockActor, assert_raises, Container, deferred_result
-from unnamedframework.actor import Process
-from unnamedframework.util.async import sleep
-from unnamedframework.util.testing import assert_not_raises, deref
-
-
-def _get_actor_id(actorref):
-    return actorref.addr.rsplit('/', 1)[1]
+# from unnamedframework.actor.comm import Comm, ActorRef
+# from unnamedframework.util.testing import MockActor, assert_raises, Container, deferred_result
+# from unnamedframework.actor import Process
+# from unnamedframework.util.async import sleep
+# from unnamedframework.util.testing import assert_not_raises, deref
 
 
-class CommTestCase(unittest.TestCase):
+# def _get_actor_id(actorref):
+#     return actorref.addr.rsplit('/', 1)[1]
 
-    def test_comm_init(self):
-        Comm(addr='tcp://127.0.0.1:11000', sock=MockActor())
-        Comm(addr='tcp://127.0.0.1:11001', sock=MockActor)
 
-    def test_get_addr(self):
-        comm_a = Comm(addr='tcp://127.0.0.1:11000', sock=MockActor)
+# class CommTestCase(unittest.TestCase):
 
-        assert isinstance(comm_a._get_addr(object()), str)
+#     def test_comm_init(self):
+#         Comm(addr='tcp://127.0.0.1:11000', sock=MockActor())
+#         Comm(addr='tcp://127.0.0.1:11001', sock=MockActor)
 
-        actor1 = object()
-        actor2 = object()
+#     def test_get_addr(self):
+#         comm_a = Comm(addr='tcp://127.0.0.1:11000', sock=MockActor)
 
-        assert comm_a._get_addr(actor1) == comm_a._get_addr(actor1)
-        assert comm_a._get_addr(actor2) == comm_a._get_addr(actor2)
-        assert comm_a._get_addr(actor1) != comm_a._get_addr(actor2)
+#         assert isinstance(comm_a._get_addr(object()), str)
 
-    def test_ref_addr(self):
-        with Comm(addr='tcp://127.0.0.1:11000', sock=MockActor):
-            actor1 = Process()
-            assert ActorRef(actor1).addr == ActorRef(actor1).addr
-            assert ActorRef(Process()).addr != ActorRef(Process()).addr
+#         actor1 = object()
+#         actor2 = object()
 
-    def test_ref_equality(self):
-        with Comm(addr='tcp://127.0.0.1', sock=MockActor) as comm:
-            assert ActorRef('foo') == ActorRef('foo')
-            assert not (ActorRef('foo') != ActorRef('foo'))
+#         assert comm_a._get_addr(actor1) == comm_a._get_addr(actor1)
+#         assert comm_a._get_addr(actor2) == comm_a._get_addr(actor2)
+#         assert comm_a._get_addr(actor1) != comm_a._get_addr(actor2)
 
-            assert not (ActorRef('foo2') == ActorRef('foo'))
-            assert ActorRef('foo2') != ActorRef('foo')
+#     def test_ref_addr(self):
+#         with Comm(addr='tcp://127.0.0.1:11000', sock=MockActor):
+#             actor1 = Process()
+#             assert ActorRef(actor1).addr == ActorRef(actor1).addr
+#             assert ActorRef(Process()).addr != ActorRef(Process()).addr
 
-            actor1 = Process()
-            assert ActorRef(actor1) == ActorRef(comm._get_addr(actor1))
+#     def test_ref_equality(self):
+#         with Comm(addr='tcp://127.0.0.1', sock=MockActor) as comm:
+#             assert ActorRef('foo') == ActorRef('foo')
+#             assert not (ActorRef('foo') != ActorRef('foo'))
 
-    def test_actorref_comm_interaction(self):
-        for _ in range(3):
-            with Comm(addr='tcp://127.0.0.1', sock=MockActor) as comm:
-                assert isinstance(comm, Comm)
+#             assert not (ActorRef('foo2') == ActorRef('foo'))
+#             assert ActorRef('foo2') != ActorRef('foo')
 
-                ref = ActorRef('whatever')
-                assert ref._get_comm() == comm
+#             actor1 = Process()
+#             assert ActorRef(actor1) == ActorRef(comm._get_addr(actor1))
 
-    def test_send_locally(self):
-        with Container() as container:
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=MockActor))
+#     def test_actorref_comm_interaction(self):
+#         for _ in range(3):
+#             with Comm(addr='tcp://127.0.0.1', sock=MockActor) as comm:
+#                 assert isinstance(comm, Comm)
 
-            actor1 = container._spawn(MockActor)
-            with comm:
-                actor1_ref = ActorRef(actor1)
-            actor1_ref.send('foo')
-            assert deferred_result(actor1.wait()) == 'foo'
+#                 ref = ActorRef('whatever')
+#                 assert ref._get_comm() == comm
 
-    def test_send_remotely(self):
-        with Container() as container:
-            mock_sock = MockActor()
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+#     def test_send_locally(self):
+#         with Container() as container:
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=MockActor))
 
-            random_port, random_actor_id = random.randint(8000, 10000), str(random.randint(0, 10000))
-            with comm:
-                remote_ref = ActorRef('tcp://whatever:%d/%s' % (random_port, random_actor_id))
-            random_message = 'message-content-%s' % random.random()
-            remote_ref.send(random_message)
-            msg = deferred_result(mock_sock.wait())
-            assert msg == ('send', ('tcp://whatever:%d' % random_port, pickle.dumps((random_actor_id, random_message))))
+#             actor1 = container._spawn(MockActor)
+#             with comm:
+#                 actor1_ref = ActorRef(actor1)
+#             actor1_ref.send('foo')
+#             assert deferred_result(actor1.wait()) == 'foo'
 
-    def test_invalid_send_remotely(self):
-        with Container() as container:
-            mock_sock = MockActor()
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+#     def test_send_remotely(self):
+#         with Container() as container:
+#             mock_sock = MockActor()
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
-            with assert_raises(ValueError):
-                comm.send_msg('whatever:8765/765123', 'whatev')
-            with assert_raises(ValueError):
-                comm.send_msg('tcp://whatever:8765', 'whatev')
-            with assert_raises(ValueError):
-                comm.send_msg('', 'whatev')
+#             random_port, random_actor_id = random.randint(8000, 10000), str(random.randint(0, 10000))
+#             with comm:
+#                 remote_ref = ActorRef('tcp://whatever:%d/%s' % (random_port, random_actor_id))
+#             random_message = 'message-content-%s' % random.random()
+#             remote_ref.send(random_message)
+#             msg = deferred_result(mock_sock.wait())
+#             assert msg == ('send', ('tcp://whatever:%d' % random_port, pickle.dumps((random_actor_id, random_message))))
 
-    def test_send_actorref_and_use_it_remotely(self):
-        with Container() as container:
-            mock_sock = MockActor()
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=mock_sock))
+#     def test_invalid_send_remotely(self):
+#         with Container() as container:
+#             mock_sock = MockActor()
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
-            remote_mock_sock = MockActor()
-            remote_comm = container._spawn(Comm(addr='tcp://127.0.0.1:11001', sock=remote_mock_sock))
+#             with assert_raises(ValueError):
+#                 comm.send_msg('whatever:8765/765123', 'whatev')
+#             with assert_raises(ValueError):
+#                 comm.send_msg('tcp://whatever:8765', 'whatev')
+#             with assert_raises(ValueError):
+#                 comm.send_msg('', 'whatev')
 
-            # serialize/send actorref locally
-            actor1 = container._spawn(MockActor)
-            with comm:
-                actor1_ref = ActorRef(actor1)
-            comm.send_msg('tcp://127.0.0.1:11001/1234', actor1_ref)
-            outgoing_msg = deferred_result(mock_sock.wait())
-            assert outgoing_msg == ('send', ('tcp://127.0.0.1:11001', pickle.dumps(('1234', actor1_ref))))
+#     def test_send_actorref_and_use_it_remotely(self):
+#         with Container() as container:
+#             mock_sock = MockActor()
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=mock_sock))
 
-            # deserialize it remotely
-            with remote_comm:
-                msg = pickle.loads(outgoing_msg[1][1])
-            actor1_ref2 = msg[1]
-            assert actor1_ref2.addr == actor1_ref.addr
+#             remote_mock_sock = MockActor()
+#             remote_comm = container._spawn(Comm(addr='tcp://127.0.0.1:11001', sock=remote_mock_sock))
 
-            # and use it to send a message back
-            actor1_ref2.send('something')
-            remote_outgoing_msg = deferred_result(remote_mock_sock.wait())
-            assert remote_outgoing_msg == ('send', ('tcp://127.0.0.1:11000', pickle.dumps((_get_actor_id(actor1_ref), 'something'))))
+#             # serialize/send actorref locally
+#             actor1 = container._spawn(MockActor)
+#             with comm:
+#                 actor1_ref = ActorRef(actor1)
+#             comm.send_msg('tcp://127.0.0.1:11001/1234', actor1_ref)
+#             outgoing_msg = deferred_result(mock_sock.wait())
+#             assert outgoing_msg == ('send', ('tcp://127.0.0.1:11001', pickle.dumps(('1234', actor1_ref))))
 
-    def test_comm_receives_message(self):
-        with Container() as container:
-            mock_sock = MockActor()
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
+#             # deserialize it remotely
+#             with remote_comm:
+#                 msg = pickle.loads(outgoing_msg[1][1])
+#             actor1_ref2 = msg[1]
+#             assert actor1_ref2.addr == actor1_ref.addr
 
-            actor1 = container._spawn(MockActor)
-            with comm:
-                actor_id = _get_actor_id(ActorRef(actor1))
+#             # and use it to send a message back
+#             actor1_ref2.send('something')
+#             remote_outgoing_msg = deferred_result(remote_mock_sock.wait())
+#             assert remote_outgoing_msg == ('send', ('tcp://127.0.0.1:11000', pickle.dumps((_get_actor_id(actor1_ref), 'something'))))
 
-            comm._send(pickle.dumps((actor_id, 'something')))
+#     def test_comm_receives_message(self):
+#         with Container() as container:
+#             mock_sock = MockActor()
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1', sock=mock_sock))
 
-            assert 'something' == deferred_result(actor1.wait())
+#             actor1 = container._spawn(MockActor)
+#             with comm:
+#                 actor_id = _get_actor_id(ActorRef(actor1))
 
-    @inlineCallbacks
-    def test_send_receive_with_zmq(self):
-        with Container() as container:
-            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
+#             comm._send(pickle.dumps((actor_id, 'something')))
 
-            actor1 = container._spawn(MockActor)
-            actor2 = container._spawn(MockActor)
+#             assert 'something' == deferred_result(actor1.wait())
 
-            with comm1:
-                actor1_ref = ActorRef(actor1)
-                actor1_addr = actor1_ref.addr
-            with comm2:
-                actor2_ref = ActorRef(actor2)
-                yield comm2.ensure_connected('tcp://127.0.0.1:11000')
-                comm2.send_msg(actor1_addr, actor2_ref)
+#     @inlineCallbacks
+#     def test_send_receive_with_zmq(self):
+#         with Container() as container:
+#             comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+#             comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
 
-            received_ref = (yield with_timeout(1.0, actor1.wait()))
-            assert actor2_ref == received_ref
+#             actor1 = container._spawn(MockActor)
+#             actor2 = container._spawn(MockActor)
 
-            with comm1:
-                yield comm1.ensure_connected('tcp://127.0.0.1:11001')
-                received_ref.send('something-else')
+#             with comm1:
+#                 actor1_ref = ActorRef(actor1)
+#                 actor1_addr = actor1_ref.addr
+#             with comm2:
+#                 actor2_ref = ActorRef(actor2)
+#                 yield comm2.ensure_connected('tcp://127.0.0.1:11000')
+#                 comm2.send_msg(actor1_addr, actor2_ref)
 
-            assert 'something-else' == (yield with_timeout(1.0, actor2.wait()))
+#             received_ref = (yield with_timeout(1.0, actor1.wait()))
+#             assert actor2_ref == received_ref
 
-    def test_receive_actorref_to_a_local_actor(self):
-        with Container() as container:
-            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+#             with comm1:
+#                 yield comm1.ensure_connected('tcp://127.0.0.1:11001')
+#                 received_ref.send('something-else')
 
-            actor1 = container._spawn(MockActor)
-            with comm1:
-                actor1_ref = ActorRef(comm1._get_addr(actor1))
+#             assert 'something-else' == (yield with_timeout(1.0, actor2.wait()))
 
-            actor1_ref.send('foobar')
-            assert 'foobar' == deferred_result(actor1.wait())
+#     def test_receive_actorref_to_a_local_actor(self):
+#         with Container() as container:
+#             comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
 
-    def test_optimize_refs_to_local_addrs(self):
-        with Container() as container:
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            actor1 = container._spawn(MockActor)
+#             actor1 = container._spawn(MockActor)
+#             with comm1:
+#                 actor1_ref = ActorRef(comm1._get_addr(actor1))
 
-            with comm:
-                ref = ActorRef(comm._get_addr(actor1))
+#             actor1_ref.send('foobar')
+#             assert 'foobar' == deferred_result(actor1.wait())
 
-            ref.send('foo')
-            comm.send_msg = None  # the second send should not invoke comm.send_msg
-            with assert_not_raises(TypeError):
-                ref.send('foo')
+#     def test_optimize_refs_to_local_addrs(self):
+#         with Container() as container:
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+#             actor1 = container._spawn(MockActor)
 
-    def test_manual_actor_id(self):
-        with Container() as container:
-            comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=MockActor))
-            actor1 = container.spawn(MockActor)
+#             with comm:
+#                 ref = ActorRef(comm._get_addr(actor1))
 
-            comm.set_id(actor1, 'actor1')
-            with comm:
-                ref = ActorRef('tcp://127.0.0.1:11000/actor1')
-            ref.send('foobar')
-            assert 'foobar' == deferred_result(deref(actor1).wait())
+#             ref.send('foo')
+#             comm.send_msg = None  # the second send should not invoke comm.send_msg
+#             with assert_not_raises(TypeError):
+#                 ref.send('foo')
 
-            # can't set again
-            with assert_raises(RuntimeError):
-                comm.set_id(actor1, 'whatev')
+#     def test_manual_actor_id(self):
+#         with Container() as container:
+#             comm = container._spawn(Comm(addr='tcp://127.0.0.1:11000', sock=MockActor))
+#             actor1 = container.spawn(MockActor)
 
-            actor2 = container.spawn(MockActor)
-            comm._get_addr(deref(actor2))
-            # can't set again even if the previous one was implicitly set
-            with assert_raises(RuntimeError):
-                comm.set_id(actor2, 'whatev')
+#             comm.set_id(actor1, 'actor1')
+#             with comm:
+#                 ref = ActorRef('tcp://127.0.0.1:11000/actor1')
+#             ref.send('foobar')
+#             assert 'foobar' == deferred_result(deref(actor1).wait())
 
-    @inlineCallbacks
-    def test_manual_actor_id_with_zmq(self):
-        with Container() as container:
-            comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
-            comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
+#             # can't set again
+#             with assert_raises(RuntimeError):
+#                 comm.set_id(actor1, 'whatev')
 
-            some_actor = container.spawn(MockActor)
-            comm2.set_id(some_actor, 'some-actor')
+#             actor2 = container.spawn(MockActor)
+#             comm._get_addr(deref(actor2))
+#             # can't set again even if the previous one was implicitly set
+#             with assert_raises(RuntimeError):
+#                 comm.set_id(actor2, 'whatev')
 
-            with comm1:
-                ref = ActorRef('tcp://127.0.0.1:11001/some-actor')
-                yield comm1.ensure_connected('tcp://127.0.0.1:11001')
-                ref.send('foobar')
+#     @inlineCallbacks
+#     def test_manual_actor_id_with_zmq(self):
+#         with Container() as container:
+#             comm1 = container._spawn(Comm(addr='tcp://127.0.0.1:11000'))
+#             comm2 = container._spawn(Comm(addr='tcp://127.0.0.1:11001'))
 
-            assert 'foobar' == (yield with_timeout(1.0, deref(some_actor).wait()))
+#             some_actor = container.spawn(MockActor)
+#             comm2.set_id(some_actor, 'some-actor')
+
+#             with comm1:
+#                 ref = ActorRef('tcp://127.0.0.1:11001/some-actor')
+#                 yield comm1.ensure_connected('tcp://127.0.0.1:11001')
+#                 ref.send('foobar')
+
+#             assert 'foobar' == (yield with_timeout(1.0, deref(some_actor).wait()))
