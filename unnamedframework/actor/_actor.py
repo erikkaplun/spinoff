@@ -625,7 +625,7 @@ class Cell(_ActorContainer):
             # Events.log(Error(self, e, sys.exc_info()[2])),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
-            self.parent.send(('_error', self.ref(), exc, tb))
+            self.parent.send(('_error', self.ref(), exc, tb), force_async=True)
         except Exception:
             try:
                 Events.log(ErrorIgnored(self.ref(), exc, tb))
