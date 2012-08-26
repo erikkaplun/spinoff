@@ -113,6 +113,7 @@ class Counter(Holder):
 
 class EMPTY(object):
     __repr__ = lambda _: 'EMPTY'
+    __nonzero__ = lambda _: False
 EMPTY = EMPTY()
 
 
