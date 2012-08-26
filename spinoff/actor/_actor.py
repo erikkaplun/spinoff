@@ -115,6 +115,11 @@ class ActorRef(object):
         """
         return not self.target
 
+    def join(self):
+        future = Future()
+        self << ('_watched', future)
+        return future
+
 
 class _ActorContainer(object):
     _children = {}  # XXX: should be a read-only dict
