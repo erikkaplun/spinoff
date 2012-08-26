@@ -299,7 +299,7 @@ class Cell(_ActorContainer):
     suspended = False
     tainted = False  # true when init or pre_start failed and the actor is waiting for supervisor decision
     processing_messages = False
-    _ongoing_receive_d = None
+    _ongoing_receive = None
 
     _ref = None
     _child_name_gen = None
@@ -363,6 +363,12 @@ class Cell(_ActorContainer):
         # NB: DO NOT do the same with '_suspend', '_resume' or any other message that changes the visible state of the actor!
         if message == ('_watched', ANY):
             self._do_watched(message[1])
+        # ...except in case of an ongoing receive in which case the suspend-resume event will be seem atomic to the actor
+        elif self._ongoing_receive and message in ('_suspend', '_resume'):
+            if message == '_suspend':
+                self._do_suspend()
+            else:
+                self._do_resume()
         else:
             if message in _SYSTEM_MESSAGES:
                 self.priority_inbox.append(message)
@@ -422,7 +428,9 @@ class Cell(_ActorContainer):
         else:
             receive = self.actor.receive
             try:
-                yield receive(message)
+                self._ongoing_receive = receive(message)
+                yield self._ongoing_receive
+                del self._ongoing_receive
             except Unhandled:
                 self._unhandled(message)
             except Exception:
@@ -498,6 +506,8 @@ class Cell(_ActorContainer):
 
     def _do_suspend(self):
         self.suspended = True
+        if self._ongoing_receive:
+            self._ongoing_receive.pause()
 
         for child in self._children.values():
             child.send('_suspend')
@@ -509,6 +519,8 @@ class Cell(_ActorContainer):
             return self._do_restart()
         else:
             self.suspended = False
+            if self._ongoing_receive:
+                self._ongoing_receive.unpause()
             for child in self._children.values():
                 child.send('_resume')
 
