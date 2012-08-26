@@ -154,32 +154,31 @@ def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferre
 
     """
     receive_called = Counter()
-    ctrl_d_stack = []
+    triggers = []
 
     def _do_test(actor_cls):
         # initialize/reset shared inspection/control variables
         receive_called.reset()
 
-        ctrl_d1 = Deferred()
-        ctrl_d2 = Deferred()
-        ctrl_d_stack[:] = [ctrl_d2, ctrl_d1]
+        release = Trigger()
+        triggers[:] = [Trigger(), release]
 
         a = spawn(actor_cls)
         a << None << None
         assert receive_called == 1
 
-        ctrl_d1.callback(None)
+        release()
         assert receive_called == 2
 
     class ActorWithImplicitCoroutine(Actor):
         def receive(self, message):
             receive_called()
-            yield ctrl_d_stack.pop()
+            yield triggers.pop()
 
     class ActorReturningDeferreds(Actor):
         def receive(self, message):
             receive_called()
-            return ctrl_d_stack.pop()
+            return triggers.pop()
 
     _do_test(ActorWithImplicitCoroutine)
     _do_test(ActorReturningDeferreds)
@@ -325,13 +324,13 @@ def test_pre_start_can_return_a_Deferred():
 def test_pre_start_can_be_a_coroutine():
     """Pre start can return a Deferred."""
     pre_start_called = Latch()
-    ctrl_d = Deferred()
+    release = Trigger()
     pre_start_continued = Latch()
 
     class MyActor(Actor):
         def pre_start(self):
             pre_start_called()
-            yield ctrl_d
+            yield release
             pre_start_continued()
 
     spawn(MyActor)
@@ -339,7 +338,7 @@ def test_pre_start_can_be_a_coroutine():
     assert pre_start_called
     assert not pre_start_continued
 
-    ctrl_d.callback(None)
+    release()
 
     assert pre_start_continued
 
@@ -351,12 +350,12 @@ def test_actor_is_not_started_until_deferred_pre_start_completes():
 
     """
 
-    ctrl_d = Deferred()
+    release = Trigger()
     received = Latch()
 
     class MyActor(Actor):
         def pre_start(self):
-            yield ctrl_d
+            yield release
 
         def receive(self, message):
             received()
@@ -364,7 +363,7 @@ def test_actor_is_not_started_until_deferred_pre_start_completes():
     spawn(MyActor) << 'dummy'
 
     assert not received
-    ctrl_d.callback(None)
+    release()
     assert received
 
 
@@ -382,19 +381,19 @@ def test_errors_in_deferred_pre_start_are_reported_as_in_a_normal_pre_start():
 
 
 def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_started():
-    message_received = Deferred()
+    message_received = Latch()
 
     class MyActor(Actor):
         def pre_start(self):
             self.ref << 'dummy'
-            assert not message_received.called
+            assert not message_received
 
         def receive(self, message):
-            message_received.callback(None)
+            message_received()
 
     spawn(MyActor)
 
-    assert message_received.called
+    assert message_received
 
 
 ##
@@ -411,46 +410,48 @@ def test_TODO_remote_actorref_determinism():
 ## LIFECYCLE
 
 def test_suspending():
+    message_received = Counter()
+
     class MyActor(Actor):
         def receive(self, message):
-            message_received[0] += 1
+            message_received()
 
     a = spawn(MyActor)
 
-    message_received = [0]
+    message_received.reset()
     a << 'foo'
-    assert message_received[0]
+    assert message_received
 
-    message_received = [0]
+    message_received.reset()
     a << '_suspend'
-    assert not message_received[0]
+    assert not message_received
 
-    message_received = [0]
+    message_received.reset()
     a << 'foo'
-    assert not message_received[0]
+    assert not message_received
 
 
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
-    ctrl_d = Deferred()
-    message_received = [0]
+    release = Trigger()
+    message_received = Counter()
 
     class MyActor(Actor):
         def receive(self, message):
-            message_received[0] += 1
-            if not ctrl_d.called:  # only yield the first time for correctness
-                yield ctrl_d
+            message_received()
+            if not release.called:  # only yield the first time for correctness
+                yield release
 
     a = spawn(MyActor)
     a << None
-    assert message_received[0] == 1
+    assert message_received == 1
 
     a << 'foo'
     a << '_suspend'
-    ctrl_d.callback(None)
-    assert message_received[0] == 1
+    release()
+    assert message_received == 1
 
     a << '_resume'
-    assert message_received[0] == 2
+    assert message_received == 2
 
 
 def test_suspending_while_receive_is_blocked_pauses_the_receive():
@@ -487,17 +488,17 @@ def test_TODO_force_stopping_does_not_wait_for_a_deferred_post_stop_to_complete(
 def test_resuming():
     class MyActor(Actor):
         def receive(self, message):
-            message_received[0] += 1
+            message_received()
 
     a = spawn(MyActor)
 
     a << '_suspend'
 
-    message_received = [0]
+    message_received = Counter()
     a << 'foo'
     a << 'foo'
     a << '_resume'
-    assert message_received[0] == 2
+    assert message_received == 2
 
 
 def test_restarting():
@@ -539,11 +540,11 @@ def test_restarting_is_not_possible_on_stopped_actors():
 
 def test_restarting_doesnt_destroy_the_inbox():
     messages_received = []
-    started = [0]
+    started = Counter()
 
     class MyActor(Actor):
         def pre_start(self):
-            started[0] += 1
+            started()
 
         def receive(self, message):
             messages_received.append(message)
@@ -554,7 +555,7 @@ def test_restarting_doesnt_destroy_the_inbox():
     a << 'bar'
 
     assert messages_received == ['foo', 'bar']
-    assert started[0] == 2  # just for verification
+    assert started == 2  # just for verification
 
 
 def test_restarting_waits_till_the_ongoing_receive_is_complete():
@@ -563,19 +564,19 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
     For this reason, non-blocking operations in `receive` should always be guarded against infinitely blocking
     operations.
     """
-    started = [0]
+    started = Counter()
     received_messages = []
-    deferred_cancelled = []
+    deferred_cancelled = Latch()
 
-    ctrl_d = Deferred(deferred_cancelled.append)
+    mock_d = Deferred(deferred_cancelled)
 
     class MyActor(Actor):
         def pre_start(self):
-            started[0] += 1
+            started()
 
         def receive(self, message):
-            if started[0] == 1:
-                return ctrl_d.addCallback(lambda _: received_messages.append(message))
+            if started == 1:
+                return mock_d.addCallback(lambda _: received_messages.append(message))
             else:
                 received_messages.append(message)
 
@@ -583,15 +584,15 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
     assert not deferred_cancelled
     assert received_messages == []
 
-    assert started[0] == 1
-    ctrl_d.callback(None)
-    assert started[0] == 2
+    assert started == 1
+    mock_d.callback(None)
+    assert started == 2
 
     assert received_messages == ['foo']
 
 
 def test_restarting_does_not_complete_until_a_deferred_pre_start_completes():
-    ctrl_d = Deferred()
+    release = Trigger()
     received = Latch()
 
     started = Latch()
@@ -601,7 +602,7 @@ def test_restarting_does_not_complete_until_a_deferred_pre_start_completes():
             if not started:
                 started()
             else:
-                yield ctrl_d  # only block on restart, not on creation
+                yield release  # only block on restart, not on creation
 
         def receive(self, message):
             received()
@@ -611,7 +612,7 @@ def test_restarting_does_not_complete_until_a_deferred_pre_start_completes():
     a << '_restart' << 'dummy'
     assert not received
 
-    ctrl_d.callback(None)
+    release()
     assert received
 
 
@@ -690,26 +691,26 @@ def test_actor_is_untainted_after_a_restarting_resume():
 
 
 def test_stopping_waits_till_the_ongoing_receive_is_complete():
-    stopped = [0]
+    stopped = Counter()
     deferred_cancelled = []
 
-    ctrl_d = Deferred(deferred_cancelled.append)
+    mock_d = Deferred(deferred_cancelled.append)
 
     class MyActor(Actor):
         def receive(self, message):
-            return ctrl_d
+            return mock_d
 
         def post_stop(self):
-            stopped[0] = True
+            stopped()
 
     a = spawn(MyActor) << 'foo'
     a._stop_noevent()
 
     assert not deferred_cancelled
-    assert not stopped[0]
+    assert not stopped
 
-    ctrl_d.callback(None)
-    assert stopped[0]
+    mock_d.callback(None)
+    assert stopped
 
 
 def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart():
@@ -738,17 +739,17 @@ def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_aft
 def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
     class MyActor(Actor):
         def receive(self, _):
-            received[0] += 1
+            received()
 
-    received = [0]
+    received = Counter()
     a = spawn(MyActor)
     a << None
 
-    assert received[0] == 1
+    assert received == 1
 
-    received = [0]
+    received.reset()
     a._stop_noevent()
-    assert not received[0], "the '_stop' message should not be receivable in the actor"
+    assert not received, "the '_stop' message should not be receivable in the actor"
     with assert_one_event(DeadLetter(a, None)):
         a << None
 
@@ -871,11 +872,11 @@ def test_error_reports_to_a_stopping_actor_are_ignored():
 def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_deferred():
     canceller_called = Latch()
     stopped = Latch()
-    ctrl_d = Deferred(canceller=lambda _: canceller_called.__setitem__(0, True))
+    mock_d = Deferred(canceller=lambda _: canceller_called.__setitem__(0, True))
 
     class MyActor(Actor):
         def receive(self, _):
-            return ctrl_d
+            return mock_d
 
         def post_stop(self):
             stopped()
@@ -885,7 +886,7 @@ def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_def
     a._stop_noevent()
     assert not canceller_called
     assert not stopped
-    ctrl_d.callback(None)
+    mock_d.callback(None)
     assert stopped
 
 
@@ -1118,11 +1119,11 @@ def test_child_is_restarted_if_supervise_returns_restart():
 
 def test_child_is_stopped_if_supervise_returns_stop():
     """Child is stopped if `supervise` returns `Stop`"""
-    child_stopped = [0]
+    child_stopped = Latch()
 
     class Child(Actor):
         def post_stop(self):
-            child_stopped[0] = True
+            child_stopped()
 
         def receive(self, message):
             raise MockException
@@ -1136,12 +1137,12 @@ def test_child_is_stopped_if_supervise_returns_stop():
 
     spawn(Parent)
 
-    assert child_stopped[0]
+    assert child_stopped
 
 
 def test_child_is_stop_if_supervise_returns_stop():
     """Exception is escalated if `supervise` returns `Escalate`"""
-    escalated = [0]
+    escalated = Latch()
 
     class Child(Actor):
         def receive(self, message):
@@ -1159,12 +1160,12 @@ def test_child_is_stop_if_supervise_returns_stop():
             self.spawn(Parent)
 
         def supervise(self, exc):
-            escalated[0] = True
+            escalated()
             return Stop
 
     spawn(ParentsParent)
 
-    assert escalated[0]
+    assert escalated
 
 
 def test_TODO_exception_escalations_are_reported_as_events():
@@ -1176,11 +1177,11 @@ def test_TODO_exception_escalations_are_reported_as_events():
 def test_child_error_suspends_child():
     release_parent = Trigger()
 
-    child = [None]
+    child = Slot()
 
     class Parent(Actor):
         def pre_start(self):
-            child[0] = self.spawn(Child)
+            child << self.spawn(Child)
 
         def supervise(self, exc):
             assert isinstance(exc, MockException)
@@ -1203,7 +1204,7 @@ def test_child_error_suspends_child():
     parent = spawn(Parent)
     parent << 'block'
 
-    child[0] << 'cause-error' << 'dummy'
+    child() << 'cause-error' << 'dummy'
 
     release_parent()
 
@@ -1418,7 +1419,7 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
 
 
 def test_error_report_after_restart_is_ignored():
-    child = [None]
+    child = Slot()
     release_child = Trigger()
 
     class Child(Actor):
@@ -1428,12 +1429,12 @@ def test_error_report_after_restart_is_ignored():
 
     class Parent(Actor):
         def pre_start(self):
-            if not child[0]:  # so that after the restart the child won't exist
-                child[0] = self.spawn(Child)
+            if not child():  # so that after the restart the child won't exist
+                child << self.spawn(Child)
 
     parent = spawn(Parent)
 
-    child[0] << 'dummy'
+    child() << 'dummy'
     parent << '_restart'
 
     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
@@ -1689,11 +1690,11 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
     # Actor.SENDING_IS_ASYNC = True  # so that we could use EvSeq
 
     # so that we could control them from the outside
-    child, subchild = [None], [None]
+    child, subchild = Slot(), Slot()
 
     class Parent(Actor):
         def pre_start(self):
-            child[0] = self.spawn(Child)
+            child << self.spawn(Child)
 
         def supervise(self, exc):
             assert isinstance(exc, MockException)
@@ -1702,7 +1703,7 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
 
     class Child(Actor):
         def pre_start(self):
-            subchild[0] = self.spawn(SubChild)
+            subchild << self.spawn(SubChild)
 
         def receive(self, message):
             raise MockException  # should also cause SubChild to be suspended
@@ -1715,8 +1716,8 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
 
     spawn(Parent)
 
-    child[0] << 'dummy'  # will cause Child to raise MockException
-    subchild[0] << 'dummy'
+    child() << 'dummy'  # will cause Child to raise MockException
+    subchild() << 'dummy'
 
     yield evseq.await(NEXT('parent_received_error'))
     yield evseq.await(NEXT('subchild_received_message'))
@@ -1801,7 +1802,7 @@ def test_queued_messages_are_logged_as_deadletters_after_stop():
 
 
 def test_termination_message_after_restart_is_ignored():
-    child = [None]
+    child = Slot()
     release_child = Trigger()
 
     class Child(Actor):
@@ -1811,12 +1812,12 @@ def test_termination_message_after_restart_is_ignored():
 
     class Parent(Actor):
         def pre_start(self):
-            if not child[0]:  # make sure after restart, the child won't exist
-                child[0] = self.spawn(Child)
+            if not child():  # make sure after restart, the child won't exist
+                child << self.spawn(Child)
 
     parent = spawn(Parent)
 
-    child[0] << 'dummy'
+    child() << 'dummy'
     parent << '_restart'
     release_child()
 
@@ -1924,21 +1925,21 @@ def test_termination_message_contains_ref_that_forwards_to_deadletters():
 
 
 def test_watching_dead_actor():
-    message_receieved = Deferred()
+    message_receieved = Latch()
 
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
 
         def receive(self, message):
-            message_receieved.callback(message)
+            message_receieved()
 
     watchee = spawn(Actor)
     watchee._stop_noevent()
 
     spawn(Watcher)
 
-    assert message_receieved.called
+    assert message_receieved
 
 
 def test_watching_dying_actor():
