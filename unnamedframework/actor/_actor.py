@@ -647,3 +647,9 @@ class Cell(_ActorContainer):
 
     def __repr__(self):
         return "<Cell:%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)))
+
+
+# TODO: replace with serializable temporary actors
+class Future(Deferred):  # TODO: ActorRefBase or IActorRef or smth
+    def send(self, message):
+        self.callback(message)
