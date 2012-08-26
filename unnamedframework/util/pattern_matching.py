@@ -80,7 +80,9 @@ class IS_INSTANCE(Matcher):
         return isinstance(x, self.t)
 
     def __str__(self):
-        return 'IS_INSTANCE(%s)' % self.t
+        modname, clsname = self.t.__module__, self.t.__name__
+        typename = (modname + '.' if modname != '__builtin__' else '') + clsname
+        return 'IS_INSTANCE(%s)' % (typename)
 
 
 class MATCH(Matcher):
