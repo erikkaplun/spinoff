@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import traceback
+import sys
 from contextlib import contextmanager
 
 from spinoff.actor import Actor, spawn
@@ -40,9 +41,10 @@ class ErrorCollector(object):
         self.errors = []
 
     def collect(self, event):
-        sender, exc_, tb_ = event
-        error_report = 'ACTOR %s, EVENT %s:\n%s' % (sender, type(event).__name__, ''.join(traceback.format_exception(exc_, None, tb_)) + '\n' + type(exc_).__name__ + (': ' + str(exc_.args[0]) if exc_.args else ''))
-        self.errors.append(error_report)
+        sender, exc, tb = event
+        tb_formatted = ''.join(traceback.format_exception(exc, None, tb))
+        error_report = 'ACTOR %s, EVENT %s:\n%s' % (sender, type(event).__name__, tb_formatted + '\n' + type(exc).__name__ + (': ' + str(exc.args[0]) if exc.args else ''))
+        self.errors.append((error_report, exc, tb_formatted))
 
     def __enter__(self):
         stack = ErrorCollector.stack
@@ -67,29 +69,34 @@ class ErrorCollector(object):
             for event_type in _ERROR_EVENTS:
                 Events.subscribe(event_type, stack[-1].collect)
 
-        have_primary_exception = exc is not None
+        clean = not exc
 
         if self.errors:
             # If there are at least 2 errors, or we are in the toplevel collector,
             # dump the errors and raise a general Unclean exception:
-            if not stack or have_primary_exception or len(self.errors) >= 2:
+            if not stack or not clean or len(self.errors) >= 2:
                 error_reports = []
-                for error in self.errors:
-                    # sender, exc_, tb_ = error
+                for error, _, _ in self.errors:
                     error_reports.append(error)
-                # print("error_reports: %r" % (error_reports,), file=sys.stderr)
-                if not have_primary_exception:
-                    indented_error_reports = ('\n'.join('    ' + line for line in error_report.split('\n') if line)
-                                              for error_report in error_reports)
-                    indented_entire_error_report = '\n\n'.join(indented_error_reports)
-                    raise Unclean("There were errors in top-level actors:\n%s" % indented_entire_error_report)
+                if clean:
+                    if len(self.errors) >= 2:
+                        indented_error_reports = ('\n'.join('    ' + line for line in error_report.split('\n') if line)
+                                                  for error_report in error_reports)
+                        indented_entire_error_report = '\n\n'.join(indented_error_reports)
+                        raise Unclean("There were errors in top-level actors:\n%s" % indented_entire_error_report)
+                    else:
+                        (_, exc, tb_formatted), = self.errors
+                        print(tb_formatted, file=sys.stderr)
+                        raise exc
                 else:
                     print('\n'.join(error_reports))
             # ...otherwise just re-raise the exception to support assert_raises
             else:
-                error, = self.errors
-                raise error[1], None, error[2]
-        if have_primary_exception:
+                (_, exc, tb_formatted), = self.errors
+                if not stack:
+                    print(tb_formatted, file=sys.stderr)
+                raise exc
+        if not clean:
             raise exc_cls, exc, tb
 
 

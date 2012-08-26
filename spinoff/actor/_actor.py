@@ -10,13 +10,18 @@ import weakref
 from collections import deque
 from itertools import count
 
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks, returnValue, Deferred
 from txcoroutine import coroutine
 
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.actor.events import UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
+from spinoff.actor.events import SupervisionFailure
+
+
+# these messages get special handling from the framework and never reach Actor.receive
+_SYSTEM_MESSAGES = ('_start', '_stop', '_restart', '_suspend', '_resume', ('_child_terminated', ANY))
 
 
 def critical(fn, *args, **kwargs):
@@ -65,6 +70,7 @@ class ActorRef(object):
     def __init__(self, target, path):
         self.target = target
         self.path = path
+        self.name = path.rsplit('/', 1)[-1]
 
     def send(self, message, force_async=False):
         """Sends a message to this actor.
@@ -126,10 +132,12 @@ class _ActorContainer(object):
         if not path:
             name = self._generate_name()
             path = '%s%s%s' % (self.path, ('' if self.path[-1] == '/' else '/'), name)
-        ret = _do_spawn(parent=self.ref(), factory=factory, path=path)
-        assert name not in self._children
-        self._children[name] = ret
-        return ret
+        assert name not in self._children  # XXX: ordering??
+        self._children[name] = None
+        child = _do_spawn(parent=self.ref(), factory=factory, path=path)
+        if name in self._children:  # it might have been removed already
+            self._children[name] = child
+        return child
 
     def _generate_name(self):
         if not self._child_name_gen:
@@ -147,6 +155,14 @@ class _ActorContainer(object):
         except AttributeError:
             pass
 
+    @property
+    def children(self, child):
+        return self._children.values()
+
+    def _child_gone(self, child):
+        name = child.path.rsplit('/', 1)[-1]
+        del self._children[name]
+
 
 class Guardian(_ActorContainer):
     path = '/'
@@ -160,6 +176,7 @@ class Guardian(_ActorContainer):
             Events.log(UnhandledError(sender, exc, tb))
         elif message == ('_child_terminated', ANY):
             _, sender = message
+            self._child_gone(sender)
             Events.log(TopLevelActorTerminated(sender))
         else:
             Events.log(UnhandledMessage(self, message))
@@ -272,6 +289,11 @@ class Cell(_ActorContainer):
     started = False
     actor = None
     inbox = None
+
+    # actor has begun shutting itself down but is waiting for all its children to stop first, and its own post_stop;
+    # in the shutting-down state, an actor only accepts '_child_terminated' messages (and '_force_stop' in the future)
+    shutting_down = False
+
     stopped = False
 
     suspended = False
@@ -320,13 +342,29 @@ class Cell(_ActorContainer):
         if self.stopped:
             return
 
+        if self.shutting_down:
+            # the shutting_down procedure is waiting for all children to terminate so we make an exception here
+            # and handle the message directly, bypassing the standard message handling logic:
+            # NB! DO NOT do this with a running actor--it changes the visible state of the actor
+            if message == ('_child_terminated', ANY):
+                _, child = message
+                self._do_child_terminated(child)
+            # don't care about any system message if we're already stopping:
+            elif message not in _SYSTEM_MESSAGES:
+                # so that it could be sent to dead letters when the stopping is complete:
+                self.inbox.append(message)
+            elif self.priority_inbox:
+                self.priority_inbox.append(message)
+            return
+
         # XXX: should ('terminated', child) also be prioritised?
 
-        # '_watched' is something that should be safe to handle immediately as it doesn't change the state of the actor
+        # '_watched' is something that is safe to handle immediately as it doesn't change the visible state of the actor;
+        # NB: DO NOT do the same with '_suspend', '_resume' or any other message that changes the visible state of the actor!
         if message == ('_watched', ANY):
             self._do_watched(message[1])
         else:
-            if message in ('_start', '_stop', '_restart', '_suspend', '_resume', ('_child_terminated', ANY)):
+            if message in _SYSTEM_MESSAGES:
                 self.priority_inbox.append(message)
             else:
                 self.inbox.append(message)
@@ -346,22 +384,25 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _process_messages(self):
-        while self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume')):
-            self.processing_messages = True
-            message = self.consume_message()
-            try:
-                d = self._process_one_message(message)
-                # if isinstance(ret, Deferred) and not self.receive_is_coroutine:
-                #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
-                yield d
-            except Exception:
-                self.report_to_parent(d)
-            finally:
-                self.processing_messages = False
+        try:
+            while not self.shutting_down and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume')):
+                self.processing_messages = True
+                message = self.consume_message()
+                try:
+                    d = self._process_one_message(message)
+                    # if isinstance(ret, Deferred) and not self.receive_is_coroutine:
+                    #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
+                    yield d
+                except Exception:
+                    self.report_to_parent(d)
+                finally:
+                    self.processing_messages = False
+        except Exception:
+            self.report_to_parent()
 
     @inlineCallbacks
     def _process_one_message(self, message):
-        # print("PROCESS-ONE: %r => %r" % (message, self), file=sys.stderr)
+        # rint("PROCESS-ONE: %r => %r" % (message, self), file=sys.stderr)
         if message == '_start':
             yield self._do_start()
         elif message == ('_error', ANY, ANY, ANY):
@@ -428,6 +469,7 @@ class Cell(_ActorContainer):
                 self.process_messages()
 
     def _do_supervise(self, child, exc, tb):
+        # print("SUPERVISE: %r => %r @ %r" % (child, exc, self.ref()), file=sys.stderr)
         if child not in self._children.values():  # TODO: use a denormalized set
             Events.log(ErrorIgnored(child, exc, tb))
             return
@@ -471,23 +513,38 @@ class Cell(_ActorContainer):
                 child.send('_resume')
 
     def _do_stop(self):
-        self._shutdown()
-        self.stopped = True
+        # print("STOP: %r" % (self.ref(),), file=sys.stderr)
+        self.priority_inbox = None  # don't want no more, just release the memory
 
-        ref = self._ref()
-        if ref:
+        self._shutdown().addCallback(self._finish_stop)
+
+    def _finish_stop(self, _):
+        try:
+            ref = self.ref()
+
+            # TODO: test that system messages are not deadlettered
+            for message in self.inbox:
+                if message == ('_error', ANY, ANY, ANY):
+                    _, sender, exc, tb = message
+                    Events.log(ErrorIgnored(sender, exc, tb))
+                elif message != ('terminated', ANY):
+                    Events.log(DeadLetter(ref, message))
+
+            del self.inbox
+
+            # print("FINISH-STOP: unlinking reference", file=sys.stderr)
             del ref.target
+            self.stopped = True
 
-        self.parent.send(('_child_terminated', ref))
+            # XXX: which order should the following two operations be done?
 
-        for watcher in self.watchers:
-            watcher.send(('terminated', ref))
+            self.parent.send(('_child_terminated', ref))
 
-        for message in self.inbox:
-            if message != ('terminated', ANY):
-                Events.log(DeadLetter(ref, message))
-        self.inbox = None
-        self.priority_inbox = None
+            for watcher in self.watchers:
+                watcher.send(('terminated', ref))
+        except Exception:
+            _, exc, tb = sys.exc_info()
+            Events.log(ErrorIgnored(ref, exc, tb))
 
     def _do_watched(self, other):
         if not self.watchers:
@@ -496,10 +553,14 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _do_restart(self):
-        self.suspended = True
-        self._shutdown()
-        self.actor = yield self._construct()
-        self.suspended = False
+        # print("RESTART:", self.ref(), file=sys.stderr)
+        # try:
+            self.suspended = True
+            yield self._shutdown()
+            self.actor = yield self._construct()
+            self.suspended = False
+        # finally:
+        #     print("RESTART: ...OK", self.ref(), file=sys.stderr)
 
     def _do_child_terminated(self, child):
         # TODO: PLEASE OPTIMISE
@@ -507,22 +568,36 @@ class Cell(_ActorContainer):
         if child not in self._children.values():
             # LOGEVENT(TerminationIgnored(self, child))
             return
-        itms = self._children.items()
-        ix = itms.index((ANY, child))
-        del self._children[itms[ix][0]]
+        self._child_gone(child)
+        # itms = self._children.items()
+        # ix = itms.index((ANY, child))
+        # del self._children[itms[ix][0]]
+        if self.shutting_down and not self._children:
+            self._all_children_stopped.callback(None)
 
+    @inlineCallbacks
     def _shutdown(self):
+        # print("SHUTDOWN: started: %r" % (self.ref(),), file=sys.stderr)
+        self.shutting_down = True
+
+        if self._children:  # we don't want to do the Deferred magic if there're no babies
+            self._all_children_stopped = Deferred()
+            for child in self._children.values():
+                child.stop()
+            # print("SHUTDOWN: waiting for all children to stop", self.ref(), file=sys.stderr)
+            yield self._all_children_stopped
+            # print("SHUTDOWN: ...children stopped", self.ref(), file=sys.stderr)
+
         if self.actor and hasattr(self.actor, 'post_stop'):
             try:
-                self.actor.post_stop()  # XXX: possibly add `yield` here
+                yield self.actor.post_stop()  # XXX: possibly add `yield` here
             except Exception:
                 _, exc, tb = sys.exc_info()
                 Events.log(ErrorIgnored(self.actor, exc, tb))
-        self.actor = None
 
-        for child in self._children.values():
-            child.stop()
-        self._children = {}
+        self.actor = None
+        self.shutting_down = False
+        # print("SHUTDOWN: ...OK: %r" % (self.ref(),), file=sys.stderr)
 
     def report_to_parent(self, df=None):
         _, exc, tb = sys.exc_info()
@@ -532,8 +607,13 @@ class Cell(_ActorContainer):
             # XXX: might make sense to make it async by default for better latency
             self.parent.send(('_error', self.ref(), exc, tb))
         except Exception:
-            print("*** FAILED TO SUPERVISE:", file=sys.stderr)
-            traceback.print_exc(sys.stderr)
+            try:
+                Events.log(ErrorIgnored(self.ref(), exc, tb))
+                _, sys_exc, sys_tb = sys.exc_info()
+                Events.log(SupervisionFailure(self.ref(), sys_exc, sys_tb))
+            except Exception:
+                print("*** PANIC", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
 
     def ref(self):
         if self.stopped:
