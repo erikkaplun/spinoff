@@ -81,7 +81,7 @@ class ActorRef(object):
             self.target.receive(message, force_async=force_async)
         elif message == ('_watched', ANY):
             message[1].send(('terminated', self))
-        else:
+        elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
             Events.log(DeadLetter(self, message))
 
     def __lshift__(self, message):
@@ -484,7 +484,8 @@ class Cell(_ActorContainer):
             watcher.send(('terminated', ref))
 
         for message in self.inbox:
-            Events.log(DeadLetter(ref, message))
+            if message != ('terminated', ANY):
+                Events.log(DeadLetter(ref, message))
         self.inbox = None
         self.priority_inbox = None
 

@@ -4,7 +4,7 @@ import functools
 import weakref
 from nose.twistedtools import deferred
 
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail
+from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
 
 from spinoff.util.testing import assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
@@ -507,8 +507,7 @@ def test_restarting_is_not_possible_on_stopped_actors():
 
     a = spawn(MyActor)
     a._stop_noevent()
-    with assert_one_event(DeadLetter(a, '_restart')):
-        a << '_restart'
+    a << '_restart'
 
     assert actor_started == 1
 
@@ -1839,6 +1838,29 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
 
     with expect_failure(UnhandledTermination):
         spawn(Watcher)
+
+
+def test_termination_message_to_dead_actor_is_discarded():
+    class Parent(Actor):
+        def pre_start(self):
+            child = self.watch(self.spawn(Actor))
+            child.stop()
+            self.stop()
+
+    d = Events.consume_one(DeadLetter)
+    spawn(Parent)
+    assert not d.called
+
+
+def test_system_messages_to_dead_actorrefs_are_discarded():
+    a = spawn(Actor)
+    a.stop()
+
+    for event in ['_stop', '_suspend', '_resume', '_restart']:
+        d = Events.consume_one(DeadLetter)
+        a << event
+        assert not d.called, "message %r sent to a dead actor should be discarded" % event
+        d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
 def test_TODO_watching_nonexistent_actor():
