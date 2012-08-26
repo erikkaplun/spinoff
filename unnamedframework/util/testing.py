@@ -110,6 +110,9 @@ def assert_one_warning(message=None):
     return assert_num_warnings(1, message)
 
 
+swallow_one_warning = assert_one_warning
+
+
 class MockFunction(object):
 
     called = property(lambda self: len(self.argses))
