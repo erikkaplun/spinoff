@@ -453,11 +453,27 @@ def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
     assert message_received[0] == 2
 
 
-def test_TODO_suspending_while_receive_is_blocked_pauses_the_receive():
+def test_suspending_while_receive_is_blocked_pauses_the_receive():
+    release_child = Trigger()
+    after_release_reached = Latch()
+
     # this actually does not have to be like that. the goal is that if, while an actor is suspended, there is a failure
     # in it, it shouldn't get lost. now if the parent is handling a previous error, and decides to resume, it will
     # discard its fail child's suspended-due-to-error state. this can also be achieved however by enabling stacked suspends
-    pass
+
+    class MyActor(Actor):
+        def receive(self, _):
+            yield release_child
+            after_release_reached()
+
+    a = spawn(MyActor)
+    a << 'dummy'
+    a << '_suspend'
+    release_child()
+    assert not after_release_reached
+
+    a << '_resume'
+    assert after_release_reached
 
 
 def test_TODO_stopping():
