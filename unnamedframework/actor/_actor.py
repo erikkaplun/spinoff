@@ -539,6 +539,9 @@ class Cell(_ActorContainer):
                 if message == ('_error', ANY, ANY, ANY):
                     _, sender, exc, tb = message
                     Events.log(ErrorIgnored(sender, exc, tb))
+                elif message == ('_watched', ANY):
+                    _, watcher = message
+                    watcher.send(('terminated', ref))
                 elif message != ('terminated', ANY):
                     Events.log(DeadLetter(ref, message))
 
