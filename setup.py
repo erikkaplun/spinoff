@@ -2,11 +2,12 @@ from setuptools import setup, find_packages
 
 setup(
     name="spinoff",
-    version="0.2.4",
+    version="0.3dev",
     packages=find_packages(),
 
     install_requires=[
         'twisted>=12.0',
+        'txcoroutine',
         'txzmq',
         ],
 
