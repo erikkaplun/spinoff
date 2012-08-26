@@ -1,3 +1,7 @@
+from __future__ import print_function
+
+import traceback
+import sys
 from functools import wraps
 from types import UnboundMethodType
 
@@ -35,10 +39,30 @@ def after(seconds, reactor=reactor):
     return _AfterWrap(sleep(seconds, reactor))
 
 
+from collections import deque
+_idle_calls = deque()
+_processing_idle_calls = False
+
+
+def _process_idle_calls():
+    global _processing_idle_calls
+
+    _processing_idle_calls = True
+    try:
+        while _idle_calls:
+            fn, args, kwargs = _idle_calls.popleft()
+            try:
+                fn(*args, **kwargs)
+            except Exception:
+                traceback.print_exc(file=sys.stderr)
+    finally:
+        _processing_idle_calls = False
+
+
 def call_when_idle(fn, *args, **kwargs):
-    # TODO: find an overhead-less way to schedule an immediate call for when the reactor becomes idle, i.e. is about to
-    # go to sleep (waiting for events).
-    reactor.callLater(0, fn, *args, **kwargs)
+    if not _processing_idle_calls:
+        reactor.callLater(0, _process_idle_calls)
+    _idle_calls.append((fn, args, kwargs))
 
 
 class _AfterWrap(object):
