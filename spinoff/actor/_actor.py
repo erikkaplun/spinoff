@@ -24,6 +24,10 @@ from spinoff.actor.events import SupervisionFailure
 _SYSTEM_MESSAGES = ('_start', '_stop', '_restart', '_suspend', '_resume', ('_child_terminated', ANY))
 
 
+def dbg(*args):
+    print(file=sys.stderr, *args)
+
+
 def critical(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -343,7 +347,7 @@ class Cell(_ActorContainer):
                 return None
 
     def receive(self, message, force_async=False):
-        # print("RECV: %r => %r" % (message, self.ref()), file=sys.stderr)
+        # dbg("RECV: %r => %r" % (message, self.ref()))
         if self.stopped:
             return
 
@@ -482,7 +486,7 @@ class Cell(_ActorContainer):
                 self.process_messages()
 
     def _do_supervise(self, child, exc, tb):
-        # print("SUPERVISE: %r => %r @ %r" % (child, exc, self.ref()), file=sys.stderr)
+        # dbg("SUPERVISE: %r => %r @ %r" % (child, exc, self.ref()))
         if child not in self._children.values():  # TODO: use a denormalized set
             Events.log(ErrorIgnored(child, exc, tb))
             return
@@ -492,10 +496,10 @@ class Cell(_ActorContainer):
         if supervise:
             decision = supervise(exc)
         if not supervise or decision == Default:
-            # print("SUP: fallback to default @ %r= > %r" % (self.ref(), child), file=sys.stderr)
+            # dbg("SUP: fallback to default @ %r= > %r" % (self.ref(), child))
             decision = default_supervise(exc)
 
-        # print("SUP: %r => %r @ %r => %r" % (exc, decision, self.ref(), child), file=sys.stderr)
+        # dbg("SUP: %r => %r @ %r => %r" % (exc, decision, self.ref(), child))
 
         if not isinstance(decision, Decision):
             raise BadSupervision("Bad supervisor decision: %s" % (decision,), exc, tb)
@@ -530,7 +534,7 @@ class Cell(_ActorContainer):
                 child.send('_resume')
 
     def _do_stop(self):
-        # print("STOP: %r" % (self.ref(),), file=sys.stderr)
+        # dbg("STOP: %r" % (self.ref(),))
         self.priority_inbox = None  # don't want no more, just release the memory
 
         self._shutdown().addCallback(self._finish_stop)
@@ -552,7 +556,7 @@ class Cell(_ActorContainer):
 
             del self.inbox
 
-            # print("FINISH-STOP: unlinking reference", file=sys.stderr)
+            # dbg("FINISH-STOP: unlinking reference")
             del ref.target
             self.stopped = True
 
@@ -573,7 +577,7 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _do_restart(self):
-        # print("RESTART:", self.ref(), file=sys.stderr)
+        # dbg("RESTART:", self.ref())
         # try:
             self.suspended = True
             yield self._shutdown()
@@ -597,16 +601,16 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _shutdown(self):
-        # print("SHUTDOWN: started: %r" % (self.ref(),), file=sys.stderr)
+        # dbg("SHUTDOWN: started: %r" % (self.ref(),))
         self.shutting_down = True
 
         if self._children:  # we don't want to do the Deferred magic if there're no babies
             self._all_children_stopped = Deferred()
             for child in self._children.values():
                 child.stop()
-            # print("SHUTDOWN: waiting for all children to stop", self.ref(), file=sys.stderr)
+            # dbg("SHUTDOWN: waiting for all children to stop", self.ref())
             yield self._all_children_stopped
-            # print("SHUTDOWN: ...children stopped", self.ref(), file=sys.stderr)
+            # dbg("SHUTDOWN: ...children stopped", self.ref())
 
         if self.actor and hasattr(self.actor, 'post_stop'):
             try:
@@ -617,7 +621,7 @@ class Cell(_ActorContainer):
 
         self.actor = None
         self.shutting_down = False
-        # print("SHUTDOWN: ...OK: %r" % (self.ref(),), file=sys.stderr)
+        # dbg("SHUTDOWN: ...OK: %r" % (self.ref(),))
 
     def report_to_parent(self, df=None):
         _, exc, tb = sys.exc_info()
