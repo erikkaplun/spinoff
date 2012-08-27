@@ -31,6 +31,18 @@ def make_mock():
     return ret, messages
 
 
+class MockRef(object):
+    def __init__(self, path):
+        self.messages = MockMessages()
+        self.path = path
+
+    def send(self, msg, force_async=None):
+        self.messages.append(msg)
+
+    def __repr__(self):
+        return '<mock@%s>' % (self.path,)
+
+
 _ERROR_EVENTS = [UnhandledError, ErrorIgnored, SupervisionFailure]
 
 

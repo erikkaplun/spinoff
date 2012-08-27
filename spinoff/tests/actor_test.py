@@ -6,13 +6,14 @@ import inspect
 import random
 import sys
 import weakref
+from collections import defaultdict
 
 from nose.tools import eq_
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
 
 from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
-    BadSupervision,)
+    BadSupervision, ActorRef)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
@@ -21,6 +22,9 @@ from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,)
 from spinoff.util.testing.common import timed
+from spinoff.actor.remoting import TheDude
+from spinoff.util.testing.actor import MockRef
+from spinoff.actor.remoting import RemoteActor
 
 
 def dbg(*args):
@@ -2046,8 +2050,104 @@ def test_TODO_watching_nonexistent_remote_actor():
 ##
 ## REMOTING
 
-def test_TODO_serializing_actorref_converts_it_to_addr_and_registers_it_with_remoting():
-    pass
+# this will instead be a ZeroMQ connection object from the txzmq package in reality
+class MockTransport(object):
+    def __init__(self):
+        self.messages = []
+
+    def sendMsg(self, msg):
+        self.messages.append(msg)
+
+    def gotMessage(self, msg):
+        assert False, "TheDude should define gotMessage on the incoming transport"
+
+
+def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
+    # a total of NUM_NODES*NUM_MSGS messages will be sent out
+    NUM_NODES = 3
+    NUM_MSGS = 20
+
+    nodes = defaultdict(dict)  # this will hold all the interaction data
+
+    # the sender
+    incoming, outgoing = MockTransport(), MockTransport()
+    the_dude = TheDude(incoming, outgoing, nodename='node1')
+
+    assert outgoing.messages == []
+
+    # set up the part that deals with sending, i.e. refs to remote actors and messages to send
+    for i in range(NUM_NODES):
+        nodename = 'node%d' % (i + 1)
+        node = nodes[nodename]
+
+        # refs to remote actors:
+        node['refs'] = [
+            ActorRef.remote('actor%d' % (i + 1), nodename, the_dude)
+            for i in range(NUM_MSGS)
+        ]
+
+        # messages to send:
+        node['msgs'] = [
+            'dummy-%s-%d-%s' % (nodename, i + 1, random.randint(1, 10000000))
+            for i in range(NUM_MSGS)
+        ]
+
+        for ref, msg in zip(node['refs'], node['msgs']):
+            ref << msg
+
+    # this is how ZeroMQ will see it, i.e. each item is a socket identity of the receiver and the data to deliver:
+    msgs_on_wire = outgoing.messages
+
+    # we don't assert the actual content of the message because it's already in the on-the-wire format (serialized),
+    # so instead we feed it to another instance of TheDude and see if it arrives at the other end intact; this way
+    # TheDude can change the serialization/wire-level protocol format independently of the tests.
+    eq_(msgs_on_wire, [(ANY, IS_INSTANCE(bytes))] * NUM_NODES * NUM_MSGS)
+
+    ### END OF SENDER PART--BEGINNING OF RECEIVER PART
+
+    # set up the receiving part
+    for nodename, node in nodes.items():
+        # TheDude instances for each remote node
+        incoming, outgoing = MockTransport(), MockTransport()
+        remote_dude = TheDude(incoming, outgoing, nodename=nodename)
+        node['dude'] = remote_dude
+        node['incoming'] = incoming
+
+        # mock recepient actors + registration with their TheDude
+        node['receivers'] = [MockRef(ref.path) for ref in node['refs']]
+        for i, receiver in enumerate(node['receivers']):
+            remote_dude.register(receiver)
+
+    # shuffle the order for good measure:
+    msgs_on_wire_in_random_order = msgs_on_wire[:]
+    random.shuffle(msgs_on_wire_in_random_order)
+
+    # put each emitted outgoing message to the "inbox" of the respective node:
+    for nodename, msg_on_wire in msgs_on_wire_in_random_order:
+        nodes[nodename]['incoming'].gotMessage(msg_on_wire)
+
+    for _, node in nodes.items():
+        all(eq_(receiver.messages, [msg_sent])
+            for receiver, msg_sent in zip(node['receivers'], node['msgs']))
+
+
+@timed(None)
+def test_TODO_serializing_actorref_converts_it_to_addr_with_nodename_and_registers_it_with_remoting():
+    dude1_outgoing = MockTransport()
+    dude1 = TheDude(incoming=MockTransport(), outgoing=dude1_outgoing, nodename='node1')
+
+    local_actor = ActorRef(None, 'actor1', 'node1')
+    remote_ref = ActorRef.remote('actor2', 'node2', dude1)
+    remote_ref.send(local_actor)
+
+    dude2_incoming = MockTransport()
+    dude2 = TheDude(incoming=dude2_incoming, outgoing=MockTransport(), nodename='node2')
+    remote_actor = MockRef('actor2')
+    dude2.register(remote_actor)
+
+    [dude2_incoming.gotMessage(msg) for _, msg in dude1_outgoing.messages]
+
+    eq_(remote_actor.messages, [ActorRef(IS_INSTANCE(RemoteActor), 'actor1', 'node1')])
 
 
 def test_TODO_sending_to_seemingly_remote_refs_that_are_local_bypasses_remoting():
@@ -2060,6 +2160,10 @@ def test_TODO_sending_to_remote_actorref_delivers_the_message():
 
 
 def test_TODO_remotely_spawned_actors_ref_is_registered_eagerly():
+    pass
+
+
+def test_TODO_remoting_with_real_zeromq():
     pass
 
 

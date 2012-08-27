@@ -62,10 +62,16 @@ class ActorRef(object):
     # XXX: should be protected/private
     target = None  # so that .target could be deleted to save memory
 
-    def __init__(self, target, path):
+    @classmethod
+    def remote(cls, path, node, the_dude):
+        proxy = the_dude.make_proxy(path, node)
+        return ActorRef(proxy, path, node)
+
+    def __init__(self, target, path, node=None):
         self.target = target
         self.path = path
         self.name = path.rsplit('/', 1)[-1]
+        self.node = node
 
     def send(self, message, force_async=False):
         """Sends a message to this actor.
@@ -114,6 +120,12 @@ class ActorRef(object):
         future = Future()
         self << ('_watched', future)
         return future
+
+    def __eq__(self, other):
+        return isinstance(other, ActorRef) and self.path == other.path and self.node == other.node
+
+    def __getstate__(self):
+        return {'path': self.path, 'node': self.node}
 
 
 class _ActorContainer(object):
