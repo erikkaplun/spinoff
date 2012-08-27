@@ -19,6 +19,10 @@ from unnamedframework.actor.events import Events, UnhandledMessage, DeadLetter, 
 from unnamedframework.actor.supervision import Resume, Restart, Stop, Escalate, Default
 
 
+def dbg(*args):
+    print(file=sys.stderr, *args)
+
+
 class MockException(Exception):
     pass
 
