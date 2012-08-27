@@ -147,7 +147,7 @@ def assert_one_event(ev):
     else:
         assert d.called, ("Event %r should have been emitted but was not" % (ev,)
                           if not isinstance(ev, type) else
-                          "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__))
+                          "Event of type %s should have been emitted but was not" % (ev.__name__,))
         result = deferred_result(d)
         if isinstance(ev, type):
             assert isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__)
