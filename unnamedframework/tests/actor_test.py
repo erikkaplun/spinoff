@@ -1149,6 +1149,29 @@ def test_TODO_stopped_actors_remote_refs_are_optimised():
 
 
 ##
+## TEMPORARY ACTORS, FUTURES & PIPING
+
+def test_TODO_test_temporary_actor():
+    pass
+    # random_msg = 'dummy-%r' % random.random()
+
+    # tmp_actor, tmp_d = spawn_tmp(Deferred())
+
+    # d = Events.consume_one(TopLevelActorTerminated)
+    # tmp_actor << random_msg
+    # assert not d.called
+
+    # eq_(deferred_result(tmp_d), random_msg)
+
+    # with assert_one_event(DeadLetter):
+    #     tmp_actor << 'another-message'
+
+
+def test_TODO_test_temporary_actor_with_remoting():
+    pass
+
+
+##
 ## SUPERVISION & ERROR HANDLING
 
 def test_child_is_resumed_if_supervise_returns_resume():
