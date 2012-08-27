@@ -104,6 +104,10 @@ class TopLevelActorTerminated(Terminated, fields('actor', 'reason')):
     pass
 
 
+class HighWaterMarkReached(Event, fields('actor', 'count')):
+    pass
+
+
 class Events(object):
     # TODO: add {event type} + {actor / actor path} based subscriptions.
 
