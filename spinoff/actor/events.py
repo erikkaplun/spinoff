@@ -127,7 +127,7 @@ class Events(object):
                 try:
                     fn(event)
                 except Exception:
-                    print("Error in event handler:")
+                    print("Error in event handler:", file=sys.stderr)
                     traceback.print_exc()
         else:
             print("*** %r" % (event,), file=sys.stderr)
