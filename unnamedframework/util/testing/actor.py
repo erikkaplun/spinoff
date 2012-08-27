@@ -139,12 +139,17 @@ class DebugActor(object):
 
 @contextmanager
 def assert_one_event(ev):
-    d = Events.consume_one(type(ev))
+    d = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
     except:
         raise
     else:
-        assert d.called, "Event %r should have been emitted but was not" % (ev,)
+        assert d.called, ("Event %r should have been emitted but was not" % (ev,)
+                          if not isinstance(ev, type) else
+                          "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__))
         result = deferred_result(d)
-        assert result == ev, "Event %r should have been emitted but %s was" % (ev, result)
+        if isinstance(ev, type):
+            assert isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__)
+        else:
+            assert result == ev, "Event %r should have been emitted but %s was" % (ev, result)
