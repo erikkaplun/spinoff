@@ -5,8 +5,9 @@ import warnings
 from contextlib import contextmanager
 from functools import wraps
 
+from nose.twistedtools import deferred as nose_deferred
 from twisted.internet.task import Clock
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, maybeDeferred
 
 from spinoff.util.async import CancelledError
 
@@ -151,3 +152,14 @@ def callback_called(d):
     mock_fn = MockFunction()
     d.addCallback(mock_fn)
     return mock_fn.called
+
+
+def timed(timeout=None):
+    def decorate(fn):
+        def wrapper(*args, **kwargs):
+            return maybeDeferred(fn, *args, **kwargs)
+
+        ret = nose_deferred(timeout)(wrapper)
+        ret.is_timed = True
+        return ret
+    return decorate

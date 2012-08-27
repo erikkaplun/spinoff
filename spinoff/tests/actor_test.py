@@ -1,10 +1,10 @@
 from __future__ import print_function
 
 import functools
+import inspect
 import weakref
 import random
 import sys
-from nose.twistedtools import deferred
 from nose.tools import eq_
 
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
@@ -22,6 +22,7 @@ from spinoff.util.testing import (
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.process import Process
+from spinoff.util.testing.common import timed
 
 
 def dbg(*args):
@@ -65,8 +66,6 @@ def test_sending_operator_is_chainable():
     assert messages.clear() == ['foo', 'bar']
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_async_sending():
     """Asynchronous sending by setting SENDING_IS_ASYNC or force_async=True.
 
@@ -214,8 +213,6 @@ def test_with_no_receive_method_all_messages_are_unhandled():
 ##
 ## SPAWNING
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_spawning_is_async():
     """Spawning child actors by default is delayed and the spawn call returns immediately."""
 
@@ -790,11 +787,7 @@ def test_stopping_calls_post_stop():
     assert post_stop_called
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_stopping_waits_for_post_stop():
-    yield
-
     stop_complete = Trigger()
     parent_received = Slot()
 
@@ -819,11 +812,7 @@ def test_stopping_waits_for_post_stop():
     assert parent_received
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_actor_is_not_stopped_until_its_children_are_stopped():
-    yield
-
     stop_complete = Trigger()
     parent_stopped = Latch()
 
@@ -845,11 +834,7 @@ def test_actor_is_not_stopped_until_its_children_are_stopped():
     assert parent_stopped
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_actor_is_not_restarted_until_its_children_are_stopped():
-    yield
-
     stop_complete = Trigger()
     parent_started = Counter()
 
@@ -1197,8 +1182,6 @@ def test_TODO_exception_escalations_are_reported_as_events():
     pass
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_child_error_suspends_child():
     release_parent = Trigger()
 
@@ -1517,11 +1500,7 @@ def test_default_supervision_restarts_for_any_other_exception():
     assert child_started == 2
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_default_supervision_is_applied_if_supervision_returns_default():
-    yield
-
     class Parent(Actor):
         def pre_start(self):
             c = self.spawn(child_cls)
@@ -1610,11 +1589,7 @@ def test_error_is_escalated_if_supervision_raises_exception():
         spawn(Supervisor)
 
 
-@deferred(timeout=None)
-@inlineCallbacks
 def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
-    yield
-
     class Supervisor(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1709,8 +1684,6 @@ def test_stopped_child_is_removed_from_its_parents_list_of_children():
     assert receive_called
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_suspending_suspends_and_resuming_resumes_all_children():
     # Actor.SENDING_IS_ASYNC = True  # so that we could use EvSeq
 
@@ -1810,8 +1783,6 @@ def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the
         p._stop_noevent()
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_queued_messages_are_logged_as_deadletters_after_stop():
     Actor.SENDING_IS_ASYNC = True
 
@@ -1860,13 +1831,11 @@ def test_watch_returns_the_actor_that_was_watched():
     spawn(Parent)
 
 
-@deferred(timeout=0.01)
 def test_watching_running_actor():
     # when spawning is async, the actor is immediately spawn and thus we are watching an already running actor
     return _do_test_watching_actor(async=False)
 
 
-@deferred(timeout=0.01)
 def test_watching_new_actor():
     # when spawning is synchronous, the actor has not yet been spawn at the time we start watching it
     return _do_test_watching_actor(async=True)
@@ -2302,8 +2271,6 @@ def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_
         release()
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_restarting_a_process_reinvokes_its_run_method():
     proc = Slot()
     supervision_invoked = Trigger()
@@ -2340,8 +2307,6 @@ def test_restarting_a_process_reinvokes_its_run_method():
     assert post_stop_called
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts_it():
     proc = Slot()
     restarted = Trigger()
@@ -2401,8 +2366,6 @@ def test_all_queued_messages_are_reported_as_unhandled_on_flush():
         release()
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_process_is_stopped_when_the_coroutine_exits():
     class MyProc(Process):
         def run(self):
@@ -2413,8 +2376,6 @@ def test_process_is_stopped_when_the_coroutine_exits():
     yield p.join()
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_process_is_stopped_when_the_coroutine_exits_during_startup():
     class MyProc(Process):
         def run(self):
@@ -2472,8 +2433,6 @@ def test_process_can_get_messages_selectively():
     assert 321 not in messages and 32.1 in messages
 
 
-@deferred(timeout=0.01)
-@inlineCallbacks
 def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
     process_continued = Latch()
     supervision_invoked = Trigger()
@@ -2598,7 +2557,13 @@ def wrap_globals():
     """Ensures that errors in actors during tests don't go unnoticed."""
 
     def wrap(fn):
-        @functools.wraps(fn)
+        orig_fn = fn
+        if inspect.isgeneratorfunction(fn):
+            fn = inlineCallbacks(fn)
+        if not hasattr(fn, 'is_timed'):
+            fn = timed(timeout=.1)(fn)
+
+        @functools.wraps(orig_fn)
         def ret():
             Guardian.reset()  # nosetests reuses the same interpreter state for better performance
             assert not Guardian._children, Guardian._children
