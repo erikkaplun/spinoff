@@ -28,15 +28,6 @@ def dbg(*args):
     print(file=sys.stderr, *args)
 
 
-def critical(fn, *args, **kwargs):
-    try:
-        return fn(*args, **kwargs)
-    except Exception:
-        print("*** CRITICAL FAILURE:", file=sys.stderr)
-        traceback.print_exc(sys.stderr)
-        sys.exit(1)
-
-
 class NameConflict(Exception):
     pass
 
