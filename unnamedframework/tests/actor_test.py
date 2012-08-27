@@ -2,26 +2,23 @@ from __future__ import print_function
 
 import functools
 import inspect
-import weakref
 import random
 import sys
+import weakref
+
 from nose.tools import eq_
-
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
-
-from unnamedframework.util.testing import assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning
-from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
 
 from unnamedframework.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
-    BadSupervision
-)
-from unnamedframework.util.testing import (
-    MockMessages, assert_one_event, ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,
-)
+    BadSupervision,)
 from unnamedframework.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
-from unnamedframework.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from unnamedframework.actor.process import Process
+from unnamedframework.actor.supervision import Resume, Restart, Stop, Escalate, Default
+from unnamedframework.util.pattern_matching import ANY, IS_INSTANCE
+from unnamedframework.util.testing import (
+    assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
+    ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,)
 from unnamedframework.util.testing.common import timed
 
 
