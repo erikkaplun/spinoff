@@ -108,7 +108,7 @@ class Counter(Holder):
         return self.value > value
 
     def __repr__(self):
-        return "<Counter:%d>" % (self.value,)
+        return repr(self.value)
 
 
 class EMPTY(object):
@@ -155,6 +155,9 @@ class Slot(Holder):
 
     def __nonzero__(self):
         return self.value is not EMPTY
+
+    def __repr__(self):
+        return repr(self.value)
 
 
 class Trigger(Deferred):
