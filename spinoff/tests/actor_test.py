@@ -435,6 +435,22 @@ def test_suspending():
     assert not message_received
 
 
+def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
+    release = Trigger()
+    after_release = Latch()
+
+    class MyActor(Actor):
+        def pre_start(self):
+            yield release
+            after_release()
+
+    a = spawn(MyActor)
+    assert not after_release
+    a << '_suspend'
+    release()
+    assert not after_release
+
+
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
     release = Trigger()
     message_received = Counter()

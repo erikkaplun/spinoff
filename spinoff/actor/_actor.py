@@ -299,7 +299,7 @@ class Cell(_ActorContainer):
     suspended = False
     tainted = False  # true when init or pre_start failed and the actor is waiting for supervisor decision
     processing_messages = False
-    _ongoing_receive = None
+    _ongoing = None
 
     _ref = None
     _child_name_gen = None
@@ -364,7 +364,7 @@ class Cell(_ActorContainer):
         if message == ('_watched', ANY):
             self._do_watched(message[1])
         # ...except in case of an ongoing receive in which case the suspend-resume event will be seem atomic to the actor
-        elif self._ongoing_receive and message in ('_suspend', '_resume'):
+        elif self._ongoing and message in ('_suspend', '_resume'):
             if message == '_suspend':
                 self._do_suspend()
             else:
@@ -428,9 +428,9 @@ class Cell(_ActorContainer):
         else:
             receive = self.actor.receive
             try:
-                self._ongoing_receive = receive(message)
-                yield self._ongoing_receive
-                del self._ongoing_receive
+                self._ongoing = receive(message)
+                yield self._ongoing
+                del self._ongoing
             except Unhandled:
                 self._unhandled(message)
             except Exception:
@@ -457,7 +457,9 @@ class Cell(_ActorContainer):
         if hasattr(actor, 'pre_start'):
             pre_start = actor.pre_start
             try:
-                yield pre_start()
+                self._ongoing = pre_start()
+                yield self._ongoing
+                del self._ongoing
             except Exception:
                 raise CreateFailed("Actor.pre_start of %s failed" % actor)
 
@@ -506,8 +508,8 @@ class Cell(_ActorContainer):
 
     def _do_suspend(self):
         self.suspended = True
-        if self._ongoing_receive:
-            self._ongoing_receive.pause()
+        if self._ongoing:
+            self._ongoing.pause()
 
         for child in self._children.values():
             child.send('_suspend')
@@ -519,8 +521,8 @@ class Cell(_ActorContainer):
             return self._do_restart()
         else:
             self.suspended = False
-            if self._ongoing_receive:
-                self._ongoing_receive.unpause()
+            if self._ongoing:
+                self._ongoing.unpause()
             for child in self._children.values():
                 child.send('_resume')
 
