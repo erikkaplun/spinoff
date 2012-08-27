@@ -2,8 +2,10 @@ from __future__ import print_function
 
 import functools
 import weakref
+import random
 import sys
 from nose.twistedtools import deferred
+from nose.tools import eq_
 
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
 
@@ -14,9 +16,12 @@ from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
     BadSupervision
 )
-from spinoff.util.testing import MockMessages, assert_one_event, ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot
-from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored
+from spinoff.util.testing import (
+    MockMessages, assert_one_event, ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,
+)
+from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
+from spinoff.actor.process import Process
 
 
 def dbg(*args):
@@ -2090,37 +2095,429 @@ def test_TODO_remotely_spawned_actors_ref_is_registered_eagerly():
 ##
 ## PROCESSES
 
-def test_TODO_processes_run_is_called_right_after_pre_start():
-    pass
+def test_process_run_must_return_a_generator():
+    with assert_raises(TypeError):
+        class MyProc(Process):
+            def run(self):
+                pass
 
 
-def test_TODO_sending_to_a_process_injects_the_message_into_its_coroutine():
-    pass
+def test_processes_run_is_called_when_the_process_is_spawned():
+    run_called = Latch()
+
+    class MyProc(Process):
+        def run(self):
+            run_called()
+            yield
+
+    spawn(MyProc)
+
+    assert run_called
 
 
-def test_TODO_stopping_a_process_throws_generatorexit_into_its_coroutine():
-    pass
+def test_process_run_is_a_coroutine():
+    step1_reached = Latch()
+    release = Trigger()
+    step2_reached = Latch()
+
+    class MyProc(Process):
+        def run(self):
+            step1_reached()
+            yield release
+            step2_reached()
+
+    spawn(MyProc)
+
+    assert step1_reached
+    assert not step2_reached
+
+    release()
+    assert step2_reached
 
 
-def test_TODO_resuming_a_suspended_and_tainted_process_stops_it():
-    pass
+def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
+    release = Trigger()
+    after_release = Latch()
+
+    class MyProc(Process):
+        def run(self):
+            yield release
+            after_release()
+
+    p = spawn(MyProc)
+    assert not after_release
+
+    p << '_suspend'
+    release()
+    assert not after_release
+
+    p << '_resume'
+    assert after_release
 
 
-def test_TODO_process_can_delegate_handling_of_caught_exceptions_to_parent():
-    pass
-    # process_continued = [False]
+def test_process_run_is_cancelled_if_the_actor_is_stopped():
+    exited = Latch()
 
-    # class MyProc(Process):
-    #     def run(self):
-    #         try:
-    #             raise MockException()
-    #         except MockException:
-    #             yield self.escalate()
-    #         process_continued[0] = True
+    class MyProc(Process):
+        def run(self):
+            try:
+                yield self.get()
+            except GeneratorExit:
+                exited()
 
-    # spawn(Parent)
+    p = spawn(MyProc)
+    p._stop_noevent()
+    assert exited
 
-    # assert process_continued[0]
+
+def test_sending_to_a_process_injects_the_message_into_its_coroutine():
+    random_message = 'dummy-%s' % (random.random(),)
+
+    received_message = Slot()
+
+    class MyProc(Process):
+        def run(self):
+            msg = yield self.get()
+            received_message << msg
+
+    p = spawn(MyProc)
+    assert not received_message
+    p << random_message
+
+    assert received_message == random_message
+
+
+def test_getting_two_messages_in_a_row_waits_till_the_next_message_is_received():
+    second_message = Slot()
+    first_message = Slot()
+
+    class MyProc(Process):
+        def run(self):
+            first_message << (yield self.get())
+            second_message << (yield self.get())
+
+    p = spawn(MyProc)
+    p << 'dummy1'
+    eq_(first_message, 'dummy1')
+    assert not second_message
+
+    p << 'dummy2'
+    eq_(second_message, 'dummy2')
+
+
+def test_sending_to_a_process_that_is_processing_a_message_queues_it():
+    first_message_received = Latch()
+    second_message_received = Latch()
+
+    release_proc = Trigger()
+
+    class MyProc(Process):
+        def run(self):
+            yield self.get()
+            first_message_received()
+
+            yield release_proc
+
+            yield self.get()
+            second_message_received()
+
+    p = spawn(MyProc)
+    p << 'dummy'
+    assert first_message_received
+
+    p << 'dummy2'
+    assert not second_message_received
+    release_proc()
+    assert second_message_received
+
+
+def test_errors_in_process_run_before_the_first_get_are_reported_as_startup_errors():
+    class MyProc(Process):
+        def run(self):
+            raise MockException
+            yield self.get()
+
+    with expect_failure(CreateFailed):
+        spawn(MyProc)
+
+    #
+
+    release = Trigger()
+
+    class MyProcWithSlowStartup(Process):
+        def run(self):
+            yield release
+            raise MockException
+
+    spawn(MyProcWithSlowStartup)
+
+    with expect_failure(CreateFailed) as basket:
+        release()
+
+    with assert_raises(MockException):
+        basket[0].raise_original()
+
+
+def test_errors_in_process_while_processing_a_message_are_reported_as_normal_failures():
+    class MyProc(Process):
+        def run(self):
+            yield self.get()
+            raise MockException
+
+    p = spawn(MyProc)
+
+    with expect_failure(MockException):
+        p << 'dummy'
+
+    #
+
+    release = Trigger()
+
+    class MyProcWithSlowStartup(Process):
+        def run(self):
+            yield release
+            yield self.get()
+            raise MockException
+
+    p = spawn(MyProcWithSlowStartup)
+    release()
+    with expect_failure(MockException):
+        p << 'dummy'
+
+
+def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_normal_failures():
+    release = Trigger()
+
+    class MyProc(Process):
+        def run(self):
+            yield self.get()
+            yield release
+            yield self.get()
+            raise MockException
+
+    p = spawn(MyProc)
+    p << 'dummy1'
+    p << 'dummy2'
+    with expect_failure(MockException):
+        release()
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_restarting_a_process_reinvokes_its_run_method():
+    proc = Slot()
+    supervision_invoked = Trigger()
+    restarted = Trigger()
+    post_stop_called = Latch()
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            supervision_invoked()
+            return Restart
+
+        def pre_start(self):
+            proc << self.spawn(MyProc)
+
+    class MyProc(Process):
+        started = 0
+
+        def run(self):
+            MyProc.started += 1
+            if MyProc.started == 2:
+                restarted()
+                return
+            yield self.get()
+            raise MockException
+
+        def post_stop(self):
+            post_stop_called()
+
+    spawn(Parent)
+
+    proc() << 'dummy'
+    yield supervision_invoked
+    yield restarted
+    assert post_stop_called
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts_it():
+    proc = Slot()
+    restarted = Trigger()
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            return Resume
+
+        def pre_start(self):
+            proc << self.spawn(MyProc)
+
+    class MyProc(Process):
+        started = 0
+
+        def run(self):
+            MyProc.started += 1
+            if MyProc.started == 2:
+                restarted()
+                return
+            yield self.get()
+            raise MockException
+
+    spawn(Parent)
+
+    proc() << 'dummy'
+
+    with assert_one_warning():  # reporting is async, so the warning should be emitted at some point as we're waiting
+        yield restarted
+
+
+def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
+    class MyProc(Process):
+        def run(self):
+            try:
+                yield self.get()
+            finally:
+                # this also covers the process trying to yield stuff, e.g. for getting another message
+                raise MockException
+
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        spawn(MyProc)._stop_noevent()
+
+
+def test_all_queued_messages_are_reported_as_unhandled_on_flush():
+    release = Trigger()
+
+    class MyProc(Process):
+        def run(self):
+            yield self.get()
+            yield release
+            self.flush()
+
+    p = spawn(MyProc)
+    p << 'dummy'
+    p << 'should-be-reported-as-unhandled'
+    with assert_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+        release()
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_process_is_stopped_when_the_coroutine_exits():
+    class MyProc(Process):
+        def run(self):
+            yield self.get()
+
+    p = spawn(MyProc)
+    p << 'dummy'
+    yield p.join()
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_process_is_stopped_when_the_coroutine_exits_during_startup():
+    class MyProc(Process):
+        def run(self):
+            yield
+
+    p = spawn(MyProc)
+    yield p.join()
+
+
+def test_process_can_get_messages_selectively():
+    messages = []
+
+    release1 = Trigger()
+    release2 = Trigger()
+
+    class MyProc(Process):
+        def run(self):
+            messages.append((yield self.get(ANY)))
+            messages.append((yield self.get('msg3')))
+            messages.append((yield self.get(ANY)))
+
+            yield release1
+
+            messages.append((yield self.get(IS_INSTANCE(int))))
+
+            yield release2
+
+            messages.append((yield self.get(IS_INSTANCE(float))))
+
+    p = spawn(MyProc)
+    p << 'msg1'
+    eq_(messages, ['msg1'])
+
+    p << 'msg2'
+    eq_(messages, ['msg1'])
+
+    p << 'msg3'
+    eq_(messages, ['msg1', 'msg3', 'msg2'])
+
+    # (process blocked here)
+
+    p << 'not-an-int'
+    release1()
+    assert 'not-an-int' not in messages
+
+    p << 123
+    assert 123 in messages
+
+    # (process blocked here)
+
+    p << 321
+    p << 32.1
+
+    release2()
+    assert 321 not in messages and 32.1 in messages
+
+
+@deferred(timeout=0.01)
+@inlineCallbacks
+def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
+    process_continued = Latch()
+    supervision_invoked = Trigger()
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            assert isinstance(exc, MockException)
+            supervision_invoked()
+            return Restart
+
+        def pre_start(self):
+            self.spawn(Child) << 'invoke'
+
+    class Child(Process):
+        def run(self):
+            # yield self.get()  # put the process into receive mode (i.e. started)
+            try:
+                raise MockException()
+            except MockException:
+                yield self.escalate()
+            process_continued()
+
+    spawn(Parent)
+
+    yield supervision_invoked
+    assert not process_continued
+
+
+def test_optional_process_high_water_mark_emits_an_event_for_every_multiple_of_that_nr_of_msgs_in_the_queue():
+    class MyProc(Process):
+        hwm = 100  # emit warning every 100 pending messages in the queue
+
+        def run(self):
+            yield self.get()  # put in receive mode
+            yield Deferred()  # queue all further messages
+
+    p = spawn(MyProc)
+    p << 'ignore'
+
+    for _ in range(3):
+        for _ in range(99):
+            p << 'dummy'
+        with assert_one_event(HighWaterMarkReached):
+            p << 'dummy'
 
 
 ##

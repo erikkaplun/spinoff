@@ -286,6 +286,7 @@ def default_supervise(exc):
 
 
 class Cell(_ActorContainer):
+    constructed = False
     started = False
     actor = None
     inbox = None
@@ -377,6 +378,7 @@ class Cell(_ActorContainer):
             self.process_messages(force_async=force_async)
 
     def process_messages(self, force_async=False):
+        # dbg("PROCESS-MSGS: already processing? %r" % (self.processing_messages,))
         next_message = self.peek_message()
 
         is_startstop = next_message in ('_start', '_stop')
@@ -384,12 +386,15 @@ class Cell(_ActorContainer):
 
         if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
             if Actor.SENDING_IS_ASYNC or force_async:
+                # dbg("PROCESS-MSGS: async")
                 call_when_idle(self._process_messages)  # TODO: check if there's an already scheduled call to avoid redundant calls
             else:
+                # dbg("PROCESS-MSGS: immediate")
                 self._process_messages()
 
     @inlineCallbacks
     def _process_messages(self):
+        # dbg("-PROCESS-MSGS: suspended? %r" % (self.suspended,))
         try:
             while not self.shutting_down and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume')):
                 self.processing_messages = True
@@ -400,7 +405,7 @@ class Cell(_ActorContainer):
                     #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
                     yield d
                 except Exception:
-                    self.report_to_parent(d)
+                    self.report_to_parent()
                 finally:
                     self.processing_messages = False
         except Exception:
@@ -408,7 +413,7 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _process_one_message(self, message):
-        # rint("PROCESS-ONE: %r => %r" % (message, self), file=sys.stderr)
+        # dbg("PROCESS-ONE: %r => %r" % (message, self))
         if message == '_start':
             yield self._do_start()
         elif message == ('_error', ANY, ANY, ANY):
@@ -450,6 +455,8 @@ class Cell(_ActorContainer):
             actor = factory()
         except Exception:
             raise CreateFailed("Constructing actor with %s failed" % (factory,))
+        else:
+            self.actor = actor
 
         actor._parent = self.parent
         actor._set_cell(self)
@@ -463,17 +470,16 @@ class Cell(_ActorContainer):
             except Exception:
                 raise CreateFailed("Actor.pre_start of %s failed" % actor)
 
-        returnValue(actor)
+        self.constructed = True
 
     @inlineCallbacks
     def _do_start(self):
         try:
-            actor = yield self._construct()
+            yield self._construct()
         except Exception:
             self.tainted = True
             raise
         else:
-            self.actor = actor
             self.started = True
             if self.has_message():
                 self.process_messages()
@@ -507,9 +513,14 @@ class Cell(_ActorContainer):
             raise exc, None, tb
 
     def _do_suspend(self):
+        # dbg("SUSPEND:")
         self.suspended = True
         if self._ongoing:
+            # dbg("SUSPEND: ongoing.pause")
             self._ongoing.pause()
+        if hasattr(self.actor, '_coroutine') and self.actor._coroutine:
+            # dbg("SUSPEND: calling coroutine.pause on", self.actor._coroutine)
+            self.actor._coroutine.pause()
 
         for child in self._children.values():
             child.send('_suspend')
@@ -523,6 +534,9 @@ class Cell(_ActorContainer):
             self.suspended = False
             if self._ongoing:
                 self._ongoing.unpause()
+            if hasattr(self.actor, '_coroutine'):
+                self.actor._coroutine.unpause()
+
             for child in self._children.values():
                 child.send('_resume')
 
@@ -574,7 +588,7 @@ class Cell(_ActorContainer):
         # try:
             self.suspended = True
             yield self._shutdown()
-            self.actor = yield self._construct()
+            yield self._construct()
             self.suspended = False
         # finally:
         #     print("RESTART: ...OK", self.ref(), file=sys.stderr)
@@ -605,19 +619,27 @@ class Cell(_ActorContainer):
             yield self._all_children_stopped
             # dbg("SHUTDOWN: ...children stopped", self.ref())
 
-        if self.actor and hasattr(self.actor, 'post_stop'):
+        if self.constructed and hasattr(self.actor, 'post_stop'):
             try:
                 yield self.actor.post_stop()  # XXX: possibly add `yield` here
             except Exception:
-                _, exc, tb = sys.exc_info()
-                Events.log(ErrorIgnored(self.actor, exc, tb))
+                _ignore_error(self.actor)
+        if hasattr(self.actor, '_coroutine'):
+            # dbg("SHUTDOWN: cancelling coroutine")
+            try:
+                self.actor._Process__shutdown()
+            except Exception:
+                _ignore_error(self.actor)
 
         self.actor = None
         self.shutting_down = False
         # dbg("SHUTDOWN: ...OK: %r" % (self.ref(),))
 
-    def report_to_parent(self, df=None):
-        _, exc, tb = sys.exc_info()
+    def report_to_parent(self, exc_and_tb=None):
+        if not exc_and_tb:
+            _, exc, tb = sys.exc_info()
+        else:
+            exc, tb = exc_and_tb
         try:
             # Events.log(Error(self, e, sys.exc_info()[2])),
             self._do_suspend()
@@ -655,3 +677,8 @@ class Cell(_ActorContainer):
 class Future(Deferred):  # TODO: ActorRefBase or IActorRef or smth
     def send(self, message):
         self.callback(message)
+
+
+def _ignore_error(actor):
+    _, exc, tb = sys.exc_info()
+    Events.log(ErrorIgnored(actor, exc, tb))
