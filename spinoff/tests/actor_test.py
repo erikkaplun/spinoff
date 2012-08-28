@@ -5,14 +5,15 @@ import gc
 import inspect
 import random
 import sys
-import types
 import weakref
 from collections import defaultdict
 
 from nose.tools import eq_
 from nose.twistedtools import deferred
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
+from twisted.python.failure import Failure
 
+import spinoff
 from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
     BadSupervision, ActorRef)
@@ -23,14 +24,16 @@ from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,)
-from spinoff.util.testing.common import timed
+from spinoff.util.testing.common import timeout
 from spinoff.actor.remoting import TheDude
 from spinoff.util.testing.actor import MockRef
 from spinoff.actor.remoting import RemoteActor
-from spinoff.util.async import cancel_all_idle_calls
+from spinoff.util.async import cancel_all_idle_calls, _process_idle_calls, _idle_calls
 from spinoff.util.async import with_timeout
 from spinoff.util.async import Timeout
 from spinoff.util.async import sleep
+from spinoff.util.async import call_when_idle_unless_already
+from spinoff.util.testing.actor import Unclean
 
 
 def dbg(*args):
@@ -330,16 +333,25 @@ def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(
 
 def test_pre_start_can_return_a_Deferred():
     """Pre start can return a Deferred."""
+    mock_d = Deferred()
+    received = Latch()
 
     class MyActor(Actor):
         def pre_start(self):
-            return Deferred()
+            return mock_d
+
+        def receive(self, _):
+            received()  # make sure the deferred in pre_start is actually respected
 
     spawn(MyActor)
 
+    assert not received
+    mock_d.callback(None)
+    yield received
+
 
 def test_pre_start_can_be_a_coroutine():
-    """Pre start can return a Deferred."""
+    """Pre start can be a coroutine."""
     pre_start_called = Latch()
     release = Trigger()
     pre_start_continued = Latch()
@@ -463,6 +475,9 @@ def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
     release()
     assert not after_release
 
+    a << '_resume'
+    assert after_release
+
 
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
     release = Trigger()
@@ -582,7 +597,7 @@ def test_restarting_is_not_possible_on_stopped_actors():
             actor_started()
 
     a = spawn(MyActor)
-    a._stop_noevent()
+    a.stop()
     a << '_restart'
 
     assert actor_started == 1
@@ -716,10 +731,12 @@ def test_actor_is_untainted_after_a_restarting_resume():
             child << self.spawn(Child)
 
         def supervise(self, exc):
-            assert (isinstance(exc, MockException) or
+            if not (isinstance(exc, MockException) or
                     isinstance(exc, CreateFailed) and
-                    isinstance(exc.cause, MockException))
-            return Resume
+                    isinstance(exc.cause, MockException)):
+                return Escalate
+            else:
+                return Resume
 
     class Child(Actor):
         def pre_start(self):
@@ -754,7 +771,7 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete():
             stopped()
 
     a = spawn(MyActor) << 'foo'
-    a._stop_noevent()
+    a.stop()
 
     assert not deferred_cancelled
     assert not stopped
@@ -798,7 +815,7 @@ def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
     assert received == 1
 
     received.reset()
-    a._stop_noevent()
+    a.stop()
     assert not received, "the '_stop' message should not be receivable in the actor"
     with assert_one_event(DeadLetter(a, None)):
         a << None
@@ -811,33 +828,45 @@ def test_stopping_calls_post_stop():
         def post_stop(self):
             post_stop_called()
 
-    spawn(MyActor)._stop_noevent()
+    spawn(MyActor).stop()
     assert post_stop_called
 
 
 def test_stopping_waits_for_post_stop():
-    stop_complete = Trigger()
-    parent_received = Slot()
+    def _do_test(child_cls):
+        class Parent(Actor):
+            def pre_start(self):
+                self.child = self.watch(self.spawn(child_cls))
 
-    class Parent(Actor):
-        def pre_start(self):
-            self.child = self.watch(self.spawn(Child))
+            def receive(self, message):
+                if message == 'stop-child':
+                    self.child.stop()
+                else:
+                    parent_received()
 
-        def receive(self, message):
-            if message == 'stop-child':
-                self.child.stop()
-            else:
-                parent_received << message
+        a = spawn(Parent)
+        a << 'stop-child'
+        assert not parent_received
+        stop_complete()
+        assert parent_received
 
-    class Child(Actor):
+    class ChildWithDeferredPostStop(Actor):
         def post_stop(self):
             return stop_complete
 
-    a = spawn(Parent)
-    a << 'stop-child'
-    assert not parent_received
-    stop_complete()
-    assert parent_received
+    stop_complete = Trigger()
+    parent_received = Latch()
+
+    _do_test(ChildWithDeferredPostStop)
+
+    class ChildWithCoroutinePostStop(Actor):
+        def post_stop(self):
+            yield stop_complete
+
+    stop_complete = Trigger()
+    parent_received = Latch()
+
+    _do_test(ChildWithCoroutinePostStop)
 
 
 def test_actor_is_not_stopped_until_its_children_are_stopped():
@@ -856,7 +885,7 @@ def test_actor_is_not_stopped_until_its_children_are_stopped():
             return stop_complete
 
     a = spawn(Parent)
-    a._stop_noevent()
+    a.stop()
     assert not parent_stopped
     stop_complete()
     assert parent_stopped
@@ -901,7 +930,7 @@ def test_error_reports_to_a_stopping_actor_are_ignored():
 
     p = spawn(Parent)
     child() << 'dummy'
-    p._stop_noevent()
+    p.stop()
     assert not post_stop_called
     with expect_failure(MockException):
         release_child()
@@ -921,7 +950,7 @@ def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_def
 
     a = spawn(MyActor)
     a << None
-    a._stop_noevent()
+    a.stop()
     assert not canceller_called
     assert not stopped
     mock_d.callback(None)
@@ -933,7 +962,7 @@ def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
 
     class MyActor(Actor):
         def pre_start(self):
-            self.ref._stop_noevent()
+            self.ref.stop()
 
         def receive(self, message):
             message_received()
@@ -994,7 +1023,7 @@ def test_actors_are_garbage_collected_on_termination():
     ac = Guardian.spawn(MyActor)
     assert not del_called
 
-    ac._stop_noevent()
+    ac.stop()
 
     gc.collect()
     assert del_called
@@ -1005,7 +1034,7 @@ def test_cells_are_garbage_collected_on_termination():
 
     cell = weakref.ref(ac.target)
     assert cell()
-    ac._stop_noevent()
+    ac.stop()
 
     gc.collect()
     assert not cell()
@@ -1013,7 +1042,7 @@ def test_cells_are_garbage_collected_on_termination():
 
 def test_messages_to_dead_actors_are_sent_to_dead_letters():
     a = Guardian.spawn(Actor)
-    a._stop_noevent()
+    a.stop()
 
     with assert_one_event(DeadLetter(a, 'should-end-up-as-letter')):
         a << 'should-end-up-as-letter'
@@ -1650,8 +1679,6 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
     with assert_raises(MockException):
         basket[0].raise_original()
 
-    dbg("OK")
-
 
 def test_TODO_baseexceptions_are_also_propagated_through_the_hierarchy():
     pass
@@ -1775,19 +1802,17 @@ def test_stopping_stops_children():
     child_stopped = Latch()
 
     p = spawn(Parent)
-    p._stop_noevent()
+    p.stop()
 
     assert child_stopped
 
 
-# TODOOOOOOOOOOOOOOOOOOOOO
 def test_stopping_parent_from_child():
     child = Slot()
     started = Counter()
 
     class PoorParent(Actor):
         def supervise(self, _):
-            dbg("*** supervise")
             return Restart
 
         def pre_start(self):
@@ -1807,14 +1832,11 @@ def test_stopping_parent_from_child():
 
         def receive(self, _):
             # invoke the parent's supervision
-            dbg("*** raising")
             raise MockException
 
     parent = spawn(PoorParent)
     child() << 'begin-conspiracy'
-    dbg("*** now waiting for parent to die")
     yield with_timeout(0.01, parent.join())
-    dbg("*** exiting")
 
 
 def test_restarting_stops_children():
@@ -1859,7 +1881,7 @@ def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the
     p = spawn(Parent)
 
     with assert_one_event(DeadLetter(ANY, ANY)):
-        p._stop_noevent()
+        p.stop()
 
 
 def test_queued_messages_are_logged_as_deadletters_after_stop():
@@ -1869,8 +1891,7 @@ def test_queued_messages_are_logged_as_deadletters_after_stop():
 
     a = spawn(Actor)
 
-    dbg("*** stopping actor")
-    a._stop_noevent()
+    a.stop()
 
     a << 'dummy'
 
@@ -1945,7 +1966,7 @@ def _do_test_watching_actor(async=False):
 
     assert not message_receieved.called
 
-    watchee._stop_noevent()
+    watchee.stop()
     assert (yield message_receieved) == ('terminated', watchee)
 
 
@@ -1961,14 +1982,14 @@ def test_watching_self_is_noop_or_warning():
             assert False, message
 
     with assert_one_warning():
-        spawn(MyActor)._stop_noevent()
+        spawn(MyActor).stop()
 
     self_ok = True
     with assert_no_warnings():
         a = spawn(MyActor)
 
     dead_letter_emitted_d = Events.consume_one(DeadLetter)
-    a._stop_noevent()
+    a.stop()
     assert not dead_letter_emitted_d.called, dead_letter_emitted_d.result
 
 
@@ -1995,7 +2016,7 @@ def test_termination_message_contains_ref_that_forwards_to_deadletters():
     watchee = spawn(Actor)
 
     spawn(Watcher)
-    watchee._stop_noevent()
+    watchee.stop()
 
 
 def test_watching_dead_actor():
@@ -2009,7 +2030,7 @@ def test_watching_dead_actor():
             message_receieved()
 
     watchee = spawn(Actor)
-    watchee._stop_noevent()
+    watchee.stop()
 
     spawn(Watcher)
 
@@ -2034,7 +2055,7 @@ def test_watching_dying_actor():
             yield release_watchee
 
     watchee = spawn(SlowWatchee)
-    watchee._stop_noevent()
+    watchee.stop()
 
     spawn(Watcher)
 
@@ -2052,7 +2073,7 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
             raise Unhandled
 
     watchee = spawn(Actor)
-    watchee._stop_noevent()
+    watchee.stop()
 
     with expect_failure(UnhandledTermination):
         spawn(Watcher)
@@ -2063,7 +2084,7 @@ def test_termination_message_to_dead_actor_is_discarded():
         def pre_start(self):
             child = self.watch(self.spawn(Actor))
             child.stop()
-            self.ref._stop_noevent()
+            self.ref.stop()
 
     d = Events.consume_one(DeadLetter)
     spawn(Parent)
@@ -2072,12 +2093,12 @@ def test_termination_message_to_dead_actor_is_discarded():
 
 def test_system_messages_to_dead_actorrefs_are_discarded():
     a = spawn(Actor)
-    a._stop_noevent()
+    a.stop()
 
     for event in ['_stop', '_suspend', '_resume', '_restart']:
         d = Events.consume_one(DeadLetter)
         a << event
-        assert not d.called, "message %r sent to a dead actor should be discarded" % event
+        assert not d.called, "message %r sent to a dead actor should be discarded" % (event,)
         d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
@@ -2091,7 +2112,7 @@ def test_termination_message_to_dead_actorref_is_discarded():
     class Parent(Actor):
         def pre_start(self):
             self.watch(self.spawn(Child))
-            self.ref._stop_noevent()
+            self.ref.stop()
 
     d = Events.consume_one(DeadLetter)
     spawn(Parent)
@@ -2315,7 +2336,7 @@ def test_process_run_is_cancelled_if_the_actor_is_stopped():
                 exited()
 
     p = spawn(MyProc)
-    p._stop_noevent()
+    p.stop()
     assert exited
 
 
@@ -2384,7 +2405,7 @@ def test_errors_in_process_run_before_the_first_get_are_reported_as_startup_erro
     class MyProc(Process):
         def run(self):
             raise MockException
-            yield self.get()
+            yield
 
     with expect_failure(CreateFailed):
         spawn(MyProc)
@@ -2505,7 +2526,6 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts
             MyProc.started += 1
             if MyProc.started == 2:
                 restarted()
-                dbg("*** after restarted()")
                 return
             yield self.get()
             raise MockException
@@ -2516,7 +2536,6 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts
 
     with assert_one_warning():  # reporting is async, so the warning should be emitted at some point as we're waiting
         yield restarted
-        dbg("*** ...restart signal caught")
 
 
 def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
@@ -2529,7 +2548,7 @@ def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_
                 raise MockException
 
     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        spawn(MyProc)._stop_noevent()
+        spawn(MyProc).stop()
 
 
 def test_all_queued_messages_are_reported_as_unhandled_on_flush():
@@ -2630,7 +2649,7 @@ def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
 
     class Child(Process):
         def run(self):
-            # yield self.get()  # put the process into receive mode (i.e. started)
+            yield self.get()  # put the process into receive mode (i.e. started)
             try:
                 raise MockException()
             except MockException:
@@ -2641,6 +2660,33 @@ def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
 
     yield supervision_invoked
     assert not process_continued
+    yield sleep(0)
+
+
+def test_attempt_to_delegate_an_exception_during_startup_instead_fails_the_actor_immediately():
+    started = Counter()
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            assert isinstance(exc, CreateFailed)
+            return Resume  # should cause a restart instead
+
+        def pre_start(self):
+            self.spawn(Child)
+
+    class Child(Process):
+        def run(self):
+            started()
+            if started == 1:
+                try:
+                    raise MockException()
+                except MockException:
+                    yield self.escalate()
+
+    with swallow_one_warning():
+        spawn(Parent)
+
+    assert started == 2
 
 
 def test_optional_process_high_water_mark_emits_an_event_for_every_multiple_of_that_nr_of_msgs_in_the_queue():
@@ -2734,24 +2780,18 @@ def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 
 # SUPPORT
 
-
 def wrap_globals():
     """Ensures that errors in actors during tests don't go unnoticed."""
 
     def wrap(fn):
-        orig_fn = fn
-
         if inspect.isgeneratorfunction(fn):
             fn = inlineCallbacks(fn)
 
-        # if not hasattr(fn, 'is_timed'):
-        #     fn = timed(timeout=.1)(fn)
-
-        @deferred(timeout=None)
+        @functools.wraps(fn)
+        @deferred(timeout=fn.timeout if hasattr(fn, 'timeout') else None)
         @inlineCallbacks
-        @functools.wraps(orig_fn)
         def ret():
-            dbg("\n============================================\n")
+            # dbg("\n============================================\n")
             Guardian.reset()  # nosetests reuses the same interpreter state for better performance
             assert not Guardian._children, Guardian._children
 
@@ -2759,53 +2799,48 @@ def wrap_globals():
 
             Events.reset()
 
-            try:
-                with ErrorCollector():
+            with ErrorCollector():
+                try:
                     yield fn()
-            finally:
-                dbg("TESTWRAP: ------------------------- cleaning up")
-                if Guardian._children:
-                    dbg("TESTWRAP: killing toplevel actors: %s" % ', '.join(repr(x) for x in Guardian._children.values()))
-                    for actor in Guardian._children.values():
-                        dbg("TESTWRAP: stopping...", actor)
-                        actor.stop()
-                        dbg("TESTWRAP: joining...", actor, actor.target)
-                        # if not actor.target:
-                        #     import pdb; pdb.set_trace()
-                        try:
-                            yield with_timeout(.25, actor.join())
-                        except Timeout:
-                            dbg("TESTWRAP: actor %r refused to stop" % (actor,))
-                            # TODO: force-stop
-                        dbg("TESTWRAP: ...OK", actor)
+                finally:
+                    # dbg("TESTWRAP: ------------------------- cleaning up")
 
-                del gc.garbage[:]
-                gc.collect()
+                    Guardian.stop()
 
-                for trash in gc.garbage:
-                    if isinstance(trash, DebugInfo):
-                        dbg("DEBUGINFO: __del__")
-                        trash.__del__()
-                        trash.__dict__.clear()
+                    if _idle_calls:
+                        # dbg("TESTWRAP: processing all remaining scheduled calls...")
+                        _process_idle_calls()
+                        # dbg("TESTWRAP: ...scheduled calls done.")
 
-                cancel_all_idle_calls()
+                    if '__pypy__' not in sys.builtin_module_names:
+                        gc.collect()
+                        for trash in gc.garbage[:]:
+                            if isinstance(trash, DebugInfo):
+                                # dbg("DEBUGINFO: __del__")
+                                if trash.failResult is not None:
+                                    exc = Unclean(trash._getDebugTracebacks())
+                                    trash.__dict__.clear()
+                                    raise exc
+                                gc.garbage.remove(trash)
 
-                del gc.garbage[:]
-                gc.collect()
+                        assert not gc.garbage, "Memory leak detected"
+                        # if gc.garbage:
+                        #     # dbg("GARGABE: detected after %s:" % (fn.__name__,), len(gc.garbage))
+                        #     import objgraph as ob
+                        #     import os
 
-                if gc.garbage:
-                    dbg("GARGABE: produced by %s:" % orig_fn.__name__, len(gc.garbage))
-                    import objgraph as ob
-                    import os
+                        #     def dump_chain(g_):
+                        #         def calling_test(x):
+                        #             if not isframework(x):
+                        #                 return None
+                        #         isframework = lambda x: type(x).__module__.startswith(spinoff.__name__)
+                        #         ob.show_backrefs([g_], filename='backrefs.png', max_depth=100, highlight=isframework)
 
-                    # def dump_chain(g_):
-                    #     ob.show_backrefs([g_], filename='backrefs.png', max_depth=50)
-
-                    # for gen in gc.garbage:
-                    #     dump_chain(gen)
-                    #     dbg("   TESTWRAP: mem-debuggin", gen)
-                    #     import pdb; pdb.set_trace()
-                    #     os.remove('backrefs.png')
+                        #     for gen in gc.garbage:
+                        #         dump_chain(gen)
+                        #         dbg("   TESTWRAP: mem-debuggin", gen)
+                        #         import pdb; pdb.set_trace()
+                        #         os.remove('backrefs.png')
         return ret
 
     for name, value in globals().items():

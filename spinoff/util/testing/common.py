@@ -75,7 +75,7 @@ def assert_not_raises(exc_class=Exception, message=None):
     try:
         yield
     except exc_class as e:
-        raise AssertionError(message or "No exception should have been raised but instead %s was raised" % repr(e))
+        raise AssertionError(message or "No exception should have been raised but instead %s was raised" % (repr(e),))
 
 
 @contextmanager
@@ -154,12 +154,8 @@ def callback_called(d):
     return mock_fn.called
 
 
-def timed(timeout=None):
+def timeout(timeout=None):
     def decorate(fn):
-        def wrapper(*args, **kwargs):
-            return maybeDeferred(fn, *args, **kwargs)
-
-        ret = nose_deferred(timeout)(wrapper)
-        ret.is_timed = True
-        return ret
+        fn.timeout = timeout
+        return fn
     return decorate

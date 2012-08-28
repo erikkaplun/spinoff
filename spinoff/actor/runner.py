@@ -26,13 +26,13 @@ class ActorRunner(Service):
     def startService(self):
         actor_path = self._actor_path = '%s.%s' % (self._actor_cls.__module__, self._actor_cls.__name__)
 
-        log.msg("*** Running: %s" % actor_path)
+        log.msg("*** Running: %s" % (actor_path,))
 
         def start_actor():
             try:
                 self._wrapper = spawn(Props(Wrapper, self._actor_cls), name='wrapper')
             except Exception:
-                print("*** Failed to start wrapper for %s\n" % actor_path, file=sys.stderr)
+                print("*** Failed to start wrapper for %s\n" % (actor_path,), file=sys.stderr)
                 Failure().printTraceback(file=sys.stderr)
                 return
             else:
