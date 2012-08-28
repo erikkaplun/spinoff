@@ -54,6 +54,7 @@ def _process_idle_calls():
             try:
                 fn(*args, **kwargs)
             except Exception:
+                print("*** PANIC: error while processing idle calls", file=sys.stderr)
                 traceback.print_exc(file=sys.stderr)
     finally:
         _processing_idle_calls = False
@@ -71,6 +72,7 @@ def call_when_idle_unless_already(fn, *args, **kwargs):
 
 
 def cancel_all_idle_calls():
+    print("IDLECALL: canelling calls:", [x[0] for x in _idle_calls], file=sys.stderr)
     _idle_calls.clear()
 
 
