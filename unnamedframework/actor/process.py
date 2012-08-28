@@ -9,7 +9,7 @@ import warnings
 from twisted.internet.defer import Deferred, CancelledError
 from txcoroutine import coroutine
 
-from unnamedframework.actor import Actor, ActorType
+from unnamedframework.actor import Actor, ActorType, CreateFailed
 from unnamedframework.actor.events import HighWaterMarkReached, Events
 from unnamedframework.util.async import call_when_idle
 from unnamedframework.util.pattern_matching import ANY
@@ -108,7 +108,7 @@ class Process(Actor):
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:
-            dbg("*** PANIC")
+            # dbg("*** PANIC")
             traceback.print_exc(file=sys.stderr)
 
     def __clear_get_d(self, result):
@@ -121,7 +121,7 @@ class Process(Actor):
         if isinstance(f.value, CancelledError):
             return
 
-        dbg("PROCESS: failure", self)
+        # dbg("PROCESS: failure", self)
         try:
             if self.__pre_start_complete_d:
                 # dbg("PROCESS: failure in pre_start")
@@ -140,22 +140,16 @@ class Process(Actor):
             self._Actor__cell.report_to_parent()
 
     def __handle_complete(self, result):
-        dbg("PROCESS: complete", self)
-        try:
-            # dbg("PROCESS: %r handle_complete deleting self._coroutine" % (self,))
-            del self._coroutine
-        except AttributeError:
-            # dbg("PROCESS: unable to delete self._coroutine with a value of %r" % (self._coroutine,))
-            # traceback.print_stack(file=sys.stderr)
-            raise
-        if result:
-            warnings.warn("Process.run should not return anything--it's ignored")
+        # dbg("PROCESS: complete", self)
+        del self._coroutine
         if self.__pre_start_complete_d:
             self.__pre_start_complete_d.callback(None)
+        if result:
+            warnings.warn("Process.run should not return anything--it's ignored")
         self.stop()
 
     def __shutdown(self):
-        dbg("PROCESS: shutdown", self)
+        # dbg("PROCESS: shutdown", self)
         if self._coroutine:
             self._coroutine.cancel()
         if self.__get_d:
@@ -166,15 +160,23 @@ class Process(Actor):
             self._Actor__cell._unhandled(message)
 
     def escalate(self):
+        # dbg("PROCESS: escalate", repr(sys.exc_info()[1]), self)
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
             raise TypeError("Process.escalate must be called in an exception context")
+        if self.__pre_start_complete_d:
+            # dbg("PROCESS: illegal escalation during process start-up")
+            # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
+            raise CreateFailed("Actor %r failed to start" % (self,))
         ret = Deferred()
         call_when_idle(lambda: (
             self._Actor__cell.report_to_parent((exc, tb)),
             ret.callback(None),
         ))
         return ret
+
+    def __repr__(self):
+        return Actor.__repr__(self).replace('<actor-impl:', '<process-impl:')
 
 
 class PickyDeferred(Deferred):

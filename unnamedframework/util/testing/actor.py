@@ -95,13 +95,13 @@ class ErrorCollector(object):
                         indented_error_reports = ('\n'.join('    ' + line for line in error_report.split('\n') if line)
                                                   for error_report in error_reports)
                         indented_entire_error_report = '\n\n'.join(indented_error_reports)
-                        raise Unclean("There were errors in top-level actors:\n%s" % indented_entire_error_report)
+                        raise Unclean("There were errors in top-level actors:\n%s" % (indented_entire_error_report,))
                     else:
                         (_, exc, tb_formatted), = self.errors
                         print(tb_formatted, file=sys.stderr)
                         raise exc
                 else:
-                    print('\n'.join(error_reports))
+                    print('\n'.join(error_reports), file=sys.stderr)
             # ...otherwise just re-raise the exception to support assert_raises
             else:
                 (_, exc, tb_formatted), = self.errors

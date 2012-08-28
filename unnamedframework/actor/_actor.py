@@ -19,6 +19,8 @@ from unnamedframework.actor.events import UnhandledError, Events, UnhandledMessa
 from unnamedframework.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from unnamedframework.actor.events import SupervisionFailure
 from unnamedframework.util.async import call_when_idle_unless_already
+from unnamedframework.util.async import with_timeout
+from unnamedframework.util.async import Timeout
 
 
 # these messages get special handling from the framework and never reach Actor.receive
@@ -194,10 +196,20 @@ class Guardian(_ActorContainer):
         else:
             Events.log(UnhandledMessage(self, message))
 
+    @inlineCallbacks
     def stop(self):
-        for child in self._children.values():
-            dbg("GUARDIAN: stopping", child)
-            child.target.receive('_stop')
+        # dbg("GUARDIAN: stopping")
+        for actor in Guardian._children.values():
+            # dbg("GUARDIAN: stopping", actor)
+            actor.stop()
+            # dbg("GUARDIAN: joining...", actor, actor.target)
+            try:
+                yield with_timeout(.01, actor.join())
+            except Timeout:
+                # dbg("GUARDIAN: actor %r refused to stop" % (actor,))
+                assert False, "actor %r refused to stop" % (actor,)
+                # TODO: force-stop
+            # dbg("GUARDIAN: ...OK", actor)
 
     def reset(self):
         self._reset()
@@ -218,6 +230,8 @@ class ActorType(abc.ABCMeta):  # ABCMeta to enable Process.run to be @abstractme
             ret.receive = coroutine(ret.receive)
         if hasattr(ret, 'pre_start') and inspect.isgeneratorfunction(ret.pre_start):
             ret.pre_start = coroutine(ret.pre_start)
+        if hasattr(ret, 'post_stop') and inspect.isgeneratorfunction(ret.post_stop):
+            ret.post_stop = coroutine(ret.post_stop)
         return ret
 
 
@@ -369,15 +383,15 @@ class Cell(_ActorContainer):
                 else '(not yet started or already stopped)')
 
     def receive(self, message, force_async=False):
-        dbg("RECV: %r => %r%s%s  queue: %s" % (message, self.ref(),
-                                               ' (stopped)' if self.stopped else '',
-                                               ' (shutting down)' if self.shutting_down else '',
-                                               self._debug_queue()))
+        # dbg("RECV: %r => %r%s%s  queue: %s" % (message, self,
+        #                                        ' (stopped)' if self.stopped else '',
+        #                                        ' (shutting down)' if self.shutting_down else '',
+        #                                        self._debug_queue()))
         if self.stopped:
             return
 
         if self.shutting_down:
-            dbg("RECV: already shutting down...")
+            # dbg("RECV: already shutting down...")
             # the shutting_down procedure is waiting for all children to terminate so we make an exception here
             # and handle the message directly, bypassing the standard message handling logic:
             # NB! DO NOT do this with a running actor--it changes the visible state of the actor
@@ -412,7 +426,7 @@ class Cell(_ActorContainer):
             self.process_messages(force_async=force_async)
 
     def process_messages(self, force_async=False):
-        dbg("PROCESS-MSGS: %r already processing? %r" % (self, self.processing_messages,))
+        # dbg("PROCESS-MSGS: %r already processing? %r" % (self, self.processing_messages,))
         next_message = self.peek_message()
 
         is_startstop = next_message in ('_start', '_stop')
@@ -420,25 +434,25 @@ class Cell(_ActorContainer):
 
         if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
             if Actor.SENDING_IS_ASYNC or force_async:
-                dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
+                # dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
                 call_when_idle_unless_already(self._process_messages)  # TODO: check if there's an already scheduled call to avoid redundant calls
             else:
-                dbg("PROCESS-MSGS: immediate")
+                # dbg("PROCESS-MSGS: immediate")
                 self._process_messages()
-        else:
-            dbg("PROCESS-MSGS: ...returning", self)
+        # else:
+        #     dbg("PROCESS-MSGS: ...returning", self)
 
     @inlineCallbacks
     def _process_messages(self):
-        dbg("-PROCESS-MSGS: %r suspended? %r  has-message? %r" % (self, self.suspended, self.peek_message()))
-        first = True
+        # dbg("-PROCESS-MSGS: %r suspended? %r  has-message? %r" % (self, self.suspended, self.peek_message()))
+        # first = True
         try:
             while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and self.peek_message() == ('_child_terminated', ANY)):
                 message = self.consume_message()
                 self.processing_messages = repr(message)
-                if not first:
-                    dbg("-PROCESS-MSGS: taking next msg %r => %r  queue: %r" % (message, self, self._debug_queue()))
-                first = False
+                # if not first:
+                #     dbg("-PROCESS-MSGS: taking next msg %r => %r  queue: %r" % (message, self, self._debug_queue()))
+                # first = False
                 try:
                     d = self._process_one_message(message)
                     # if isinstance(ret, Deferred) and not self.receive_is_coroutine:
@@ -446,17 +460,17 @@ class Cell(_ActorContainer):
                     yield d
                 except Exception:
                     self.report_to_parent()
-                else:
-                    dbg("-PROCESS-MSGS: ...process_one(%r) terminated %r" % (message, self))
+                # else:
+                #     dbg("-PROCESS-MSGS: ...process_one(%r) terminated %r" % (message, self))
                 finally:
                     self.processing_messages = False
-            dbg("-PROCESS-MSGS: %r ...no more messages (queue: %r)" % (self, self._debug_queue()))
+            # dbg("-PROCESS-MSGS: %r ...no more messages (queue: %r)" % (self, self._debug_queue()))
         except Exception:
             self.report_to_parent()
 
     @inlineCallbacks
     def _process_one_message(self, message):
-        dbg("PROCESS-ONE: %r => %r" % (message, self))
+        # dbg("PROCESS-ONE: %r => %r" % (message, self))
         if message == '_start':
             yield self._do_start()
         elif message == ('_error', ANY, ANY, ANY):
@@ -477,10 +491,10 @@ class Cell(_ActorContainer):
             receive = self.actor.receive
             try:
                 self._ongoing = receive(message)
-                dbg("PROCESS-ONE: receive returned...", self._ongoing, self)
-                dbg("PROCESS-ONE: still processing?", self.processing_messages, self)
+                # dbg("PROCESS-ONE: receive returned...", self._ongoing, self)
+                # dbg("PROCESS-ONE: still processing?", self.processing_messages, self)
                 yield self._ongoing
-                dbg("PROCESS-ONE: ...receive terminated", self)
+                # dbg("PROCESS-ONE: ...receive terminated", self)
                 del self._ongoing
             except Unhandled:
                 self._unhandled(message)
@@ -495,6 +509,7 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _construct(self):
+        # dbg("CONSTRUCT:", self)
         factory = self.factory
 
         try:
@@ -514,9 +529,10 @@ class Cell(_ActorContainer):
                 yield self._ongoing
                 del self._ongoing
             except Exception:
-                raise CreateFailed("Actor.pre_start of %s failed" % actor)
+                raise CreateFailed("Actor failed to start: %s" % (actor,))
 
         self.constructed = True
+        # dbg("CONSTRUCT: ...ok", self)
 
     @inlineCallbacks
     def _do_start(self):
@@ -527,6 +543,7 @@ class Cell(_ActorContainer):
             raise
         else:
             self.started = True
+            # dbg("STARTED:", self)
 
     def _do_supervise(self, child, exc, tb):
         # dbg("SUPERVISE: %r => %r @ %r" % (child, exc, self.ref()))
@@ -572,10 +589,12 @@ class Cell(_ActorContainer):
 
     def _do_resume(self):
         if self.tainted:
-            warnings.warn("Attempted to resume an actor that failed to start; falling back to restarting:\n%s" % ''.join(traceback.format_stack()))
+            # dbg("RESUME: tainted => restarting...")
+            warnings.warn("Attempted to resume an actor that failed to start; falling back to restarting:\n%s" % (''.join(traceback.format_stack()),))
             self.tainted = False
             return self._do_restart()
         else:
+            # dbg("RESUME: resuming...", self)
             self.suspended = False
             if self._ongoing:
                 self._ongoing.unpause()
@@ -584,16 +603,17 @@ class Cell(_ActorContainer):
 
             for child in self._children.values():
                 child.send('_resume')
+        # dbg("RESUME: ...ok", self)
 
     def _do_stop(self):
-        dbg("STOP: %r" % (self.ref(),))
+        # dbg("STOP: %r" % (self,))
         if self._ongoing:
             del self._ongoing
         # del self.watchers
         self._shutdown().addCallback(self._finish_stop)
 
     def _finish_stop(self, _):
-        dbg("FINISH-STOP:", self)
+        # dbg("FINISH-STOP:", self)
         try:
             ref = self.ref()
 
@@ -626,10 +646,10 @@ class Cell(_ActorContainer):
         except Exception:
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
-        dbg("FINISH-STOP: ...stopped!", self)
+        # dbg("FINISH-STOP: ...stopped!", self)
 
     def _do_watched(self, other):
-        dbg("WATCHED: %r <== %r" % (self.ref(), other))
+        # dbg("WATCHED: %r <== %r" % (self, other))
         if self.stopped:
             other << ('terminated', self.ref())
             return
@@ -639,14 +659,12 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _do_restart(self):
-        # dbg("RESTART:", self.ref())
-        # try:
-            self.suspended = True
-            yield self._shutdown()
-            yield self._construct()
-            self.suspended = False
-        # finally:
-        #     print("RESTART: ...OK", self.ref(), file=sys.stderr)
+        # dbg("RESTART:", self)
+        self.suspended = True
+        yield self._shutdown()
+        yield self._construct()
+        self.suspended = False
+        # dbg("RESTART: ...ok", self)
 
     def _do_child_terminated(self, child):
         # TODO: PLEASE OPTIMISE
@@ -663,17 +681,17 @@ class Cell(_ActorContainer):
 
     @inlineCallbacks
     def _shutdown(self):
-        dbg("SHUTDOWN: %r shutting down..." % (self,))
+        # dbg("SHUTDOWN: %r shutting down..." % (self,))
         self.shutting_down = True
 
         if self._children:  # we don't want to do the Deferred magic if there're no babies
             self._all_children_stopped = Deferred()
-            dbg("SHUTDOWN: shutting down children:", self._children.values())
+            # dbg("SHUTDOWN: shutting down children:", self._children.values())
             for child in self._children.values():
                 child.stop()
-            dbg("SHUTDOWN: waiting for all children to stop", self)
+            # dbg("SHUTDOWN: waiting for all children to stop", self)
             yield self._all_children_stopped
-            dbg("SHUTDOWN: ...children stopped", self)
+            # dbg("SHUTDOWN: ...children stopped", self)
 
         if self.constructed and hasattr(self.actor, 'post_stop'):
             try:
@@ -688,7 +706,7 @@ class Cell(_ActorContainer):
 
         self.actor = None
         self.shutting_down = False
-        dbg("SHUTDOWN: ...OK: %r" % (self,))
+        # dbg("SHUTDOWN: ...OK: %r" % (self,))
 
     def report_to_parent(self, exc_and_tb=None):
         if not exc_and_tb:
@@ -727,7 +745,7 @@ class Cell(_ActorContainer):
     def __repr__(self):
         return "<cell:%s@%s%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)),
                                    self.path,
-                                   ' (dead)' if not self.actor else '',)
+                                   (' (%s)' % ('dead' if self.stopped else ('stopping' if self.shutting_down else 'new'))) if not self.actor else '',)
 
 
 # TODO: replace with serializable temporary actors

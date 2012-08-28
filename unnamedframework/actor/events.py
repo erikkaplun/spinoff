@@ -111,6 +111,9 @@ class HighWaterMarkReached(Event, fields('actor', 'count')):
 class Events(object):
     # TODO: add {event type} + {actor / actor path} based subscriptions.
 
+    LOGFILE = sys.stdout
+    ERRFILE = LOGFILE
+
     subscriptions = {}
     consumers = {}
 
@@ -130,7 +133,7 @@ class Events(object):
                     print("Error in event handler:", file=sys.stderr)
                     traceback.print_exc()
         else:
-            print("*** %r" % (event,), file=sys.stderr)
+            print("*** %r" % (event,), file=self.ERRFILE if isinstance(event, Error) else self.LOGFILE)
 
     def subscribe(self, event_type, fn):
         self.subscriptions.setdefault(event_type, []).append(fn)
