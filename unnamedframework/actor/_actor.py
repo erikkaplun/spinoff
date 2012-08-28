@@ -481,8 +481,6 @@ class Cell(_ActorContainer):
             raise
         else:
             self.started = True
-            if self.has_message():
-                self.process_messages()
 
     def _do_supervise(self, child, exc, tb):
         # dbg("SUPERVISE: %r => %r @ %r" % (child, exc, self.ref()))
