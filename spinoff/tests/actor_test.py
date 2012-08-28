@@ -5,11 +5,13 @@ import gc
 import inspect
 import random
 import sys
+import types
 import weakref
 from collections import defaultdict
 
 from nose.tools import eq_
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError
+from nose.twistedtools import deferred
+from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
 
 from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
@@ -25,6 +27,10 @@ from spinoff.util.testing.common import timed
 from spinoff.actor.remoting import TheDude
 from spinoff.util.testing.actor import MockRef
 from spinoff.actor.remoting import RemoteActor
+from spinoff.util.async import cancel_all_idle_calls
+from spinoff.util.async import with_timeout
+from spinoff.util.async import Timeout
+from spinoff.util.async import sleep
 
 
 def dbg(*args):
@@ -171,7 +177,8 @@ def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferre
         receive_called.reset()
 
         release = Trigger()
-        triggers[:] = [Trigger(), release]
+        final = Trigger()
+        triggers[:] = [final, release]
 
         a = spawn(actor_cls)
         a << None << None
@@ -179,6 +186,8 @@ def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferre
 
         release()
         assert receive_called == 2
+
+        final()
 
     class ActorWithImplicitCoroutine(Actor):
         def receive(self, message):
@@ -499,6 +508,23 @@ def test_suspending_while_receive_is_blocked_pauses_the_receive():
 
     a << '_resume'
     assert after_release_reached
+
+
+def test_suspending_while_already_suspended():
+    """test_suspending_while_already_suspended
+
+    This can happen when an actor is suspended and then its parent gets suspended.
+
+    """
+    message_received = Latch()
+
+    class DoubleSuspendingActor(Actor):
+        def receive(self, msg):
+            message_received()
+
+    a = spawn(DoubleSuspendingActor)
+    a << '_suspend' << '_suspend' << '_resume' << 'dummy'
+    assert message_received
 
 
 def test_TODO_stopping():
@@ -918,6 +944,14 @@ def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
         a << 'dummy'
 
     assert not message_received
+
+
+def test_stop_message_received_twice_is_ignored():
+    a = spawn(Actor)
+    a.send('_stop', force_async=True)
+    a.send('_stop', force_async=True)
+    yield sleep(0.01)
+    yield a.join()
 
 
 def test_TODO_poisonpill():
@@ -1616,6 +1650,8 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
     with assert_raises(MockException):
         basket[0].raise_original()
 
+    dbg("OK")
+
 
 def test_TODO_baseexceptions_are_also_propagated_through_the_hierarchy():
     pass
@@ -1744,6 +1780,43 @@ def test_stopping_stops_children():
     assert child_stopped
 
 
+# TODOOOOOOOOOOOOOOOOOOOOO
+def test_stopping_parent_from_child():
+    child = Slot()
+    started = Counter()
+
+    class PoorParent(Actor):
+        def supervise(self, _):
+            dbg("*** supervise")
+            return Restart
+
+        def pre_start(self):
+            child << self.spawn(EvilChild)
+
+    class EvilChild(Actor):
+        def pre_start(self):
+            started()
+            if started == 2:
+                # this is the result of the `Restart` above, which means the parent is currently processing `_error`;
+                # so we're going to deceive the parent and kill it by its own child!
+
+                self._parent.stop()  # this will queue a `_stop` in the parent's queue
+                self.stop()  # this will queue `_child_terminated` in the parent's queue on top of `_stop`
+
+                # the parent is still processing `_error`
+
+        def receive(self, _):
+            # invoke the parent's supervision
+            dbg("*** raising")
+            raise MockException
+
+    parent = spawn(PoorParent)
+    child() << 'begin-conspiracy'
+    dbg("*** now waiting for parent to die")
+    yield with_timeout(0.01, parent.join())
+    dbg("*** exiting")
+
+
 def test_restarting_stops_children():
     started = Counter()
 
@@ -1796,6 +1869,7 @@ def test_queued_messages_are_logged_as_deadletters_after_stop():
 
     a = spawn(Actor)
 
+    dbg("*** stopping actor")
     a._stop_noevent()
 
     a << 'dummy'
@@ -2431,6 +2505,7 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts
             MyProc.started += 1
             if MyProc.started == 2:
                 restarted()
+                dbg("*** after restarted()")
                 return
             yield self.get()
             raise MockException
@@ -2441,6 +2516,7 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts
 
     with assert_one_warning():  # reporting is async, so the warning should be emitted at some point as we're waiting
         yield restarted
+        dbg("*** ...restart signal caught")
 
 
 def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
@@ -2664,13 +2740,18 @@ def wrap_globals():
 
     def wrap(fn):
         orig_fn = fn
+
         if inspect.isgeneratorfunction(fn):
             fn = inlineCallbacks(fn)
-        if not hasattr(fn, 'is_timed'):
-            fn = timed(timeout=.1)(fn)
 
+        # if not hasattr(fn, 'is_timed'):
+        #     fn = timed(timeout=.1)(fn)
+
+        @deferred(timeout=None)
+        @inlineCallbacks
         @functools.wraps(orig_fn)
         def ret():
+            dbg("\n============================================\n")
             Guardian.reset()  # nosetests reuses the same interpreter state for better performance
             assert not Guardian._children, Guardian._children
 
@@ -2678,8 +2759,53 @@ def wrap_globals():
 
             Events.reset()
 
-            with ErrorCollector():
-                fn()
+            try:
+                with ErrorCollector():
+                    yield fn()
+            finally:
+                dbg("TESTWRAP: ------------------------- cleaning up")
+                if Guardian._children:
+                    dbg("TESTWRAP: killing toplevel actors: %s" % ', '.join(repr(x) for x in Guardian._children.values()))
+                    for actor in Guardian._children.values():
+                        dbg("TESTWRAP: stopping...", actor)
+                        actor.stop()
+                        dbg("TESTWRAP: joining...", actor, actor.target)
+                        # if not actor.target:
+                        #     import pdb; pdb.set_trace()
+                        try:
+                            yield with_timeout(.25, actor.join())
+                        except Timeout:
+                            dbg("TESTWRAP: actor %r refused to stop" % (actor,))
+                            # TODO: force-stop
+                        dbg("TESTWRAP: ...OK", actor)
+
+                del gc.garbage[:]
+                gc.collect()
+
+                for trash in gc.garbage:
+                    if isinstance(trash, DebugInfo):
+                        dbg("DEBUGINFO: __del__")
+                        trash.__del__()
+                        trash.__dict__.clear()
+
+                cancel_all_idle_calls()
+
+                del gc.garbage[:]
+                gc.collect()
+
+                if gc.garbage:
+                    dbg("GARGABE: produced by %s:" % orig_fn.__name__, len(gc.garbage))
+                    import objgraph as ob
+                    import os
+
+                    # def dump_chain(g_):
+                    #     ob.show_backrefs([g_], filename='backrefs.png', max_depth=50)
+
+                    # for gen in gc.garbage:
+                    #     dump_chain(gen)
+                    #     dbg("   TESTWRAP: mem-debuggin", gen)
+                    #     import pdb; pdb.set_trace()
+                    #     os.remove('backrefs.png')
         return ret
 
     for name, value in globals().items():
