@@ -10,7 +10,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, De
 from twisted.internet import reactor, task
 
 
-__all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'cancel_all_idle_calls', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds, reactor=reactor):
@@ -63,6 +63,15 @@ def call_when_idle(fn, *args, **kwargs):
     if not _processing_idle_calls:
         reactor.callLater(0, _process_idle_calls)
     _idle_calls.append((fn, args, kwargs))
+
+
+def call_when_idle_unless_already(fn, *args, **kwargs):
+    if (fn, args, kwargs) not in _idle_calls:
+        call_when_idle(fn, *args, **kwargs)
+
+
+def cancel_all_idle_calls():
+    _idle_calls.clear()
 
 
 class _AfterWrap(object):
