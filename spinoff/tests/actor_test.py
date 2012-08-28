@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import functools
+import gc
 import inspect
 import random
 import sys
@@ -956,6 +957,8 @@ def test_actors_are_garbage_collected_on_termination():
     assert not del_called
 
     ac._stop_noevent()
+
+    gc.collect()
     assert del_called
 
 
@@ -965,6 +968,8 @@ def test_cells_are_garbage_collected_on_termination():
     cell = weakref.ref(ac.target)
     assert cell()
     ac._stop_noevent()
+
+    gc.collect()
     assert not cell()
 
 
