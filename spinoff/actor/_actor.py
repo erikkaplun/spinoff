@@ -73,8 +73,8 @@ class ActorRef(object):
     target = None  # so that .target could be deleted to save memory
 
     @classmethod
-    def remote(cls, path, node, the_dude):
-        proxy = the_dude.make_proxy(path, node)
+    def remote(cls, path, node, hub):
+        proxy = hub.make_proxy(path, node)
         return ActorRef(proxy, path, node)
 
     def __init__(self, target, path, node=None):

@@ -17,7 +17,7 @@ from spinoff.actor import (
     BadSupervision, ActorRef)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
-from spinoff.actor.remoting import TheDude, RemoteActor
+from spinoff.actor.remoting import Hub, RemoteActor
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
@@ -2146,7 +2146,7 @@ class MockTransport(object):
         self.messages.append(msg)
 
     def gotMessage(self, msg):
-        assert False, "TheDude should define gotMessage on the incoming transport"
+        assert False, "Hub should define gotMessage on the incoming transport"
 
 
 def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
@@ -2158,7 +2158,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
     # the sender
     incoming, outgoing = MockTransport(), MockTransport()
-    the_dude = TheDude(incoming, outgoing, nodename='node1')
+    hub = Hub(incoming, outgoing, nodename='node1')
 
     assert outgoing.messages == []
 
@@ -2169,7 +2169,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
         # refs to remote actors:
         node['refs'] = [
-            ActorRef.remote('actor%d' % (i + 1), nodename, the_dude)
+            ActorRef.remote('actor%d' % (i + 1), nodename, hub)
             for i in range(NUM_MSGS)
         ]
 
@@ -2186,24 +2186,24 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
     msgs_on_wire = outgoing.messages
 
     # we don't assert the actual content of the message because it's already in the on-the-wire format (serialized),
-    # so instead we feed it to another instance of TheDude and see if it arrives at the other end intact; this way
-    # TheDude can change the serialization/wire-level protocol format independently of the tests.
+    # so instead we feed it to another instance of Hub and see if it arrives at the other end intact; this way
+    # Hub can change the serialization/wire-level protocol format independently of the tests.
     eq_(msgs_on_wire, [(ANY, IS_INSTANCE(bytes))] * NUM_NODES * NUM_MSGS)
 
     ### END OF SENDER PART--BEGINNING OF RECEIVER PART
 
     # set up the receiving part
     for nodename, node in nodes.items():
-        # TheDude instances for each remote node
+        # Hub instances for each remote node
         incoming, outgoing = MockTransport(), MockTransport()
-        remote_dude = TheDude(incoming, outgoing, nodename=nodename)
-        node['dude'] = remote_dude
+        remote_hub = Hub(incoming, outgoing, nodename=nodename)
+        node['hub'] = remote_hub
         node['incoming'] = incoming
 
-        # mock recepient actors + registration with their TheDude
+        # mock recepient actors + registration with their Hub
         node['receivers'] = [MockRef(ref.path) for ref in node['refs']]
         for i, receiver in enumerate(node['receivers']):
-            remote_dude.register(receiver)
+            remote_hub.register(receiver)
 
     # shuffle the order for good measure:
     msgs_on_wire_in_random_order = msgs_on_wire[:]
@@ -2219,20 +2219,20 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
 
 @timeout(None)
-def test_TODO_serializing_actorref_converts_it_to_addr_with_nodename_and_registers_it_with_remoting():
-    dude1_outgoing = MockTransport()
-    dude1 = TheDude(incoming=MockTransport(), outgoing=dude1_outgoing, nodename='node1')
+def test_TODO_serializing_actorref_converts_it_to_addr_with_nodename_and_registers_it_with_hub():
+    hub1_outgoing = MockTransport()
+    hub1 = Hub(incoming=MockTransport(), outgoing=hub1_outgoing, nodename='node1')
 
     local_actor = ActorRef(None, 'actor1', 'node1')
-    remote_ref = ActorRef.remote('actor2', 'node2', dude1)
+    remote_ref = ActorRef.remote('actor2', 'node2', hub1)
     remote_ref.send(local_actor)
 
-    dude2_incoming = MockTransport()
-    dude2 = TheDude(incoming=dude2_incoming, outgoing=MockTransport(), nodename='node2')
+    hub2_incoming = MockTransport()
+    hub2 = Hub(incoming=hub2_incoming, outgoing=MockTransport(), nodename='node2')
     remote_actor = MockRef('actor2')
-    dude2.register(remote_actor)
+    hub2.register(remote_actor)
 
-    [dude2_incoming.gotMessage(msg) for _, msg in dude1_outgoing.messages]
+    [hub2_incoming.gotMessage(msg) for _, msg in hub1_outgoing.messages]
 
     eq_(remote_actor.messages, [ActorRef(IS_INSTANCE(RemoteActor), 'actor1', 'node1')])
 
