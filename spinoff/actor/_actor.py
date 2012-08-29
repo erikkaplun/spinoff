@@ -103,7 +103,7 @@ class ActorRef(object):
         return self
 
     def __repr__(self):
-        return '<actor%s:%s>' % ((':%s' % type(self.target.actor).__name__ if self.target else '<dead>'), self.path)
+        return '<%s>' % (self.path,) if not self.node else '<%s/%s>' % (self.node, self.path)
 
     def stop(self):
         """Shortcut for `ActorRef.send('_stop')`"""
