@@ -1,3 +1,4 @@
+# coding: utf-8
 from __future__ import print_function
 
 import abc
@@ -305,6 +306,11 @@ class Props(object):
 
     def __call__(self):
         return self.cls(*self.args, **self.kwargs)
+
+    def __repr__(self):
+        args = ', '.join(repr(x) for x in self.args)
+        kwargs = ', '.join('%s=%r' % x for x in self.kwargs.items())
+        return '<props:%s(%s%s)>' % (type(self.cls).__name__, args, ', ' + kwargs if args else kwargs)
 
 
 def _do_spawn(parent, factory, path):
