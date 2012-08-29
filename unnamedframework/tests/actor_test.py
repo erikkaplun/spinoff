@@ -2226,7 +2226,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
             for receiver, msg_sent in zip(node['receivers'], node['msgs']))
 
 
-@timed(None)
+@timeout(None)
 def test_TODO_serializing_actorref_converts_it_to_addr_with_nodename_and_registers_it_with_remoting():
     dude1_outgoing = MockTransport()
     dude1 = TheDude(incoming=MockTransport(), outgoing=dude1_outgoing, nodename='node1')
