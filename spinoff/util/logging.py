@@ -4,6 +4,7 @@ from __future__ import print_function
 import inspect
 import os
 import sys
+import traceback
 
 
 BLUE = '\x1b[1;34m'
@@ -15,12 +16,14 @@ DARK_RED = '\x1b[0;31m'
 
 RESET_COLOR = '\x1b[0m'
 
+YELLOW = '\x1b[1;33m'
+
+BLINK = '\x1b[5;31m'
+
 
 class Logging(object):
     OUTFILE = sys.stderr
     LEVEL = 0
-
-    _ljust1 = 20
 
     def dbg(self, *args, **kwargs):
         self._write(0, *args, **kwargs)
@@ -28,8 +31,8 @@ class Logging(object):
     def dbg1(self, *args, **kwargs):
         self._write(0, end='', *args, **kwargs)
 
-    def dbg2(self, *args, **kwargs):
-        self._write(0, end='.', *args, **kwargs)
+    # def dbg2(self, *args, **kwargs):
+    #     self._write(0, end='.', *args, **kwargs)
 
     def dbg3(self, *args, **kwargs):
         self._write(0, end='\n', *args, **kwargs)
@@ -37,8 +40,14 @@ class Logging(object):
     def log(self, *args, **kwargs):
         self._write(1, *args, **kwargs)
 
+    def fail(self, *args, **kwargs):
+        self._write(5, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+
     def err(self, *args, **kwargs):
-        self._write(5, *args, **kwargs)
+        self._write(7, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+
+    def panic(self, *args, **kwargs):
+        self._write(9, *((RED,) + args + (RESET_COLOR,)), **kwargs)
 
     _pending_end = False
 
@@ -61,20 +70,27 @@ class Logging(object):
                     if isinstance(caller_name, unicode):
                         caller_name = caller_name.encode('utf8')
                 else:
-                    caller_name += ':'
+                    caller_name = caller_name.replace('_', '-') + ':'
+                caller_name = YELLOW + caller_name.upper() + RESET_COLOR
 
-                logstr = self.logstring()
+                logstr = CYAN + self.logstring() + RESET_COLOR
 
-                statestr = ' '.join(k for k, v in self.logstate().items() if v)
+                statestr = GREEN + ' '.join(k for k, v in self.logstate().items() if v) + RESET_COLOR
 
                 logcomment = ''
                 if kwargs.get('end') != '':
                     logcomment = self._get_logcomment()
 
-                print("%s:%s %s  %s  %s" % (file, lineno, logstr, statestr, caller_name.upper().replace('_', '-')),
+                loc = "%s:%s" % (file, lineno)
+                if level >= 9:  # blink for panics
+                    loc = BLINK + loc + RESET_COLOR
+
+                print("%s %s  %s  %s" %
+                      (loc, logstr, statestr, caller_name),
                       file=self.OUTFILE, *(args + (logcomment,)), **kwargs)
         except Exception:
-            print("!!%d: (logger failure)" % (level,), file=self.OUTFILE, *args, **kwargs)
+            print("!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
+            traceback.print_exc()
 
     def logstring(self):
         return repr(self).strip('<>')
