@@ -11,10 +11,9 @@ import weakref
 from collections import deque
 from itertools import count, chain
 
-from twisted.internet.defer import inlineCallbacks, returnValue, Deferred
+from twisted.internet.defer import inlineCallbacks, Deferred
 from txcoroutine import coroutine
 
-from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.actor.events import UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default

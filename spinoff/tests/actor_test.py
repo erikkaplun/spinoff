@@ -11,29 +11,21 @@ from collections import defaultdict
 from nose.tools import eq_
 from nose.twistedtools import deferred
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
-from twisted.python.failure import Failure
 
-import spinoff
 from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
     BadSupervision, ActorRef)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
+from spinoff.actor.remoting import TheDude, RemoteActor
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
+from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,)
+from spinoff.util.testing.actor import MockRef, Unclean
 from spinoff.util.testing.common import timeout
-from spinoff.actor.remoting import TheDude
-from spinoff.util.testing.actor import MockRef
-from spinoff.actor.remoting import RemoteActor
-from spinoff.util.async import cancel_all_idle_calls, _process_idle_calls, _idle_calls
-from spinoff.util.async import with_timeout
-from spinoff.util.async import Timeout
-from spinoff.util.async import sleep
-from spinoff.util.async import call_when_idle_unless_already
-from spinoff.util.testing.actor import Unclean
 
 
 def dbg(*args):
