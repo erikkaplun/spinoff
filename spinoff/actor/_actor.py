@@ -782,9 +782,8 @@ class Cell(_ActorContainer, Logging):
         return self._child_name_gen.next()
 
     def __repr__(self):
-        return "<cell:%s@%s%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)),
-                                   self.path,
-                                   (' (%s)' % ('dead' if self.stopped else ('stopping' if self.shutting_down else 'new'))) if not self.actor else '',)
+        return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)),
+                                 self.path,)
 
 
 # TODO: replace with serializable temporary actors

@@ -179,7 +179,7 @@ class Process(Actor, Logging):
         return ret
 
     def __repr__(self):
-        return Actor.__repr__(self).replace('<actor-impl:', '<process-impl:')
+        return Actor.__repr__(self).replace('<actor-impl:', '<proc-impl:')
 
 
 class PickyDeferred(Deferred):
