@@ -1,3 +1,4 @@
+# coding: utf-8
 from __future__ import print_function
 
 import abc
@@ -13,6 +14,7 @@ from spinoff.actor import Actor, ActorType, CreateFailed
 from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import ANY
+from spinoff.util.logging import Logging, logstring
 
 
 def dbg(*args):
@@ -42,7 +44,7 @@ class ProcessType(ActorType):
 #     make sure nobody gets tempted to access that stuff.
 #  2) access private members of the Actor class because that's the most (memory) efficient way and Process really would
 #     be a friend class of Actor if Python had such thing.
-class Process(Actor):
+class Process(Actor, Logging):
     __metaclass__ = ProcessType
 
     hwm = 10000  # default high water mark
@@ -59,7 +61,7 @@ class Process(Actor):
         yield
 
     def pre_start(self):
-        # dbg("PROCESS: started")
+        self.dbg()
         self.__pre_start_complete_d = Deferred()
         try:
             self._coroutine = self.run()
@@ -67,8 +69,9 @@ class Process(Actor):
             self._coroutine.addCallback(self.__handle_complete)
             if self._coroutine:
                 self._coroutine.addErrback(self.__handle_failure)
-            # dbg("PROCESS: waiting for start to complete")
+            self.dbg("...waiting for ready...")
             yield self.__pre_start_complete_d
+            self.dbg(u"✓")
         finally:
             del self.__pre_start_complete_d
 
@@ -87,6 +90,7 @@ class Process(Actor):
             if l and l % self.hwm == 0:
                 Events.log(HighWaterMarkReached(self.ref, l))
 
+    @logstring("get")
     def get(self, match=ANY):
         # dbg("PROCESS: get")
         try:
@@ -108,23 +112,22 @@ class Process(Actor):
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:
-            # dbg("*** PANIC")
-            traceback.print_exc(file=sys.stderr)
+            self.panic(traceback.format_exc(file=sys.stderr))
 
     def __clear_get_d(self, result):
         self.__get_d = None
         return result
 
     def __handle_failure(self, f):
-        # dbg("PROCESS: %r handle_failure deleting self._coroutine" % (self,))
+        # self.dbg("deleting self._coroutine")
         del self._coroutine
         if isinstance(f.value, CancelledError):
             return
 
-        # dbg("PROCESS: failure", self)
+        # self.fail()
         try:
             if self.__pre_start_complete_d:
-                # dbg("PROCESS: failure in pre_start")
+                # self.fail("failure during start")
                 self.__pre_start_complete_d.errback(f)
             else:
                 try:
@@ -133,14 +136,14 @@ class Process(Actor):
                     # XXX: seems like a hack but should be safe;
                     # hard to do it better without convoluting `Actor`
                     self._Actor__cell.tainted = True
-                    # dbg("PROCESS: ...reporting to parent")
+                    # self.dbg("...reporting to parent")
                     self._Actor__cell.report_to_parent()
         except Exception:
-            # dbg("PROCESS: failure in handle_faiure")
+            # self.err("failure in handle_faiure")
             self._Actor__cell.report_to_parent()
 
     def __handle_complete(self, result):
-        # dbg("PROCESS: complete", self)
+        # self.dbg()
         del self._coroutine
         if self.__pre_start_complete_d:
             self.__pre_start_complete_d.callback(None)
@@ -149,7 +152,7 @@ class Process(Actor):
         self.stop()
 
     def __shutdown(self):
-        # dbg("PROCESS: shutdown", self)
+        # self.dbg()
         if self._coroutine:
             self._coroutine.cancel()
         if self.__get_d:
@@ -160,12 +163,12 @@ class Process(Actor):
             self._Actor__cell._unhandled(message)
 
     def escalate(self):
-        # dbg("PROCESS: escalate", repr(sys.exc_info()[1]), self)
+        # self.fail(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
             raise TypeError("Process.escalate must be called in an exception context")
         if self.__pre_start_complete_d:
-            # dbg("PROCESS: illegal escalation during process start-up")
+            # self.fail("illegal escalation")
             # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
             raise CreateFailed("Actor %r failed to start" % (self,))
         ret = Deferred()
