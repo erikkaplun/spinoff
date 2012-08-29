@@ -21,6 +21,7 @@ from spinoff.actor.events import SupervisionFailure
 from spinoff.util.async import call_when_idle_unless_already
 from spinoff.util.async import with_timeout
 from spinoff.util.async import Timeout
+from spinoff.util.pattern_matching import Matcher
 
 
 # these messages get special handling from the framework and never reach Actor.receive
@@ -89,7 +90,7 @@ class ActorRef(object):
         """
         if self.target:
             self.target.receive(message, force_async=force_async)
-        elif message == ('_watched', ANY):
+        elif ('_watched', ANY) == message:
             message[1].send(('terminated', self))
         elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
             Events.log(DeadLetter(self, message))
@@ -125,7 +126,8 @@ class ActorRef(object):
         return future
 
     def __eq__(self, other):
-        return isinstance(other, ActorRef) and self.path == other.path and self.node == other.node
+        return (isinstance(other, ActorRef) and self.path == other.path and self.node == other.node
+                or isinstance(other, Matcher) and other == self)
 
     def __getstate__(self):
         return {'path': self.path, 'node': self.node}
@@ -186,10 +188,10 @@ class Guardian(_ActorContainer):
         return self
 
     def send(self, message, force_async=False):
-        if message == ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)):
+        if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
             _, sender, exc, tb = message
             Events.log(UnhandledError(sender, exc, tb))
-        elif message == ('_child_terminated', ANY):
+        elif ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
             Events.log(TopLevelActorTerminated(sender))
@@ -383,10 +385,7 @@ class Cell(_ActorContainer):
                 else '(not yet started or already stopped)')
 
     def receive(self, message, force_async=False):
-        # dbg("RECV: %r => %r%s%s  queue: %s" % (message, self,
-        #                                        ' (stopped)' if self.stopped else '',
-        #                                        ' (shutting down)' if self.shutting_down else '',
-        #                                        self._debug_queue()))
+        # dbg("RECV: %r => %r%s%s  queue: %s" % (message, self, ' (stopped)' if self.stopped else '', ' (shutting down)' if self.shutting_down else '', self._debug_queue()))
         if self.stopped:
             return
 
@@ -447,7 +446,7 @@ class Cell(_ActorContainer):
         # dbg("-PROCESS-MSGS: %r suspended? %r  has-message? %r" % (self, self.suspended, self.peek_message()))
         # first = True
         try:
-            while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and self.peek_message() == ('_child_terminated', ANY)):
+            while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and ('_child_terminated', ANY) == self.peek_message()):
                 message = self.consume_message()
                 self.processing_messages = repr(message)
                 # if not first:
@@ -471,20 +470,20 @@ class Cell(_ActorContainer):
     @inlineCallbacks
     def _process_one_message(self, message):
         # dbg("PROCESS-ONE: %r => %r" % (message, self))
-        if message == '_start':
+        if '_start' == message:
             yield self._do_start()
-        elif message == ('_error', ANY, ANY, ANY):
+        elif ('_error', ANY, ANY, ANY) == message:
             _, sender, exc, tb = message
             yield self._do_supervise(sender, exc, tb)
-        elif message == '_stop':
+        elif '_stop' == message:
             self._do_stop()
-        elif message == '_restart':
+        elif '_restart' == message:
             yield self._do_restart()
-        elif message == '_resume':
+        elif '_resume' == message:
             yield self._do_resume()
-        elif message == '_suspend':
+        elif '_suspend' == message:
             self._do_suspend()
-        elif message == ('_child_terminated', ANY):
+        elif ('_child_terminated', ANY) == message:
             _, child = message
             self._do_child_terminated(child)
         else:
@@ -502,7 +501,7 @@ class Cell(_ActorContainer):
                 raise
 
     def _unhandled(self, message):
-        if message == ('terminated', ANY):
+        if ('terminated', ANY) == message:
             raise UnhandledTermination
         else:
             Events.log(UnhandledMessage(self.ref(), message))
@@ -565,11 +564,11 @@ class Cell(_ActorContainer):
             raise BadSupervision("Bad supervisor decision: %s" % (decision,), exc, tb)
 
         # TODO: make these always async?
-        if decision == Resume:
+        if Resume == decision:
             child.send('_resume')
-        elif decision == Restart(ANY, ANY):
+        elif Restart(ANY, ANY) == decision:
             child.send('_restart')
-        elif decision == Stop:
+        elif Stop == decision:
             child.send('_stop')
         else:
             raise exc, None, tb
@@ -619,13 +618,13 @@ class Cell(_ActorContainer):
 
             # TODO: test that system messages are not deadlettered
             for message in self.inbox:
-                if message == ('_error', ANY, ANY, ANY):
+                if ('_error', ANY, ANY, ANY) == message:
                     _, sender, exc, tb = message
                     Events.log(ErrorIgnored(sender, exc, tb))
-                elif message == ('_watched', ANY):
+                elif ('_watched', ANY) == message:
                     _, watcher = message
                     watcher.send(('terminated', ref))
-                elif message != ('terminated', ANY):
+                elif ('terminated', ANY) != message:
                     Events.log(DeadLetter(ref, message))
 
             if self.actor:
@@ -677,6 +676,7 @@ class Cell(_ActorContainer):
         # ix = itms.index((ANY, child))
         # del self._children[itms[ix][0]]
         if self.shutting_down and not self._children:
+            # dbg("CHILD-TERM: signalling all children stopped")
             self._all_children_stopped.callback(None)
 
     @inlineCallbacks
