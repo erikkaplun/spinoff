@@ -52,10 +52,15 @@ class WrappingException(Exception):
 
 
 class CreateFailed(WrappingException):
-    def __init__(self, message):
-        indented_original = '\n'.join('    ' + line for line in traceback.format_exc().split('\n') if line)
-        Exception.__init__(self, "%s:\n%s" % (message, indented_original))
+    def __init__(self, message, actor):
+        Exception.__init__(self)
+        self.tb_fmt = '\n'.join('    ' + line for line in traceback.format_exc().split('\n') if line)
         _, self.cause, self.tb = sys.exc_info()
+        self.actor = actor
+        self.message = message
+
+    def __repr__(self):
+        return 'CreateFailed(%r, %s, %s)' % (self.message, self.actor, repr(self.cause))
 
 
 class BadSupervision(WrappingException):
@@ -541,7 +546,7 @@ class Cell(_ActorContainer, Logging):
             actor = factory()
         except Exception:
             self.fail(u"☹")
-            raise CreateFailed("Constructing actor with %s failed" % (factory,))
+            raise CreateFailed("Constructing actor failed", factory)
         else:
             self.actor = actor
 
@@ -556,7 +561,7 @@ class Cell(_ActorContainer, Logging):
                 del self._ongoing
             except Exception:
                 self.fail(u"☹")
-                raise CreateFailed("Actor failed to start: %s" % (actor,))
+                raise CreateFailed("Actor failed to start", actor)
 
         self.constructed = True
         self.dbg(u"✓")

@@ -170,7 +170,7 @@ class Process(Actor, Logging):
         if self.__pre_start_complete_d:
             # self.fail("illegal escalation")
             # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
-            raise CreateFailed("Actor %r failed to start" % (self,))
+            raise CreateFailed("Actor failed to start", self)
         ret = Deferred()
         call_when_idle(lambda: (
             self._Actor__cell.report_to_parent((exc, tb)),
