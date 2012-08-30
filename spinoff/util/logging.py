@@ -25,6 +25,8 @@ class Logging(object):
     OUTFILE = sys.stderr
     LEVEL = 0
 
+    ENABLE_ONLY = []
+
     def dbg(self, *args, **kwargs):
         self._write(0, *args, **kwargs)
 
@@ -54,6 +56,9 @@ class Logging(object):
     def _write(self, level, *args, **kwargs):
         try:
             if level >= self.LEVEL:
+                if self.ENABLE_ONLY and not any(self.__module__.startswith(x) for x in self.ENABLE_ONLY):
+                    return
+
                 if kwargs.get('end') == '\n':
                     print(' ', file=self.OUTFILE, *(args + (self._get_logcomment(),)), **kwargs)
                     self._pending_end = False
