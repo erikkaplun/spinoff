@@ -136,12 +136,21 @@ class ActorRef(object):
                 or isinstance(other, Matcher) and other == self)
 
     def __getstate__(self):
+        # we're probably being serialized for wire-transfer, so for the deserialized dopplegangers of us on other nodes
+        # to be able to deliver to us messages, we need to register ourselves with the hub we belong to; if we're being
+        # serialized for other reasons (such as storing to disk), well, tough luck--we'll have a redundant (weak)
+        # reference to us in the `Hub`.
+        if self.target and self.target._hub:  # TODO: if there is no self.target, we shouldn't even be registering anything
+            self.node = self.target._hub.node
+            self.target._hub.register(self)
         return {'path': self.path, 'node': self.node}
 
 
 class _ActorContainer(object):
     _children = {}  # XXX: should be a read-only dict
     _child_name_gen = None
+
+    _hub = None
 
     def spawn(self, factory, name=None):
         if not self._children:
@@ -157,7 +166,7 @@ class _ActorContainer(object):
             path = '%s%s%s' % (self.path, ('' if self.path[-1] == '/' else '/'), name)
         assert name not in self._children  # XXX: ordering??
         self._children[name] = None
-        child = _do_spawn(parent=self.ref(), factory=factory, path=path)
+        child = _do_spawn(parent=self.ref(), factory=factory, path=path, hub=self._hub)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
         return child
@@ -221,6 +230,12 @@ class Guardian(_ActorContainer):
 
     def reset(self):
         self._reset()
+
+    def __call__(self, hub=None):
+        """Spawns new, non-default instances of the guardian; useful for testing."""
+        ret = type(self)()
+        ret._hub = hub
+        return ret
 Guardian = Guardian()
 
 
@@ -318,8 +333,9 @@ class Props(object):
         return '<props:%s(%s%s)>' % (type(self.cls).__name__, args, ', ' + kwargs if args else kwargs)
 
 
-def _do_spawn(parent, factory, path):
+def _do_spawn(parent, factory, path, hub=None):
     cell = Cell(parent=parent, factory=factory, path=path)
+    cell._hub = hub
     cell.receive('_start', force_async=Actor.SPAWNING_IS_ASYNC)
     return cell.ref()
 
@@ -355,6 +371,8 @@ class Cell(_ActorContainer, Logging):
     _ongoing = None
 
     _ref = None
+    _hub = None
+
     _child_name_gen = None
 
     watchers = []

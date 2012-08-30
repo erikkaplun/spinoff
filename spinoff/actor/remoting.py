@@ -1,7 +1,7 @@
 from __future__ import print_function, absolute_import
 
 import sys
-
+import random
 from cStringIO import StringIO
 from cPickle import dumps
 from pickle import Unpickler, BUILD
@@ -19,15 +19,17 @@ class Hub(object):
 
     """
 
-    def __init__(self, incoming, outgoing, nodename):
+    def __init__(self, incoming, outgoing, node):
         self.outgoing = outgoing
         incoming.gotMessage = self.got_message
         self.registry = {}
+        self.node = node
 
     def make_proxy(self, path, node):
         return RemoteActor(path, node, bound_to=self)
 
     def register(self, actor):
+        # TODO: use weakref
         self.registry[actor.path] = actor
 
     def send_message(self, path, node, msg, *_, **__):
@@ -84,3 +86,62 @@ class IncomingMessageUnpickler(Unpickler):
 
     dispatch = dict(Unpickler.dispatch)  # make a copy of the original
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
+
+
+class FakeNetwork(object):
+    def __init__(self):
+        self.nodes = {}
+        self.queue = []
+
+    def node(self, name):
+        """Creates a new node with the specified name, with `FakeSocket` instances as incoming and outgoing sockets.
+
+        Returns the `Hub` created for the node, and the sockets.
+
+        """
+        insock, outsock = FakeInSocket(), FakeOutSocket(sendMsg=lambda msg: self.enqueue(name, msg))
+        hub = Hub(insock, outsock, node=name)
+        self.nodes[name] = (hub, insock, outsock)
+        return hub, insock, outsock
+
+    def enqueue(self, from_node, (to_node, msg)):
+        self.queue.append((from_node, to_node, msg))
+
+    def transmit(self, randomize_order=False):
+        """Puts all currently pending sent messages to the insock buffer of the recipient of the message.
+
+        This is more useful than immediate "delivery" because it allows full flexibility of the order in which tests
+        set up nodes and mock actors on those nodes, and of the order in which messages are sent out from a node.
+
+        """
+        if randomize_order:
+            random.shuffle(self.queue)
+
+        for from_node, to_node, message in self.queue:
+            if to_node not in self.nodes:
+                print("FakeNetwork: delivering message %r from %r to %r failed--no such node" %
+                      (message, from_node, to_node), file=sys.stderr)
+            else:
+                to_sock = self.nodes[to_node][1]
+                to_sock.gotMessage(message)
+        del self.queue[:]
+
+
+class FakeInSocket(object):
+    """A fake (ZeroMQ-DEALER-like) socket.
+
+    This will instead be a ZeroMQ DEALER connection object from the txzmq package under normal conditions.
+
+    """
+    def gotMessage(self, msg):
+        assert False, "Hub should define gotMessage on the incoming transport"
+
+
+class FakeOutSocket(object):
+    """A fake (ZeroMQ-ROUTER-like) socket.
+
+    This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
+
+    """
+    def __init__(self, sendMsg):
+        self.sendMsg = sendMsg

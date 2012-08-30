@@ -6,7 +6,6 @@ import inspect
 import random
 import sys
 import weakref
-from collections import defaultdict
 
 from nose.tools import eq_
 from nose.twistedtools import deferred
@@ -17,15 +16,16 @@ from spinoff.actor import (
     BadSupervision, ActorRef)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
-from spinoff.actor.remoting import Hub, RemoteActor
+from spinoff.actor.remoting import RemoteActor
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
-    ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot,)
-from spinoff.util.testing.actor import MockRef, Unclean
+    ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot)
+from spinoff.util.testing.actor import MockRef, Unclean, MockActor
 from spinoff.util.testing.common import timeout
+from spinoff.actor.remoting import FakeNetwork
 
 
 def dbg(*args):
@@ -2137,104 +2137,123 @@ def test_TODO_watching_nonexistent_remote_actor():
 ##
 ## REMOTING
 
-# this will instead be a ZeroMQ connection object from the txzmq package in reality
-class MockTransport(object):
-    def __init__(self):
-        self.messages = []
-
-    def sendMsg(self, msg):
-        self.messages.append(msg)
-
-    def gotMessage(self, msg):
-        assert False, "Hub should define gotMessage on the incoming transport"
-
-
 def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
+    # emulate a scenario in which a single node sends many messages to many nodes
     # a total of NUM_NODES*NUM_MSGS messages will be sent out
     NUM_NODES = 3
     NUM_MSGS = 20
 
-    nodes = defaultdict(dict)  # this will hold all the interaction data
+    network = FakeNetwork()
 
     # the sender
-    incoming, outgoing = MockTransport(), MockTransport()
-    hub = Hub(incoming, outgoing, nodename='node1')
+    hub, _, sender_outgoing = network.node('sender')
 
-    assert outgoing.messages == []
+    assert sender_outgoing.messages == []
 
-    # set up the part that deals with sending, i.e. refs to remote actors and messages to send
-    for i in range(NUM_NODES):
-        nodename = 'node%d' % (i + 1)
-        node = nodes[nodename]
+    recipient_nodes = {('node%d' % (i + 1)): {} for i in range(NUM_NODES)}
 
-        # refs to remote actors:
-        node['refs'] = [
-            ActorRef.remote('actor%d' % (i + 1), nodename, hub)
-            for i in range(NUM_MSGS)
-        ]
+    for nodename, node in recipient_nodes.items():
+        # Hubs for each remote node
+        node['hub'], node['incoming'], _ = network.node(nodename)
 
-        # messages to send:
+        # actor mocks that the messages will land in
+        node['actors'] = [MockRef('/actor%d' % (i + 1)) for i in range(NUM_MSGS)]
+        for receiver in node['actors']:
+            node['hub'].register(receiver)
+
+        # the refs are bound to the hub of the sender node, so that if we send a message to the ref, an outgoing message
+        # is emitted on the sender's hub's outgoing (mock) socket, with the destination ID being the name of the node the
+        # ref is pointing to:
+        node['refs'] = [ActorRef.remote(actor.path, nodename, hub) for actor in node['actors']]
+
+        # ...and for each actor/ref we constructed, prepare a respective message:
         node['msgs'] = [
-            'dummy-%s-%d-%s' % (nodename, i + 1, random.randint(1, 10000000))
-            for i in range(NUM_MSGS)
+            # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure>
+            'dummy-%s-%s-%s' % (nodename, actor.path, random.randint(1, 10000000))
+            for actor in node['actors']
         ]
 
         for ref, msg in zip(node['refs'], node['msgs']):
-            ref << msg
+            ref << msg  # these messages will be stored in `msgs_on_wire` below
 
     # this is how ZeroMQ will see it, i.e. each item is a socket identity of the receiver and the data to deliver:
-    msgs_on_wire = outgoing.messages
+    msgs_on_wire = sender_outgoing.messages
 
-    # we don't assert the actual content of the message because it's already in the on-the-wire format (serialized),
-    # so instead we feed it to another instance of Hub and see if it arrives at the other end intact; this way
-    # Hub can change the serialization/wire-level protocol format independently of the tests.
+    # we don't assert the actual content of the message because it has already been serialized to the on-the-wire format,
+    # instead we feed it to another `Hub` and see if it arrives at the other end intact; this way `Hub` can change the
+    # serialization format independently of the tests:
     eq_(msgs_on_wire, [(ANY, IS_INSTANCE(bytes))] * NUM_NODES * NUM_MSGS)
 
-    ### END OF SENDER PART--BEGINNING OF RECEIVER PART
+    ### END OF SENDER PART--BEGINNING OF RECEIVERS PART
 
-    # set up the receiving part
-    for nodename, node in nodes.items():
-        # Hub instances for each remote node
-        incoming, outgoing = MockTransport(), MockTransport()
-        remote_hub = Hub(incoming, outgoing, nodename=nodename)
-        node['hub'] = remote_hub
-        node['incoming'] = incoming
+    network.transmit(randomize_order=True)
 
-        # mock recepient actors + registration with their Hub
-        node['receivers'] = [MockRef(ref.path) for ref in node['refs']]
-        for i, receiver in enumerate(node['receivers']):
-            remote_hub.register(receiver)
-
-    # shuffle the order for good measure:
-    msgs_on_wire_in_random_order = msgs_on_wire[:]
-    random.shuffle(msgs_on_wire_in_random_order)
-
-    # put each emitted outgoing message to the "inbox" of the respective node:
-    for nodename, msg_on_wire in msgs_on_wire_in_random_order:
-        nodes[nodename]['incoming'].gotMessage(msg_on_wire)
-
-    for _, node in nodes.items():
+    for _, node in recipient_nodes.items():
         all(eq_(receiver.messages, [msg_sent])
-            for receiver, msg_sent in zip(node['receivers'], node['msgs']))
+            for receiver, msg_sent in zip(node['actors'], node['msgs']))
 
 
 @timeout(None)
-def test_TODO_serializing_actorref_converts_it_to_addr_with_nodename_and_registers_it_with_hub():
-    hub1_outgoing = MockTransport()
-    hub1 = Hub(incoming=MockTransport(), outgoing=hub1_outgoing, nodename='node1')
+def test_deserializing_an_actorref_converts_it_to_an_actorref_bound_to_a_proxy():
+    network = FakeNetwork()
 
-    local_actor = ActorRef(None, 'actor1', 'node1')
-    remote_ref = ActorRef.remote('actor2', 'node2', hub1)
-    remote_ref.send(local_actor)
+    hub1, _, hub1_outgoing = network.node('node1')
+    hub2, hub2_incoming, _ = network.node('node2')
 
-    hub2_incoming = MockTransport()
-    hub2 = Hub(incoming=hub2_incoming, outgoing=MockTransport(), nodename='node2')
-    remote_actor = MockRef('actor2')
+    local_actor = ActorRef(None, '/actor1', 'node1')
+
+    remote_actor = MockRef('/actor2')
     hub2.register(remote_actor)
 
-    [hub2_incoming.gotMessage(msg) for _, msg in hub1_outgoing.messages]
+    remote_ref = ActorRef.remote('/actor2', 'node2', hub1)
+    remote_ref.send(local_actor)
 
-    eq_(remote_actor.messages, [ActorRef(IS_INSTANCE(RemoteActor), 'actor1', 'node1')])
+    network.transmit()
+
+    eq_(remote_actor.messages, [ActorRef(IS_INSTANCE(RemoteActor), '/actor1', 'node1')])
+
+
+@timeout(None)
+def test_replying_to_a_remote_actorref_delivers_the_message_to_the_actor_it_points_to():
+    # node1:
+
+    network = FakeNetwork()
+
+    hub1, hub1_incoming, hub1_outgoing = network.node('node1')
+    guardian1 = Guardian(hub1)
+
+    actor1_msgs = MockMessages()
+    actor1 = guardian1.spawn(Props(MockActor, actor1_msgs), name='actor1')
+
+    # node2:
+
+    hub2, hub2_incoming, hub2_outgoing = network.node('node2')
+    guardian2 = Guardian(hub2)
+
+    actor2_msgs = MockMessages()
+    actor2 = guardian2.spawn(Props(MockActor, actor2_msgs), name='actor2')
+
+    # even though we spawned actor2 from guardian2 which is bound to hub2, actors in a system aren't automatically
+    # registered with the hub of the system; in fact, this would be unwanted as most actors might not even receive
+    # messages from the outside ever.
+    hub2.register(actor2)
+
+    # send from node1 -> node2:
+    ActorRef.remote('/actor2', 'node2', hub1).send(('message-that-contains-a-ref', actor1))
+
+    network.transmit()
+
+    # reply from node2 -> node1:
+    (_, received_ref), = actor2_msgs  # extract the ref from the message
+    received_ref.send('hello')
+
+    network.transmit()
+
+    assert actor1_msgs == ['hello']
+
+
+def test_TODO_transmitting_refs_to_non_root_actors():
+    pass
 
 
 def test_TODO_sending_to_seemingly_remote_refs_that_are_local_bypasses_remoting():
@@ -2242,7 +2261,7 @@ def test_TODO_sending_to_seemingly_remote_refs_that_are_local_bypasses_remoting(
     pass
 
 
-def test_TODO_sending_to_remote_actorref_delivers_the_message():
+def test_TODO_creating_a_remote_ref_that_actually_points_to_an_actor_on_the_local_node_returns_the_local_ref():
     pass
 
 
