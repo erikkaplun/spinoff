@@ -12,6 +12,20 @@ from twisted.internet.defer import Deferred, maybeDeferred
 from spinoff.util.async import CancelledError
 
 
+def simtime(fn):
+    @wraps(fn)
+    def wrap(*args, **kwargs):
+        clock = Clock()
+        from twisted import internet
+        oldreactor = internet.reactor
+        internet.reactor = clock
+        try:
+            fn(clock, *args, **kwargs)
+        finally:
+            internet.reactor = oldreactor
+    return wrap
+
+
 def deferred(f):
     """This is almost exactly the same as nose.twistedtools.deferred, except it allows one to have simulated time in
     their test code by passing in a `Clock` instance. That `Clock` instance will be `advance`d as long as there are
