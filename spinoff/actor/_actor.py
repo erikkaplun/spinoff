@@ -330,7 +330,7 @@ class Props(object):
     def __repr__(self):
         args = ', '.join(repr(x) for x in self.args)
         kwargs = ', '.join('%s=%r' % x for x in self.kwargs.items())
-        return '<props:%s(%s%s)>' % (type(self.cls).__name__, args, ', ' + kwargs if args else kwargs)
+        return '<props:%s(%s%s)>' % (self.cls.__name__, args, ((', ' + kwargs) if args else kwargs) if kwargs else '')
 
 
 def _do_spawn(parent, factory, path, hub=None):
