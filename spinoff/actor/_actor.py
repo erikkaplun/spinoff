@@ -49,6 +49,9 @@ class WrappingException(Exception):
     def raise_original(self):
         raise self.cause, None, self.tb
 
+    def formatted_original_tb(self):
+        return ''.join(traceback.format_exception(self.cause, None, self.tb))
+
 
 class CreateFailed(WrappingException):
     def __init__(self, message, actor):
@@ -68,6 +71,7 @@ class BadSupervision(WrappingException):
         self.cause, self.tb = exc, tb
 
 
+# TODO: rename to Ref and use a Path str subtype for path
 class ActorRef(object):
     # XXX: should be protected/private
     target = None  # so that .target could be deleted to save memory
@@ -107,7 +111,7 @@ class ActorRef(object):
         return self
 
     def __repr__(self):
-        return '<%s>' % (self.path,) if not self.node else '<%s/%s>' % (self.node, self.path)
+        return '<%s>' % (self.path,) if not self.node else '<%s%s>' % (self.node, self.path)
 
     def stop(self):
         """Shortcut for `ActorRef.send('_stop')`"""
@@ -152,7 +156,11 @@ class _ActorContainer(object):
 
     _hub = None
 
-    def spawn(self, factory, name=None):
+    def spawn(self, factory, name=None, register=False):
+        if register:
+            if not self._hub:
+                raise TypeError("Can only auto-register actors spawned from a container bound to a Hub")
+
         if not self._children:
             self._children = {}
         path = self.path + ('' if self.path[-1] == '/' else '/') + name if name else None
@@ -169,6 +177,13 @@ class _ActorContainer(object):
         child = _do_spawn(parent=self.ref(), factory=factory, path=path, hub=self._hub)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
+
+        # it is meaningful to simply ignore register if there's no Hub available--this way a combination of actors in
+        # general running distributedly can be run in a single node without any remoting needed at all without having
+        # to change the code
+        if register and self._hub:
+            self._hub.register(child)
+
         return child
 
     def _generate_name(self):
@@ -378,6 +393,8 @@ class Cell(_ActorContainer, Logging):
     watchers = []
 
     def __init__(self, parent, factory, path):
+        if not callable(factory):
+            raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.parent = parent
         self.path = path
 

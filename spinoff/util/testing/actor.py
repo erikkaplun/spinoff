@@ -10,6 +10,7 @@ from spinoff.actor import Actor, spawn
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, SupervisionFailure
 
 from .common import deferred_result, assert_raises
+from spinoff.actor._actor import WrappingException
 
 
 class MockMessages(list):
@@ -58,6 +59,10 @@ class ErrorCollector(object):
         sender, exc, tb = event
         tb_formatted = ''.join(traceback.format_exception(exc, None, tb))
         error_report = 'ACTOR %s, EVENT %s:\n%s' % (sender, type(event).__name__, tb_formatted + '\n' + type(exc).__name__ + (': ' + str(exc.args[0]) if exc.args else ''))
+        if isinstance(exc, WrappingException):
+            fmted = exc.formatted_original_tb()
+            indented = '\n'.join('    ' + line for line in fmted.split('\n') if line)
+            error_report += '\n' + indented
         self.errors.append((error_report, exc, tb_formatted))
 
     def __enter__(self):

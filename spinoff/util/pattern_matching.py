@@ -1,4 +1,5 @@
 import copy
+import re
 
 
 class _Values(list):
@@ -54,6 +55,9 @@ class Matcher(_Marker):
 
     def __or__(self, other):
         return OR(self, other)
+
+    def __ne__(self, x):
+        return not (self == x)
 
 
 class ANY(Matcher):
@@ -129,3 +133,14 @@ class OR(Matcher):
 
     def __str__(self):
         return '%s | %s' % (self.matcher1, self.matcher2)
+
+
+class REGEXP(Matcher):
+    def __init__(self, regexp):
+        self.regexp = regexp
+
+    def __eq__(self, other):
+        return bool(re.match(self.regexp, other))
+
+    def __str__(self):
+        return str(self.regexp)

@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import abc
+from pickle import PicklingError
 
 from twisted.internet.defer import Deferred
 
@@ -36,6 +37,9 @@ class Holder(object):
 
     def __nonzero__(self):
         return self.value
+
+    def __getstate__(self):
+        raise PicklingError("Object of type %s is not picklable" % (type(self).__name__,))
 
 
 class Latch(Holder):

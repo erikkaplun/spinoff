@@ -42,7 +42,7 @@ def deferred(f):
 
         @d.addErrback
         def on_error(f):
-            error[0] = sys.exc_info()
+            error[0] = f
 
         while True:
             time_to_wait = max([0] + [call.getTime() - clock.seconds() for call in clock.getDelayedCalls()])
@@ -52,8 +52,7 @@ def deferred(f):
                 clock.advance(time_to_wait)
 
         if error[0]:
-            exc_info = error[0]
-            raise exc_info[0], exc_info[1], exc_info[2]
+            error[0].raiseException()
 
     return ret
 

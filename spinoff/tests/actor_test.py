@@ -16,16 +16,15 @@ from spinoff.actor import (
     BadSupervision, ActorRef)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
-from spinoff.actor.remoting import RemoteActor
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot)
-from spinoff.util.testing.actor import MockRef, Unclean, MockActor
-from spinoff.util.testing.common import timeout
-from spinoff.actor.remoting import FakeNetwork
+from spinoff.util.testing.actor import MockRef, Unclean, MockActor, assert_event_not_emitted
+from spinoff.actor.remoting import MockNetwork
+from spinoff.util.testing.common import simtime
 
 
 def dbg(*args):
@@ -420,6 +419,20 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
 ##
 
 def test_TODO_remote_spawning():
+    pass
+
+
+def test_TODO_remotely_spawned_actors_ref_is_registered_eagerly():
+    # might not be necessary because a ref to the new remote child is returned anyway, and that does the registration;
+    # but then if the parent immediately sends another message before waiting for the spawning to return, the message
+    # will probably be dropped on the remote node
+    pass
+
+
+def test_TODO_remotely_spawned_actors_die_if_their_parent_node_seems_to_have_died():
+    # might not be necessary because a ref to the new remote child is returned anyway, and that does the registration;
+    # but then if the parent immediately sends another message before waiting for the spawning to return, the message
+    # will probably be dropped on the remote node
     pass
 
 
@@ -2137,24 +2150,27 @@ def test_TODO_watching_nonexistent_remote_actor():
 ##
 ## REMOTING
 
-def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
+@simtime
+def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node(clock):
+    # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
+
     # emulate a scenario in which a single node sends many messages to many nodes
     # a total of NUM_NODES*NUM_MSGS messages will be sent out
     NUM_NODES = 3
     NUM_MSGS = 20
 
-    network = FakeNetwork()
+    network = MockNetwork(clock)
 
     # the sender
-    hub, _, sender_outgoing = network.node('sender')
+    hub = network.node(addr='senderhost:123')
 
-    assert sender_outgoing.messages == []
+    assert not network.queue
 
-    recipient_nodes = {('node%d' % (i + 1)): {} for i in range(NUM_NODES)}
+    recipient_nodes = {('recphost%d:123' % (i + 1)): {} for i in range(NUM_NODES)}
 
     for nodename, node in recipient_nodes.items():
         # Hubs for each remote node
-        node['hub'], node['incoming'], _ = network.node(nodename)
+        node['hub'] = network.node(addr=nodename)
 
         # actor mocks that the messages will land in
         node['actors'] = [MockRef('/actor%d' % (i + 1)) for i in range(NUM_MSGS)]
@@ -2176,85 +2192,257 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
         for ref, msg in zip(node['refs'], node['msgs']):
             ref << msg  # these messages will be stored in `msgs_on_wire` below
 
-    # this is how ZeroMQ will see it, i.e. each item is a socket identity of the receiver and the data to deliver:
-    msgs_on_wire = sender_outgoing.messages
-
-    # we don't assert the actual content of the message because it has already been serialized to the on-the-wire format,
-    # instead we feed it to another `Hub` and see if it arrives at the other end intact; this way `Hub` can change the
-    # serialization format independently of the tests:
-    eq_(msgs_on_wire, [(ANY, IS_INSTANCE(bytes))] * NUM_NODES * NUM_MSGS)
-
     ### END OF SENDER PART--BEGINNING OF RECEIVERS PART
 
-    network.transmit(randomize_order=True)
+    random.shuffle(network.queue)
+    network.simulate(duration=3.0)
 
     for _, node in recipient_nodes.items():
         all(eq_(receiver.messages, [msg_sent])
             for receiver, msg_sent in zip(node['actors'], node['msgs']))
 
 
-@timeout(None)
-def test_deserializing_an_actorref_converts_it_to_an_actorref_bound_to_a_proxy():
-    network = FakeNetwork()
+def test_transmitting_refs_and_sending_to_received_refs():
+    # This just tests the ActorRef serialisation and deserialization logic.
 
-    hub1, _, hub1_outgoing = network.node('node1')
-    hub2, hub2_incoming, _ = network.node('node2')
+    @simtime
+    def test_it(clock, make_actor1):
+        network = MockNetwork(clock)
 
-    local_actor = ActorRef(None, '/actor1', 'node1')
+        # node1:
 
-    remote_actor = MockRef('/actor2')
-    hub2.register(remote_actor)
+        hub1 = network.node(addr='host1:123')
+        guardian1 = Guardian(hub=hub1)
 
-    remote_ref = ActorRef.remote('/actor2', 'node2', hub1)
-    remote_ref.send(local_actor)
+        actor1_msgs = MockMessages()
+        actor1 = make_actor1(guardian1, actor1_msgs)
 
-    network.transmit()
+        # node2:
 
-    eq_(remote_actor.messages, [ActorRef(IS_INSTANCE(RemoteActor), '/actor1', 'node1')])
+        hub2 = network.node(addr='host2:123')
+        guardian2 = Guardian(hub=hub2)
 
+        actor2_msgs = []
+        guardian2.spawn(Props(MockActor, actor2_msgs), name='actor2', register=True)
 
-@timeout(None)
-def test_replying_to_a_remote_actorref_delivers_the_message_to_the_actor_it_points_to():
-    # node1:
+        # send from node1 -> node2:
+        ActorRef.remote('/actor2', 'host2:123', hub1) << ('msg-with-ref', actor1)
+        network.simulate(duration=2.0)
 
-    network = FakeNetwork()
+        # reply from node2 -> node1:
+        assert actor2_msgs == [ANY], "should be able to send messages to explicitly constructed remote refs"
+        _, received_ref = actor2_msgs[0]
+        received_ref << 'hello'
 
-    hub1, hub1_incoming, hub1_outgoing = network.node('node1')
-    guardian1 = Guardian(hub1)
+        network.simulate(duration=2.0)
+        assert actor1_msgs == ['hello'], "should be able to send messages to received remote refs"
 
-    actor1_msgs = MockMessages()
-    actor1 = guardian1.spawn(Props(MockActor, actor1_msgs), name='actor1')
+    def make_non_toplevel(guardian, mock_msgs):
+        class Parent(Actor):
+            def pre_start(self):
+                child << self.spawn(Props(MockActor, mock_msgs), name='actor1')
 
-    # node2:
+        child = Slot()
+        guardian.spawn(Parent, name='parent')
+        return child()
 
-    hub2, hub2_incoming, hub2_outgoing = network.node('node2')
-    guardian2 = Guardian(hub2)
+    test_it(make_non_toplevel)
 
-    actor2_msgs = MockMessages()
-    actor2 = guardian2.spawn(Props(MockActor, actor2_msgs), name='actor2')
+    def make_toplevel(guardian, mock_msgs):
+        return guardian.spawn(Props(MockActor, mock_msgs), name='actor1')
 
-    # even though we spawned actor2 from guardian2 which is bound to hub2, actors in a system aren't automatically
-    # registered with the hub of the system; in fact, this would be unwanted as most actors might not even receive
-    # messages from the outside ever.
-    hub2.register(actor2)
-
-    # send from node1 -> node2:
-    ActorRef.remote('/actor2', 'node2', hub1).send(('message-that-contains-a-ref', actor1))
-
-    network.transmit()
-
-    # reply from node2 -> node1:
-    (_, received_ref), = actor2_msgs  # extract the ref from the message
-    received_ref.send('hello')
-
-    network.transmit()
-
-    assert actor1_msgs == ['hello']
+    test_it(make_toplevel)
 
 
-def test_TODO_transmitting_refs_to_non_root_actors():
+@simtime
+def test_TODO_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
     pass
 
+
+## HEARTBEAT
+
+@simtime
+def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.queue_item_lifetime = 10.0
+
+    # recipient host not reachable within time limit--message dropped after `queue_item_lifetime`
+
+    ref2 = ActorRef.remote('/actor2', 'host3:123', hub1)
+    ref2 << 'bar'
+
+    with assert_one_event(DeadLetter(ref2, 'bar')):
+        network.simulate(hub1.queue_item_lifetime + 1.0)
+
+
+@simtime
+def test_sending_to_an_unknown_host_that_becomes_visible_in_time(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.queue_item_lifetime = 10.0
+
+    # recipient host reachable within time limit
+
+    ref = ActorRef.remote('/actor1', 'host2:123', hub1)
+    ref << 'foo'
+    with assert_event_not_emitted(DeadLetter):
+        network.simulate(duration=1.0)
+
+    hub2 = network.node('host2:123')
+    actor2_msgs = []
+    actor2 = Guardian(hub=hub2).spawn(Props(MockActor, actor2_msgs), name='actor1')
+    hub2.register(actor2)
+
+    network.simulate(duration=3.0)
+
+    assert actor2_msgs == ['foo']
+
+
+@simtime
+def test_sending_stops_if_visibility_is_lost(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.queue_item_lifetime = 5.0
+    hub1.max_silence_between_heartbeats = 5.0
+
+    hub2 = network.node('host2:123')
+    hub2.queue_item_lifetime = 5.0
+
+    # set up a normal sending state first
+
+    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref << 'foo'  # causes host2 to also start the heartbeat
+
+    network.simulate(duration=3.0)
+
+    # ok, now they both know/have seen each other; let's change that:
+    network.packet_loss(percent=100.0, src='host2:123', dst='host1:123')
+    network.simulate(duration=hub1.max_silence_between_heartbeats + 1.0)
+
+    # the next message should fail after 5 seconds
+    ref << 'bar'
+
+    with assert_one_event(DeadLetter(ref, 'bar')):
+        network.simulate(duration=hub1.queue_item_lifetime + 2.0)
+
+
+@simtime
+def test_sending_resumes_if_visibility_is_restored(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.queue_item_lifetime = 5.0
+    hub1.max_silence_between_heartbeats = 5.0
+
+    network.node('host2:123')
+
+    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref << 'foo'
+    network.simulate(duration=3.0)
+    # now both visible to the other
+
+    network.packet_loss(percent=100.0, src='host2:123', dst='host1:123')
+    network.simulate(duration=hub1.max_silence_between_heartbeats + 2.0)
+    # now host2 is not visible to host1
+
+    ref << 'bar'
+    network.simulate(duration=hub1.queue_item_lifetime - 1.0)
+    # host1 still hasn't lost faith
+
+    network.packet_loss(percent=0, src='host2:123', dst='host1:123')
+    # and it is rewarded for its patience
+    with assert_event_not_emitted(DeadLetter):
+        network.simulate(duration=3.0)
+
+
+@simtime
+def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.queue_item_lifetime = 5.0
+
+    hub2 = network.node('host2:123')
+    hub2.max_silence_between_heartbeats = 5.0
+
+    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    network.simulate(duration=2.0)
+
+    network.packet_loss(percent=100.0, src='host1:123', dst='host2:123')
+    network.simulate(duration=6.0)
+    # now host2 can't see host1 so it keeps asking host1, so host1 should realise it's not visible to host2 and stop sending
+
+    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref << 'bar'
+
+    with assert_one_event(DeadLetter(ref, 'bar')):
+        network.simulate(hub1.queue_item_lifetime + 1.0)
+
+
+@simtime
+def test_if_radiosilence_lasts_too_long_all_further_messages_to_that_addr_are_dropped_immediately(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.max_silence_between_heartbeats = 5.0
+    hub1.time_to_keep_hope = 5.0
+
+    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    network.simulate(duration=hub1.time_to_keep_hope - 1.0)  # should keep hope
+
+    with assert_one_event(DeadLetter):
+        network.simulate(duration=2.0)  # should lose hope
+
+    with assert_one_event(DeadLetter):
+        ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+
+
+@simtime
+def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
+    network = MockNetwork(clock)
+
+    hub1 = network.node('host1:123')
+    hub1.max_silence_between_heartbeats = 5.0
+    hub1.time_to_keep_hope = 5.0
+
+    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    Events.consume_one(DeadLetter)
+
+    network.simulate(duration=hub1.time_to_keep_hope + 1.0)
+
+    hub2 = network.node('host2:123')
+    actor2_msgs = []
+    Guardian(hub=hub2).spawn(Props(MockActor, actor2_msgs), name='actor2', register=True)
+    network.simulate(duration=2.0)
+
+    ActorRef.remote('/actor2', 'host2:123', hub1) << 'bar'
+    network.simulate(duration=1.0)
+    assert actor2_msgs
+
+
+## REMOTE NAME-TO-PORT MAPPING
+
+def test_TODO_node_identifiers_are_mapped_to_addresses_on_the_network():
+    pass  # nodes connect to remote mappers on demand
+
+
+def test_TODO_node_addresses_are_discovered_automatically_using_a_mapper_daemon_on_each_host():
+    pass  # node registers itself
+
+
+def test_TODO_nodes_can_acquire_ports_automatically():
+    pass  # node tries several ports (or asks the mapper?) and settles with the first available one
+
+
+def test_TODO_mapper_daemon_can_be_on_a_range_of_ports():
+    pass
+
+
+## OPTIMIZATIONS
 
 def test_TODO_sending_to_seemingly_remote_refs_that_are_local_bypasses_remoting():
     # TODO: eager or lazy conversion
@@ -2265,9 +2453,7 @@ def test_TODO_creating_a_remote_ref_that_actually_points_to_an_actor_on_the_loca
     pass
 
 
-def test_TODO_remotely_spawned_actors_ref_is_registered_eagerly():
-    pass
-
+# ZMQ
 
 def test_TODO_remoting_with_real_zeromq():
     pass
@@ -2835,8 +3021,9 @@ def wrap_globals():
                                 gc.garbage.remove(trash)
 
                         assert not gc.garbage, "Memory leak detected"
+
                         # if gc.garbage:
-                        #     # dbg("GARGABE: detected after %s:" % (fn.__name__,), len(gc.garbage))
+                        #     dbg("GARGABE: detected after %s:" % (fn.__name__,), len(gc.garbage))
                         #     import objgraph as ob
                         #     import os
 
@@ -2844,6 +3031,7 @@ def wrap_globals():
                         #         def calling_test(x):
                         #             if not isframework(x):
                         #                 return None
+                        #         import spinoff
                         #         isframework = lambda x: type(x).__module__.startswith(spinoff.__name__)
                         #         ob.show_backrefs([g_], filename='backrefs.png', max_depth=100, highlight=isframework)
 
@@ -2852,6 +3040,12 @@ def wrap_globals():
                         #         dbg("   TESTWRAP: mem-debuggin", gen)
                         #         import pdb; pdb.set_trace()
                         #         os.remove('backrefs.png')
+
+                        # to avoid the above assertion from being included as part of any tracebacks from the test
+                        # function--the last line of a context managed block is included in tracebacks originating
+                        # from context managers.
+                        pass
+
         return ret
 
     for name, value in globals().items():
