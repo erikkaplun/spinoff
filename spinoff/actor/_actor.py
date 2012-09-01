@@ -156,7 +156,18 @@ class _ActorContainer(object):
 
     _hub = None
 
+    # TODO: add the `hub` parameter
     def spawn(self, factory, name=None, register=False):
+        """Spawns an actor using the given `factory` with the specified `name`.
+
+        If `register` is true, and if the actor is bound to a `Hub`, registers the actor with that `Hub`, otherwise.
+
+        Returns an immediately `ActorRef` to the newly created actor, regardless of the location of the new actor, or
+        when the actual spawning will take place.
+
+        All child actors share the same `Hub`, which propagated down the hierarchy at spawn time (TODO: unless overridden).
+
+        """
         if register:
             if not self._hub:
                 raise TypeError("Can only auto-register actors spawned from a container bound to a Hub")
@@ -212,6 +223,21 @@ class _ActorContainer(object):
 
 
 class Guardian(_ActorContainer):
+    """The root of an actor hierarchy.
+
+    `Guardian` is both a singleton instance and a class lookalike, there is thus always available a default global
+    `Guardian` instance but it is possible to create more, non-default, instances of the `Guardian` by simply calling
+    it as if it were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without
+    any network involved by setting a custom `actor.remoting.Hub` to the `Guardian`.
+
+    `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
+    not a subclass of `ActorRef`) and an actor (but not a subclass of `Actor`). It only handles spawning of top-level
+    actors, supervising them with the default guardian strategy, and taking care of stopping the entire system when
+    told so.
+
+    Obviously, unlike a normal actor, any other actor can directly spawn from under the/a `Guardian`.
+
+    """
     path = '/'
 
     def ref(self):
@@ -442,6 +468,7 @@ class Cell(_ActorContainer, Logging):
         else:
             return ''
 
+    # TODO: change `force_async` to `async` and make it completely override the global setting, not just when it's `True`.
     @logstring(u'←')
     def receive(self, message, force_async=False):
         self.dbg(message if isinstance(message, str) else repr(message),)
