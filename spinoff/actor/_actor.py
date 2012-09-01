@@ -159,8 +159,9 @@ class Ref(object):
         # to be able to deliver to us messages, we need to register ourselves with the hub we belong to; if we're being
         # serialized for other reasons (such as storing to disk), well, tough luck--we'll have a redundant (weak)
         # reference to us in the `Hub`.
-        if self.target and self.target._hub:  # TODO: if there is no self.target, we shouldn't even be registering anything
-            self.node = self.target._hub.node
+        assert self.target, "TODO: if there is no self.target, we should be returning a state that indicates a dead ref"
+
+        if self.target._hub:
             self.target._hub.register(self)
         return {'path': self.path, 'node': self.node}
 
