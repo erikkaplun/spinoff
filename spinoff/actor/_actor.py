@@ -231,7 +231,7 @@ class Guardian(_ActorContainer):
     @inlineCallbacks
     def stop(self):
         # dbg("GUARDIAN: stopping")
-        for actor in Guardian._children.values():
+        for actor in self._children.values():
             # dbg("GUARDIAN: stopping", actor)
             actor.stop()
             # dbg("GUARDIAN: joining...", actor, actor.target)
