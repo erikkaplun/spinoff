@@ -2457,6 +2457,39 @@ def test_TODO_mapper_daemon_can_be_on_a_range_of_ports():
 
 ## OPTIMIZATIONS
 
+@simtime
+def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(clock):
+    network = MockNetwork(clock)
+
+    # node1:
+
+    hub1 = network.node(addr='host1:123')
+    guardian1 = Guardian(hub=hub1)
+
+    actor1_msgs = MockMessages()
+    actor1 = guardian1.spawn(Props(MockActor, actor1_msgs), name='actor1')
+
+    # node2:
+
+    hub2 = network.node(addr='host2:123')
+    guardian2 = Guardian(hub=hub2)
+
+    actor2_msgs = []
+    guardian2.spawn(Props(MockActor, actor2_msgs), name='actor2', register=True)
+
+    # send from node1 -> node2:
+    hub1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)
+    network.simulate(duration=2.0)
+
+    # reply from node2 -> node1:
+    _, received_ref = actor2_msgs[0]
+    received_ref << ('msg-with-ref', received_ref)
+
+    network.simulate(duration=2.0)
+    (_, remote_local_ref), = actor1_msgs
+    assert remote_local_ref.is_local and not hasattr(remote_local_ref, '_hub')
+
+
 def test_TODO_sending_to_seemingly_remote_refs_that_are_local_bypasses_remoting():
     # TODO: eager or lazy conversion
     pass

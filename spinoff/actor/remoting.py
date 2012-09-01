@@ -249,11 +249,18 @@ class IncomingMessageUnpickler(Unpickler):
         """See `pickle.py` in Python's source code."""
         # if the ctor. function (penultimate on the stack) is the `Ref` class...
         if isinstance(self.stack[-2], Ref):
-            dict_ = self.stack[-1]
-            proxy = self.dude.make_proxy(dict_['path'], dict_['node'])
-            # ...set the `node` member of the object to be a `RemoteActor` proxy:
-            dict_['target'] = proxy
-        self.load_build()  # continue with the default implementation
+            state = self.stack[-1]
+            # Ref.__setstate__ will know it's a remote ref if the state is a tuple
+            self.stack[-1] = (state, self.dude)
+            self.load_build()  # continue with the default implementation
+
+            # detect our own refs sent back to us
+            ref = self.stack[-1]
+            if ref.uri.node == self.dude.node:
+                ref.is_local = True
+                del ref._hub
+        else:
+            self.load_build()
 
     dispatch = dict(Unpickler.dispatch)  # make a copy of the original
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
