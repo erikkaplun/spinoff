@@ -51,7 +51,7 @@ def enums(*names):
     if len(names) != len(list(set(names))):
         raise TypeError("Names in an enumeration must be unique")
 
-    item_types = {True if isinstance(x, tuple) else False for x in names}
+    item_types = set(True if isinstance(x, tuple) else False for x in names)
     if len(item_types) == 2:
         raise TypeError("Mixing of ordered and unordered enumeration items is not allowed")
     else:

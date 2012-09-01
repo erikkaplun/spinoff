@@ -11,6 +11,7 @@ from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, Supervisi
 
 from .common import deferred_result, assert_raises
 from spinoff.actor._actor import WrappingException
+from spinoff.actor._actor import RefBase
 
 
 class MockMessages(list):
@@ -34,16 +35,25 @@ def make_mock():
     return ret, messages
 
 
-class MockRef(object):
-    def __init__(self, path):
+class MockRef(RefBase):
+    def __init__(self, uri):
         self.messages = MockMessages()
-        self.path = path
+        self.uri = uri
 
     def send(self, msg, force_async=None):
         self.messages.append(msg)
 
     def __repr__(self):
-        return '<mock@%s>' % (self.path,)
+        return '<mock@%s>' % (str(self.uri),)
+
+    def __getstate__(self):
+        assert False
+
+    def __eq__(self, _):
+        assert False
+
+    def stop(self):
+        self.send('_stop')
 
 
 _ERROR_EVENTS = [UnhandledError, ErrorIgnored, SupervisionFailure]
@@ -106,6 +116,12 @@ class ErrorCollector(object):
                     else:
                         (_, exc, tb_formatted), = self.errors
                         print(tb_formatted, file=sys.stderr)
+
+                        # XXX: copy-paste
+                        if isinstance(exc, WrappingException):
+                            fmted = exc.formatted_original_tb()
+                            print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+
                         raise exc
                 else:
                     print('\n'.join(error_reports), file=sys.stderr)
@@ -114,8 +130,19 @@ class ErrorCollector(object):
                 (_, exc, tb_formatted), = self.errors
                 if not stack:
                     print(tb_formatted, file=sys.stderr)
+
+                # XXX: copy-paste
+                if isinstance(exc, WrappingException):
+                    fmted = exc.formatted_original_tb()
+                    print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+
                 raise exc
         if not clean:
+            # XXX: copy-paset
+            if isinstance(exc, WrappingException):
+                fmted = exc.formatted_original_tb()
+                print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+
             raise exc_cls, exc, tb
 
 

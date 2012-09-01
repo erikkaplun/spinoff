@@ -6,18 +6,17 @@ import random
 import re
 import sys
 import traceback
-from cPickle import dumps
 from cStringIO import StringIO
 from collections import deque
 from decimal import Decimal
-from pickle import Unpickler, BUILD
+from pickle import Unpickler, Pickler, BUILD
 
 from twisted import internet
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
-from spinoff.actor import Ref
+from spinoff.actor import Ref, Uri, Node
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
@@ -49,7 +48,9 @@ class Hub(Logging):
     max_silence_between_heartbeats = 5.0
     time_to_keep_hope = 55.0
 
-    queue_item_lifetime = max_silence_between_heartbeats + max_silence_between_heartbeats
+    queue_item_lifetime = max_silence_between_heartbeats + time_to_keep_hope
+
+    _guardian = None
 
     def __init__(self, incoming, outgoing, node, reactor=reactor):
         """During testing, the address of this hub/node on the mock network can be the same as its name, for added simplicity
@@ -74,35 +75,53 @@ class Hub(Logging):
         l2.clock = reactor
         l2.start(1.0)
 
-    def make_proxy(self, path, node):
-        assert node
-        return RemoteActor(path, node, bound_to=self)
+    def get_guardian(self):
+        return self._guardian
+
+    def set_guardian(self, guardian):
+        if self._guardian:
+            raise RuntimeError("Hub already bound to a Guardian")
+        self._guardian = guardian
+
+    guardian = property(get_guardian, set_guardian)
+
+    def lookup(self, addr):
+        uri = Uri.parse(addr)
+        # self.dbg("looked up %r from %s" % (uri, addr))
+        if uri.root.node == self.node:
+            assert self.guardian
+            return self.guardian.lookup(uri)
+        return Ref(cell=None, uri=uri, is_local=False, hub=self)
 
     def register(self, actor):
         # TODO: use weakref
-        self.registry[actor.path] = actor
+        # self.dbg(actor, '=>', actor.uri.path)
+        assert actor.uri.node == self.node
+        self.registry[actor.uri.path] = actor
 
     @logstring(u"⇝")
-    def send_message(self, path, node, msg, *_, **__):
-        # self.dbg(u"%r → %s%s" % (msg, node, path))
-        addr = node  # TODO: replace with name mapping
+    def send_message(self, ref, msg, *_, **__):
+        # self.dbg(u"%r → %r" % (msg, ref))
+        addr = ref.uri.node
         conn = self.connections.get(addr)
         if not conn:
             self.dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
             conn = self.connections[addr] = ConnectedNode(
                 state='radiosilence',
-                # so last_seen checks would mark the node as `silentlyhoping` in `time_to_keep_hope` seconds from now
+                # so last_seen checks would mark the node as `silentlyhoping` in `time_to_keep_hope` seconds from now;
+                # conceptually speaking, this means the node seems to have always existed but went out of view exactly
+                # now, and before sending can start "again", it needs to come back:
                 last_seen=self.reactor.seconds() - self.max_silence_between_heartbeats
             )
             self._connect(addr, conn)
 
         if conn.state == 'visible':
-            self.outgoing.sendMsg((addr, dumps((path, msg))))
+            self.outgoing.sendMsg((ref.uri.node, self._dumps((ref.uri.path, msg))))
         else:
             if conn.queue is None:
-                self.emit_deadletter((path, node, msg))
+                self.emit_deadletter((ref, msg))
             else:
-                conn.queue.append(((path, node, msg), self.reactor.seconds()))
+                conn.queue.append(((ref, msg), self.reactor.seconds()))
 
     @logstring(u"⇜")
     def got_message(self, sender_addr, msg):
@@ -114,7 +133,7 @@ class Hub(Logging):
             if path in self.registry:
                 self.registry[path].send(msg_)
             else:
-                Events.log(DeadLetter(Ref(None, path), msg_))
+                Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
 
         if sender_addr not in self.connections:
             assert msg == PING, "initial message sent to another node should be PING"
@@ -133,8 +152,9 @@ class Hub(Logging):
                 self.dbg("%s went %s => %s" % (sender_addr, prevstate, conn.state))
             if prevstate != 'visible' and conn.state == 'visible':
                 while conn.queue:
-                    (path, node, queued_msg), _ = conn.queue.popleft()
-                    self.outgoing.sendMsg((sender_addr, dumps((path, queued_msg), protocol=2)))
+                    (ref, queued_msg), _ = conn.queue.popleft()
+                    assert ref.uri.node == sender_addr
+                    self.outgoing.sendMsg((sender_addr, self._dumps((ref.uri.path, queued_msg))))
 
     def _connect(self, addr, conn):
         # self.dbg("...connecting to %s" % (addr,))
@@ -153,7 +173,7 @@ class Hub(Logging):
             # self.dbg("consider_dead_from", consider_dead_from, "consider_lost_from", consider_lost_from)
 
             for addr, conn in self.connections.items():
-                self.dbg("%s last seen at %ss" % (addr, conn.last_seen))
+                # self.dbg("%s last seen at %ss" % (addr, conn.last_seen))
                 if conn.state == 'silentlyhoping':
                     # self.dbg("silently hoping...")
                     self.heartbeat_one(addr, PING)
@@ -186,8 +206,7 @@ class Hub(Logging):
         for conn in self.connections.values():
             try:
                 keep_until = self.reactor.seconds() - self.queue_item_lifetime
-                # self.dbg(dict(self.queue), "keep_until = %r, queue_item_lifetime = %r" % (keep_until, self.queue_item_lifetime,))
-                # conn.queue = [(msg, timestamp) for msg, timestamp in conn.queue if timestamp > keep_until or self.emit_deadletter(msg)]
+                # self.dbg(conn.queue, "keep_until = %r, queue_item_lifetime = %r" % (keep_until, self.queue_item_lifetime,))
                 q = conn.queue
                 while q:
                     msg, timestamp = q[0]
@@ -199,42 +218,23 @@ class Hub(Logging):
             except Exception:
                 self.panic("failed to clean queue:\n", traceback.format_exc())
 
-    def emit_deadletter(self, (path, node, msg)):
-        # self.dbg(DeadLetter(Ref(None, path, node), msg))
-        Events.log(DeadLetter(Ref(None, path, node), msg))
+    def emit_deadletter(self, (ref, msg)):
+        # self.dbg(DeadLetter(ref, msg))
+        Events.log(DeadLetter(ref, msg))
 
     def logstate(self):
         return {str(self.reactor.seconds()): True}
+
+    def _dumps(self, msg):
+        buf = StringIO()
+        OutgoingMessagePickler(self, buf).dump(msg)
+        return buf.getvalue()
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
 
     def __repr__(self):
         return '<%s>' % (self.node,)
-
-
-class RemoteActor(object):
-    """A proxy that represents an actor on some other node.
-
-    Internally, delegates all messages sent to it to `Hub`.
-
-    """
-
-    def __init__(self, path, node, bound_to):
-        assert path and node and bound_to, "path: %r; node: %r; bound_to: %r" % (path, node, bound_to)
-        self.path = path
-        self.node = node
-        self.bound_to = bound_to
-
-    def receive(self, message, force_async=None):
-        """Delegates all messages sent to the `Hub` instance it is bound to, together with the address of the
-        remote actor it represents.
-
-        The `force_async` parameter is ignored because all remote messages are asynchronously delivered by default.
-        However, the `Hub` instance can choose to emit the message into the underlying wire-transport immediately.
-
-        """
-        self.bound_to.send_message(self.path, self.node, message)
 
 
 class IncomingMessageUnpickler(Unpickler):
@@ -266,6 +266,23 @@ class IncomingMessageUnpickler(Unpickler):
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
 
 
+class OutgoingMessagePickler(Pickler):
+    def __init__(self, hub, *args, **kwargs):
+        Pickler.__init__(self, protocol=2, *args, **kwargs)
+        self.hub = hub
+
+    def save_ref(self, ref):
+        if ref.uri.node == self.hub.node:
+            # we're probably being serialized for wire-transfer, so for the deserialized dopplegangers of us on other nodes
+            # to be able to deliver to us messages, we need to register ourselves with the hub we belong to; if we're being
+            # serialized for other reasons (such as storing to disk), it won't harm us, especially when `Hub.registry` is
+            # made to use weakrefs.
+            self.hub.register(ref)
+        self.save_reduce(Ref, (None, None), ref.__getstate__(), obj=ref)
+    dispatch = dict(Pickler.dispatch)
+    dispatch[Ref] = save_ref
+
+
 class MockNetwork(Logging):
     """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
 
@@ -289,7 +306,8 @@ class MockNetwork(Logging):
         insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
         outsock = MockOutSocket(addEndpoints=lambda endpoints: self.connect(addr, endpoints),
                                 sendMsg=lambda msg: self.enqueue(addr, msg))
-        return Hub(insock, outsock, node=nodeid or addr, reactor=self.clock)
+
+        return Node(hub=Hub(insock, outsock, node=nodeid or addr, reactor=self.clock))
 
     # def mapperdaemon(self, addr):
     #     pass
@@ -321,9 +339,6 @@ class MockNetwork(Logging):
     def enqueue(self, src, (dst, msg)):
         assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
         assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
-
-        # to detect problems early as opposed to in transmit by which time the source of the problem is not visible
-        dumps(msg, protocol=2)
 
         # self.dbg(u"%r → %s" % (_dumpmsg(msg), dst))
         self.queue.append((src, dst, msg))

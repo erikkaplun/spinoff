@@ -23,7 +23,7 @@ BLINK = '\x1b[5;31m'
 
 class Logging(object):
     OUTFILE = sys.stderr
-    LEVEL = 0
+    LEVEL = 7
 
     ENABLE_ONLY = []
 

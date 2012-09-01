@@ -8,6 +8,7 @@ import types
 import traceback
 import warnings
 import weakref
+from pickle import PicklingError
 from collections import deque
 from itertools import count, chain
 
@@ -71,36 +72,85 @@ class BadSupervision(WrappingException):
         self.cause, self.tb = exc, tb
 
 
-class Path(str):
-    @property
-    def name(self):
-        _, name = self.rsplit('/', 1)
-        return name
+class Uri(object):
+    def __init__(self, name, parent, node=None):
+        assert parent or not name, "should not set a name of a root Uri"
+        self.name, self.parent = name, parent
+        self._node = node
 
     @property
-    def parent(self):
-        parent_path, _ = self.rsplit('/', 1)
-        return parent_path
+    def root(self):
+        return self.parent.root if self.parent else self
 
     @property
+    def node(self):
+        return self.root._node
+
     def __div__(self, child):
-        return self + '/' + child
+        return Uri(name=child, parent=self)
 
+    @property
+    def path(self):
+        return '/' + str(self).split('/', 1)[1]
 
-# TODO: rename to Ref and use a Path str subtype for path
-class Ref(object):
-    # XXX: should be protected/private
-    target = None  # so that .target could be deleted to save memory
+    def __str__(self):
+        if not self.parent:
+            return (self._node or '') + '/'
+        else:
+            p = str(self.parent)
+            if p[-1] != '/':
+                return p + '/' + self.name
+            else:
+                return p + self.name
+
+    def __repr__(self):
+        return '<@%s>' % (str(self),)
 
     @classmethod
-    def remote(cls, path, node, hub):
-        proxy = hub.make_proxy(path, node)
-        return Ref(proxy, path, node)
+    def parse(cls, addr):
+        parts = addr.split('/')
+        node = parts[0] or None  # so parse('/foo') would return a pure-local Uri that has no node
+        steps = parts[1:]
 
-    def __init__(self, target, path, node=None):
-        self.target = target
-        self.path = Path(path)
-        self.node = node
+        ret = Uri(name=None, parent=None, node=node)
+        for step in steps:
+            ret = Uri(name=step, parent=ret)
+        return ret
+
+    def __hash__(self):
+        return hash(str(self))
+
+    def __eq__(self, other):
+        return str(self) == str(other) or isinstance(other, Matcher) and other == self
+
+
+class RefBase(object):
+    def __lshift__(self, message):
+        """See Ref.send"""
+        self.send(message)
+        return self
+
+    def stop(self):
+        """Shortcut for `Ref.send('_stop')`"""
+        self.send('_stop')
+
+
+class Ref(RefBase):
+    # XXX: should be protected/private
+    cell = None  # so that .cell could be deleted to save memory
+    is_local = True
+
+    def __init__(self, cell, uri, is_local=True, hub=None):
+        assert uri is None or isinstance(uri, Uri)
+        if cell:
+            assert isinstance(cell, Cell)
+            self.cell = cell
+        self.uri = uri
+        if not is_local:
+            assert not cell
+            assert hub
+            self.is_local = False
+            self._hub = hub
 
     def send(self, message, force_async=False):
         """Sends a message to this actor.
@@ -113,24 +163,16 @@ class Ref(object):
         globally changing this is not recommended however unless you know what you're doing (e.g. during testing).
 
         """
-        if self.target:
-            self.target.receive(message, force_async=force_async)
-        elif ('_watched', ANY) == message:
-            message[1].send(('terminated', self))
-        elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
-            Events.log(DeadLetter(self, message))
-
-    def __lshift__(self, message):
-        """See Ref.send"""
-        self.send(message)
-        return self
-
-    def __repr__(self):
-        return '<%s>' % (self.path,) if not self.node else '<%s%s>' % (self.node, self.path)
-
-    def stop(self):
-        """Shortcut for `Ref.send('_stop')`"""
-        self.send('_stop')
+        if self.cell:
+            self.cell.receive(message, force_async=force_async)
+        elif not self.is_local:
+            assert self._hub
+            self._hub.send_message(self, message)
+        else:
+            if ('_watched', ANY) == message:
+                message[1].send(('terminated', self))
+            elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
+                Events.log(DeadLetter(self, message))
 
     def _stop_noevent(self):
         Events.consume_one(TopLevelActorTerminated)
@@ -143,7 +185,7 @@ class Ref(object):
         If it returns `False`, the actor still might be running.
 
         """
-        return not self.target
+        return self.is_local and not self.cell
 
     def join(self):
         future = Future()
@@ -151,65 +193,54 @@ class Ref(object):
         return future
 
     def __eq__(self, other):
-        return (isinstance(other, Ref) and self.path == other.path and self.node == other.node
+        return (isinstance(other, Ref) and self.uri == other.uri
                 or isinstance(other, Matcher) and other == self)
 
+    def __repr__(self):  # TODO: distinguish local and remote
+        return '<%s>' % (str(self.uri),)
+
     def __getstate__(self):
-        # we're probably being serialized for wire-transfer, so for the deserialized dopplegangers of us on other nodes
-        # to be able to deliver to us messages, we need to register ourselves with the hub we belong to; if we're being
-        # serialized for other reasons (such as storing to disk), well, tough luck--we'll have a redundant (weak)
-        # reference to us in the `Hub`.
-        assert self.target, "TODO: if there is no self.target, we should be returning a state that indicates a dead ref"
-        assert self.node, "does not make sense to serialize a ref with no node: %r" % (self,)
-        if self.target._hub:
-            self.target._hub.register(self)
-        return {'path': self.path, 'node': self.node}
+        assert self.cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
+        assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
+        return str(self.uri)
+
+    def __setstate__(self, uri):
+        # if it's a tuple, it's a remote `Ref`, otherwise it must be just a local `Ref`
+        # being pickled and unpickled for whatever reason:
+        if isinstance(uri, tuple):
+            self.is_local = False
+            uri, self._hub = uri
+        self.uri = Uri.parse(uri)
 
 
 class _ActorContainer(object):
     _children = {}  # XXX: should be a read-only dict
     _child_name_gen = None
 
-    _hub = None
-
-    # TODO: add the `hub` parameter
-    def spawn(self, factory, name=None, register=False):
+    def spawn(self, factory, name=None):
         """Spawns an actor using the given `factory` with the specified `name`.
-
-        If `register` is true, and if the actor is bound to a `Hub`, registers the actor with that `Hub`, otherwise.
 
         Returns an immediately `Ref` to the newly created actor, regardless of the location of the new actor, or
         when the actual spawning will take place.
 
-        All child actors share the same `Hub`, which propagated down the hierarchy at spawn time (TODO: unless overridden).
-
         """
-        if register:
-            if not self._hub:
-                raise TypeError("Can only auto-register actors spawned from a container bound to a Hub")
-
         if not self._children:
             self._children = {}
-        path = self.path + ('' if self.path[-1] == '/' else '/') + name if name else None
+        uri = self.uri / name if name else None
         if name:
             if name.startswith('$'):
-                raise ValueError("Unable to spawn actor at path %s; name cannot start with '$', it is reserved for auto-generated names" % (path,))
+                raise ValueError("Unable to spawn actor at path %s; name cannot start with '$', it is reserved for auto-generated names" % (uri.path,))
             if name in self._children:
-                raise NameConflict("Unable to spawn actor at path %s; actor %r already sits there" % (path, self._children[name].target.actor))
-        if not path:
+                raise NameConflict("Unable to spawn actor at path %s; actor %r already sits there" % (uri.path, self._children[name].cell.actor))
+        if not uri:
             name = self._generate_name()
-            path = '%s%s%s' % (self.path, ('' if self.path[-1] == '/' else '/'), name)
+            uri = self.uri / name
+
         assert name not in self._children  # XXX: ordering??
         self._children[name] = None
-        child = _do_spawn(parent=self.ref(), factory=factory, path=path, hub=self._hub)
+        child = _do_spawn(parent=self.ref(), factory=factory, uri=uri)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
-
-        # it is meaningful to simply ignore register if there's no Hub available--this way a combination of actors in
-        # general running distributedly can be run in a single node without any remoting needed at all without having
-        # to change the code
-        if register and self._hub:
-            self._hub.register(child)
 
         return child
 
@@ -234,17 +265,21 @@ class _ActorContainer(object):
         return self._children.values()
 
     def _child_gone(self, child):
-        name = child.path.rsplit('/', 1)[-1]
+        name = child.uri.name  # rsplit('/', 1)[-1]
         del self._children[name]
 
+    def lookup(self, uri):
+        def rec(uri):
+            if not uri.parent:
+                return self
+            else:
+                child = rec(uri.parent)
+                return child[uri.name]
+        return rec(uri)
 
-class Guardian(_ActorContainer):
+
+class Guardian(_ActorContainer, RefBase):
     """The root of an actor hierarchy.
-
-    `Guardian` is both a singleton instance and a class lookalike, there is thus always available a default global
-    `Guardian` instance but it is possible to create more, non-default, instances of the `Guardian` by simply calling
-    it as if it were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without
-    any network involved by setting a custom `actor.remoting.Hub` to the `Guardian`.
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
     not a subclass of `Ref`) and an actor (but not a subclass of `Actor`). It only handles spawning of top-level
@@ -254,7 +289,11 @@ class Guardian(_ActorContainer):
     Obviously, unlike a normal actor, any other actor can directly spawn from under the/a `Guardian`.
 
     """
-    path = '/'
+    is_local = True  # imitate Ref
+    is_stopped = False  # imitate Ref
+
+    def __init__(self, uri):
+        self.uri = uri
 
     def ref(self):
         return self
@@ -267,16 +306,18 @@ class Guardian(_ActorContainer):
             _, sender = message
             self._child_gone(sender)
             Events.log(TopLevelActorTerminated(sender))
+        elif '_stop' == message:
+            self._do_stop()
         else:
             Events.log(UnhandledMessage(self, message))
 
     @inlineCallbacks
-    def stop(self):
+    def _do_stop(self):
         # dbg("GUARDIAN: stopping")
         for actor in self._children.values():
             # dbg("GUARDIAN: stopping", actor)
             actor.stop()
-            # dbg("GUARDIAN: joining...", actor, actor.target)
+            # dbg("GUARDIAN: joining...", actor, actor.cell)
             try:
                 yield with_timeout(.01, actor.join())
             except Timeout:
@@ -285,18 +326,78 @@ class Guardian(_ActorContainer):
                 # TODO: force-stop
             # dbg("GUARDIAN: ...OK", actor)
 
+    def __getstate__(self):
+        raise PicklingError("Guardian cannot be serialized")
+
+
+class Node(object):
+    """`Node` is both a singleton instance and a class lookalike, there is thus always available a default global
+    `Node` instance but it is possible to create more, non-default, instances of `Node` by simply calling it as if it
+    were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without any network
+    involved by setting a custom `actor.remoting.Hub` to the `Node`.
+
+    """
+    def __init__(self, hub=None):
+        self.hub = hub
+        if hub:
+            from .remoting import Hub
+            if not isinstance(hub, Hub):
+                raise TypeError("hub parameter to Guardian must be a %s.%s" % (Hub.__module__, Hub.__name__))
+            if hub.guardian:
+                raise RuntimeError("Can't bind Guardian to a Hub that is already bound to another Guardian")
+
+        guardian_uri = Uri(name=None, parent=None, node=hub.node if hub else None)
+        self.guardian = Guardian(guardian_uri)
+
+    def lookup(self, uri_or_addr):
+        # TODO: move the local lookup logic to _ActorContainer.lookup
+        if isinstance(uri_or_addr, Uri):
+            if uri_or_addr.host == self.hub.host:
+                return _ActorContainer.lookup(self, uri_or_addr)
+            else:
+                return Ref(cell=None, uri=uri_or_addr, is_local=False, hub=self.hub)
+        else:
+            if not uri_or_addr.startswith('/'):
+                if not self.hub:
+                    raise RuntimeError("Address lookups disabled when remoting is not enabled")
+                return self.hub.lookup(uri_or_addr)
+            else:
+                Uri.parse(uri_or_addr)
+
+    def spawn(self, *args, **kwargs):
+        publish = kwargs.pop('publish', False)
+        ret = self.guardian.spawn(*args, **kwargs)
+        if publish:
+            self.publish(ret)
+        return ret
+
+    def publish(self, actor):
+        """Publishes the actor on the network.
+
+        Make sure you've set a name to the actor and all its parents--otherwise a generated name will end up in the URI.
+
+        """
+        # it is meaningful to simply ignore register if there's no Hub available--this way a combination of actors in
+        # general running distributedly can be run in a single node without any remoting needed at all without having
+        # to change the code
+        if self.hub:
+            self.hub.register(actor)
+
+    def stop(self):
+        self.guardian.stop()
+
     def reset(self):
-        self._reset()
+        self.guardian._reset()
+
+    def __getstate__(self):
+        raise PicklingError("Guardian cannot be serialized")
 
     def __call__(self, hub=None):
         """Spawns new, non-default instances of the guardian; useful for testing."""
-        ret = type(self)()
-        ret._hub = hub
-        return ret
-Guardian = Guardian()
+        return type(self)(hub)
+Node = Node()
 
-
-spawn = Guardian.spawn
+spawn = Node.spawn
 
 
 class ActorType(abc.ABCMeta):  # ABCMeta to enable Process.run to be @abstractmethod
@@ -374,7 +475,7 @@ class Actor(object):
         self.ref.stop()
 
     def __repr__(self):
-        return "<actor-impl:%s@%s>" % (type(self).__name__, self.ref.path)
+        return "<actor-impl:%s@%s>" % (type(self).__name__, self.ref.uri)
 
 
 class Props(object):
@@ -390,9 +491,8 @@ class Props(object):
         return '<props:%s(%s%s)>' % (self.cls.__name__, args, ((', ' + kwargs) if args else kwargs) if kwargs else '')
 
 
-def _do_spawn(parent, factory, path, hub=None):
-    cell = Cell(parent=parent, factory=factory, path=path)
-    cell._hub = hub
+def _do_spawn(parent, factory, uri):
+    cell = Cell(parent=parent, factory=factory, uri=uri)
     cell.receive('_start', force_async=Actor.SPAWNING_IS_ASYNC)
     return cell.ref()
 
@@ -428,22 +528,25 @@ class Cell(_ActorContainer, Logging):
     _ongoing = None
 
     _ref = None
-    _hub = None
 
     _child_name_gen = None
 
     watchers = []
 
-    def __init__(self, parent, factory, path):
+    def __init__(self, parent, factory, uri):
         if not callable(factory):
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.parent = parent
-        self.path = path
+        self.uri = uri
 
         self.factory = factory
 
         self.inbox = deque()
         self.priority_inbox = deque()
+
+    @property
+    def root(self):
+        return self.parent if isinstance(self.parent, Guardian) else self.parent.cell.root
 
     # TODO: benchmark the message methods and optimise
     def has_message(self):
@@ -751,7 +854,7 @@ class Cell(_ActorContainer, Logging):
             del self.priority_inbox  # don't want no more, just release the memory
 
             # self.dbg("unlinking reference")
-            del ref.target
+            del ref.cell
             self.stopped = True
 
             # XXX: which order should the following two operations be done?
@@ -850,10 +953,10 @@ class Cell(_ActorContainer, Logging):
 
     def ref(self):
         if self.stopped:
-            return Ref(None, path=self.path)
+            return Ref(cell=None, uri=self.uri)
 
         if not self._ref or not self._ref():
-            ref = Ref(self, self.path)  # must store in a temporary variable to avoid immediate collection
+            ref = Ref(self, self.uri)  # must store in a temporary variable to avoid immediate collection
             self._ref = weakref.ref(ref)
         return self._ref()
 
@@ -865,7 +968,7 @@ class Cell(_ActorContainer, Logging):
 
     def __repr__(self):
         return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)),
-                                 self.path,)
+                                 self.uri.path,)
 
 
 # TODO: replace with serializable temporary actors
