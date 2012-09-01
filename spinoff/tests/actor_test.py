@@ -416,7 +416,7 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
     assert message_received
 
 
-##
+## REMOTE SPAWNING
 
 def test_TODO_remote_spawning():
     pass
@@ -437,6 +437,12 @@ def test_TODO_remotely_spawned_actors_die_if_their_parent_node_seems_to_have_die
 
 
 def test_TODO_remote_actorref_determinism():
+    pass
+
+
+## REMOTE AUTO-DEPLOY
+
+def test_TODO_test_stub_registration_and_sending_of_eggs():
     pass
 
 
