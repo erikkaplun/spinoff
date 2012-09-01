@@ -54,6 +54,8 @@ class Hub(Logging):
     def __init__(self, incoming, outgoing, node, reactor=reactor):
         """During testing, the address of this hub/node on the mock network can be the same as its name, for added simplicity
         of not having to have a mapping between logical node names and "physical" mock addresses."""
+        assert node
+
         self.reactor = reactor
 
         self.outgoing = outgoing
@@ -73,6 +75,7 @@ class Hub(Logging):
         l2.start(1.0)
 
     def make_proxy(self, path, node):
+        assert node
         return RemoteActor(path, node, bound_to=self)
 
     def register(self, actor):
@@ -218,6 +221,7 @@ class RemoteActor(object):
     """
 
     def __init__(self, path, node, bound_to):
+        assert path and node and bound_to, "path: %r; node: %r; bound_to: %r" % (path, node, bound_to)
         self.path = path
         self.node = node
         self.bound_to = bound_to
@@ -310,6 +314,10 @@ class MockNetwork(Logging):
     def enqueue(self, src, (dst, msg)):
         assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
         assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
+
+        # to detect problems early as opposed to in transmit by which time the source of the problem is not visible
+        dumps(msg, protocol=2)
+
         # self.dbg(u"%r → %s" % (_dumpmsg(msg), dst))
         self.queue.append((src, dst, msg))
 

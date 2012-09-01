@@ -160,7 +160,7 @@ class Ref(object):
         # serialized for other reasons (such as storing to disk), well, tough luck--we'll have a redundant (weak)
         # reference to us in the `Hub`.
         assert self.target, "TODO: if there is no self.target, we should be returning a state that indicates a dead ref"
-
+        assert self.node, "does not make sense to serialize a ref with no node: %r" % (self,)
         if self.target._hub:
             self.target._hub.register(self)
         return {'path': self.path, 'node': self.node}
