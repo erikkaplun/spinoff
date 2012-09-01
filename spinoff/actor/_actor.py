@@ -72,14 +72,14 @@ class BadSupervision(WrappingException):
 
 
 # TODO: rename to Ref and use a Path str subtype for path
-class ActorRef(object):
+class Ref(object):
     # XXX: should be protected/private
     target = None  # so that .target could be deleted to save memory
 
     @classmethod
     def remote(cls, path, node, hub):
         proxy = hub.make_proxy(path, node)
-        return ActorRef(proxy, path, node)
+        return Ref(proxy, path, node)
 
     def __init__(self, target, path, node=None):
         self.target = target
@@ -106,7 +106,7 @@ class ActorRef(object):
             Events.log(DeadLetter(self, message))
 
     def __lshift__(self, message):
-        """See ActorRef.send"""
+        """See Ref.send"""
         self.send(message)
         return self
 
@@ -114,7 +114,7 @@ class ActorRef(object):
         return '<%s>' % (self.path,) if not self.node else '<%s%s>' % (self.node, self.path)
 
     def stop(self):
-        """Shortcut for `ActorRef.send('_stop')`"""
+        """Shortcut for `Ref.send('_stop')`"""
         self.send('_stop')
 
     def _stop_noevent(self):
@@ -136,7 +136,7 @@ class ActorRef(object):
         return future
 
     def __eq__(self, other):
-        return (isinstance(other, ActorRef) and self.path == other.path and self.node == other.node
+        return (isinstance(other, Ref) and self.path == other.path and self.node == other.node
                 or isinstance(other, Matcher) and other == self)
 
     def __getstate__(self):
@@ -162,7 +162,7 @@ class _ActorContainer(object):
 
         If `register` is true, and if the actor is bound to a `Hub`, registers the actor with that `Hub`, otherwise.
 
-        Returns an immediately `ActorRef` to the newly created actor, regardless of the location of the new actor, or
+        Returns an immediately `Ref` to the newly created actor, regardless of the location of the new actor, or
         when the actual spawning will take place.
 
         All child actors share the same `Hub`, which propagated down the hierarchy at spawn time (TODO: unless overridden).
@@ -231,7 +231,7 @@ class Guardian(_ActorContainer):
     any network involved by setting a custom `actor.remoting.Hub` to the `Guardian`.
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
-    not a subclass of `ActorRef`) and an actor (but not a subclass of `Actor`). It only handles spawning of top-level
+    not a subclass of `Ref`) and an actor (but not a subclass of `Actor`). It only handles spawning of top-level
     actors, supervising them with the default guardian strategy, and taking care of stopping the entire system when
     told so.
 
@@ -834,10 +834,10 @@ class Cell(_ActorContainer, Logging):
 
     def ref(self):
         if self.stopped:
-            return ActorRef(None, path=self.path)
+            return Ref(None, path=self.path)
 
         if not self._ref or not self._ref():
-            ref = ActorRef(self, self.path)  # must store in a temporary variable to avoid immediate collection
+            ref = Ref(self, self.path)  # must store in a temporary variable to avoid immediate collection
             self._ref = weakref.ref(ref)
         return self._ref()
 

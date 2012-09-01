@@ -17,7 +17,7 @@ from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
-from spinoff.actor import ActorRef
+from spinoff.actor import Ref
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
@@ -111,7 +111,7 @@ class Hub(Logging):
             if path in self.registry:
                 self.registry[path].send(msg_)
             else:
-                Events.log(DeadLetter(ActorRef(None, path), msg_))
+                Events.log(DeadLetter(Ref(None, path), msg_))
 
         if sender_addr not in self.connections:
             assert msg == PING, "initial message sent to another node should be PING"
@@ -197,8 +197,8 @@ class Hub(Logging):
                 self.panic("failed to clean queue:\n", traceback.format_exc())
 
     def emit_deadletter(self, (path, node, msg)):
-        # self.dbg(DeadLetter(ActorRef(None, path, node), msg))
-        Events.log(DeadLetter(ActorRef(None, path, node), msg))
+        # self.dbg(DeadLetter(Ref(None, path, node), msg))
+        Events.log(DeadLetter(Ref(None, path, node), msg))
 
     def logstate(self):
         return {str(self.reactor.seconds()): True}
@@ -234,7 +234,7 @@ class RemoteActor(object):
 
 
 class IncomingMessageUnpickler(Unpickler):
-    """Unpickler for attaching a `Hub` instance to all deserialized `ActorRef`s."""
+    """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
 
     def __init__(self, dude, file):
         Unpickler.__init__(self, file)
@@ -243,8 +243,8 @@ class IncomingMessageUnpickler(Unpickler):
     # called by `Unpickler.load` before an uninitalized object is about to be filled with members;
     def _load_build(self):
         """See `pickle.py` in Python's source code."""
-        # if the ctor. function (penultimate on the stack) is the `ActorRef` class...
-        if isinstance(self.stack[-2], ActorRef):
+        # if the ctor. function (penultimate on the stack) is the `Ref` class...
+        if isinstance(self.stack[-2], Ref):
             dict_ = self.stack[-1]
             proxy = self.dude.make_proxy(dict_['path'], dict_['node'])
             # ...set the `node` member of the object to be a `RemoteActor` proxy:

@@ -13,7 +13,7 @@ from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fai
 
 from spinoff.actor import (
     spawn, Actor, Props, Guardian, Unhandled, NameConflict, UnhandledTermination, CreateFailed,
-    BadSupervision, ActorRef)
+    BadSupervision, Ref)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
@@ -1021,7 +1021,7 @@ def test_TODO_remote_stopping():
 ## ACTORREFS
 
 # def test_TODO_actorrefs_with_equal_paths_are_equal():
-#     assert ActorRef(None, path='123') == ActorRef(None, path='123')
+#     assert Ref(None, path='123') == Ref(None, path='123')
 
 
 def test_actors_are_garbage_collected_on_termination():
@@ -2186,7 +2186,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
         # the refs are bound to the hub of the sender node, so that if we send a message to the ref, an outgoing message
         # is emitted on the sender's hub's outgoing (mock) socket, with the destination ID being the name of the node the
         # ref is pointing to:
-        node['refs'] = [ActorRef.remote(actor.path, nodename, hub) for actor in node['actors']]
+        node['refs'] = [Ref.remote(actor.path, nodename, hub) for actor in node['actors']]
 
         # ...and for each actor/ref we constructed, prepare a respective message:
         node['msgs'] = [
@@ -2209,7 +2209,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
 
 def test_transmitting_refs_and_sending_to_received_refs():
-    # This just tests the ActorRef serialisation and deserialization logic.
+    # This just tests the Ref serialisation and deserialization logic.
 
     @simtime
     def test_it(clock, make_actor1):
@@ -2232,7 +2232,7 @@ def test_transmitting_refs_and_sending_to_received_refs():
         guardian2.spawn(Props(MockActor, actor2_msgs), name='actor2', register=True)
 
         # send from node1 -> node2:
-        ActorRef.remote('/actor2', 'host2:123', hub1) << ('msg-with-ref', actor1)
+        Ref.remote('/actor2', 'host2:123', hub1) << ('msg-with-ref', actor1)
         network.simulate(duration=2.0)
 
         # reply from node2 -> node1:
@@ -2267,7 +2267,7 @@ def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
     network.node('receivernode:123')
 
     hub1 = network.node('sendernode:123')
-    ActorRef.remote('/non-existent-actor', 'receivernode:123', hub1) << 'straight-down-the-drain'
+    Ref.remote('/non-existent-actor', 'receivernode:123', hub1) << 'straight-down-the-drain'
     with assert_one_event(DeadLetter):
         network.simulate(0.2)
 
@@ -2283,7 +2283,7 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
 
     # recipient host not reachable within time limit--message dropped after `queue_item_lifetime`
 
-    ref2 = ActorRef.remote('/actor2', 'host3:123', hub1)
+    ref2 = Ref.remote('/actor2', 'host3:123', hub1)
     ref2 << 'bar'
 
     with assert_one_event(DeadLetter(ref2, 'bar')):
@@ -2299,7 +2299,7 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time(clock):
 
     # recipient host reachable within time limit
 
-    ref = ActorRef.remote('/actor1', 'host2:123', hub1)
+    ref = Ref.remote('/actor1', 'host2:123', hub1)
     ref << 'foo'
     with assert_event_not_emitted(DeadLetter):
         network.simulate(duration=1.0)
@@ -2327,7 +2327,7 @@ def test_sending_stops_if_visibility_is_lost(clock):
 
     # set up a normal sending state first
 
-    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref = Ref.remote('/actor2', 'host2:123', hub1)
     ref << 'foo'  # causes host2 to also start the heartbeat
 
     network.simulate(duration=3.0)
@@ -2353,7 +2353,7 @@ def test_sending_resumes_if_visibility_is_restored(clock):
 
     network.node('host2:123')
 
-    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref = Ref.remote('/actor2', 'host2:123', hub1)
     ref << 'foo'
     network.simulate(duration=3.0)
     # now both visible to the other
@@ -2382,14 +2382,14 @@ def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock
     hub2 = network.node('host2:123')
     hub2.max_silence_between_heartbeats = 5.0
 
-    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    Ref.remote('/actor2', 'host2:123', hub1) << 'foo'
     network.simulate(duration=2.0)
 
     network.packet_loss(percent=100.0, src='host1:123', dst='host2:123')
     network.simulate(duration=6.0)
     # now host2 can't see host1 so it keeps asking host1, so host1 should realise it's not visible to host2 and stop sending
 
-    ref = ActorRef.remote('/actor2', 'host2:123', hub1)
+    ref = Ref.remote('/actor2', 'host2:123', hub1)
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
@@ -2404,14 +2404,14 @@ def test_if_radiosilence_lasts_too_long_all_further_messages_to_that_addr_are_dr
     hub1.max_silence_between_heartbeats = 5.0
     hub1.time_to_keep_hope = 5.0
 
-    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    Ref.remote('/actor2', 'host2:123', hub1) << 'foo'
     network.simulate(duration=hub1.time_to_keep_hope - 1.0)  # should keep hope
 
     with assert_one_event(DeadLetter):
         network.simulate(duration=2.0)  # should lose hope
 
     with assert_one_event(DeadLetter):
-        ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+        Ref.remote('/actor2', 'host2:123', hub1) << 'foo'
 
 
 @simtime
@@ -2422,7 +2422,7 @@ def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
     hub1.max_silence_between_heartbeats = 5.0
     hub1.time_to_keep_hope = 5.0
 
-    ActorRef.remote('/actor2', 'host2:123', hub1) << 'foo'
+    Ref.remote('/actor2', 'host2:123', hub1) << 'foo'
     Events.consume_one(DeadLetter)
 
     network.simulate(duration=hub1.time_to_keep_hope + 1.0)
@@ -2432,7 +2432,7 @@ def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
     Guardian(hub=hub2).spawn(Props(MockActor, actor2_msgs), name='actor2', register=True)
     network.simulate(duration=2.0)
 
-    ActorRef.remote('/actor2', 'host2:123', hub1) << 'bar'
+    Ref.remote('/actor2', 'host2:123', hub1) << 'bar'
     network.simulate(duration=1.0)
     assert actor2_msgs
 
