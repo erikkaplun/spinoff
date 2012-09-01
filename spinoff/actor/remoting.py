@@ -9,6 +9,7 @@ import traceback
 from cPickle import dumps
 from cStringIO import StringIO
 from collections import deque
+from decimal import Decimal
 from pickle import Unpickler, BUILD
 
 from twisted import internet
@@ -345,12 +346,20 @@ class MockNetwork(Logging):
             sock.gotMessage(src, msg)
 
     def simulate(self, duration, step=0.1):
-        # self.dbg("duration = %rs, step = %rs" % (duration, step))
-        while duration > 0.0:
+        MAX_PRECISION = 5
+        step = round(Decimal(step), MAX_PRECISION)
+        if not step:
+            raise TypeError("step value to simulate must be positive and with a precision of less than or equal to %d "
+                            "significant figures" % (MAX_PRECISION,))
+        time_left = duration
+        while True:
+            # self.dbg("@ %rs" % (duration - time_left,))
             self.transmit()
             self.clock.advance(step)
-            duration -= step
-            # self.dbg("time left %rs" % (duration,))
+            if time_left <= 0:
+                break
+            else:
+                time_left -= step
 
     def logstate(self):
         return {str(internet.reactor.seconds()): True}
