@@ -4,6 +4,8 @@ import traceback
 import sys
 from contextlib import contextmanager
 
+from twisted.internet.defer import CancelledError
+
 from spinoff.actor import Actor, spawn
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, SupervisionFailure
 
@@ -165,3 +167,20 @@ def assert_one_event(ev):
             assert isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__)
         else:
             assert result == ev, "Event %r should have been emitted but %s was" % (ev, result)
+    finally:
+        d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+
+
+@contextmanager
+def assert_event_not_emitted(ev):
+    d = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
+    try:
+        yield
+    except:
+        raise
+    else:
+        assert not d.called or deferred_result(d) != ev, \
+            "Event %s should not have been emitted" % (
+                (" of type %s" % (ev.__name__,)) if isinstance(ev, type) else ev,)
+    finally:
+        d.addErrback(lambda f: f.trap(CancelledError)).cancel()
