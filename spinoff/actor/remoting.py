@@ -111,7 +111,7 @@ class Hub(Logging):
             if path in self.registry:
                 self.registry[path].send(msg_)
             else:
-                pass  # TODO: emit DeadLetter
+                Events.log(DeadLetter(ActorRef(None, path), msg_))
 
         if sender_addr not in self.connections:
             assert msg == PING, "initial message sent to another node should be PING"

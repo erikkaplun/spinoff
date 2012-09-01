@@ -2255,8 +2255,15 @@ def test_transmitting_refs_and_sending_to_received_refs():
 
 
 @simtime
-def test_TODO_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
-    pass
+def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
+    network = MockNetwork(clock)
+
+    network.node('receivernode:123')
+
+    hub1 = network.node('sendernode:123')
+    ActorRef.remote('/non-existent-actor', 'receivernode:123', hub1) << 'straight-down-the-drain'
+    with assert_one_event(DeadLetter):
+        network.simulate(0.2)
 
 
 ## HEARTBEAT
