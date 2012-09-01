@@ -71,6 +71,22 @@ class BadSupervision(WrappingException):
         self.cause, self.tb = exc, tb
 
 
+class Path(str):
+    @property
+    def name(self):
+        _, name = self.rsplit('/', 1)
+        return name
+
+    @property
+    def parent(self):
+        parent_path, _ = self.rsplit('/', 1)
+        return parent_path
+
+    @property
+    def __div__(self, child):
+        return self + '/' + child
+
+
 # TODO: rename to Ref and use a Path str subtype for path
 class Ref(object):
     # XXX: should be protected/private
@@ -83,8 +99,7 @@ class Ref(object):
 
     def __init__(self, target, path, node=None):
         self.target = target
-        self.path = path
-        self.name = path.rsplit('/', 1)[-1]
+        self.path = Path(path)
         self.node = node
 
     def send(self, message, force_async=False):
