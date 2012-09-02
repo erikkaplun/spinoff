@@ -274,7 +274,7 @@ class _ActorContainer(object):
                 return self
             else:
                 child = rec(uri.parent)
-                return child[uri.name]
+                return child._children[uri.name]
         return rec(uri)
 
 
