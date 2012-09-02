@@ -103,6 +103,17 @@ class Hub(Logging):
     def send_message(self, ref, msg, *_, **__):
         # self.dbg(u"%r → %r" % (msg, ref))
         addr = ref.uri.node
+
+        if addr == self.node:
+            localref = self.guardian.lookup(ref.uri)
+            if not localref:
+                raise RuntimeError("Attempt to look up a non-existent local actor %r" % (ref,))
+            ref.cell = localref.cell
+            ref.is_local = True
+            del ref._hub
+            ref << msg
+            return
+
         conn = self.connections.get(addr)
         if not conn:
             self.dbg("%s set from not-known => %s" % (addr, 'radiosilence',))

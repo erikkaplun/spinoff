@@ -13,7 +13,7 @@ from nose.twistedtools import deferred
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
 
 from spinoff.actor import (
-    spawn, Actor, Props, Node, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision,)
+    spawn, Actor, Props, Node, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision, Ref, Uri)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
@@ -25,7 +25,6 @@ from spinoff.util.testing import (
 from spinoff.util.testing.actor import MockRef, Unclean, MockActor, assert_event_not_emitted
 from spinoff.actor.remoting import MockNetwork
 from spinoff.util.testing.common import simtime
-from spinoff.actor._actor import Uri
 
 
 def dbg(*args):
@@ -2159,52 +2158,44 @@ def test_TODO_watching_nonexistent_remote_actor():
 def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node(clock):
     # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
 
-    # emulate a scenario in which a single node sends many messages to many nodes
-    # a total of NUM_NODES*NUM_MSGS messages will be sent out
+    # emulate a scenario in which a single node sends many messages to other nodes;
+    # a total of NUM_NODES * NUM_ACTORS messages will be sent out.
     NUM_NODES = 3
-    NUM_MSGS = 20
+    NUM_ACTORS_PER_NODE = 20
 
     network = MockNetwork(clock)
 
-    # the sender
     sender_node = network.node(addr='senderhost:123')
-
     assert not network.queue
 
-    recipient_nodes = dict(('recphost%d:123' % (i + 1), {}) for i in range(NUM_NODES))
+    recipient_nodes = []
 
-    for nodename, node in recipient_nodes.items():
-        # Hubs for each remote node
-        remote_node = network.node(addr=nodename)
+    for node_num in range(1, NUM_NODES + 1):
+        nodeaddr = 'recphost%d:123' % node_num
+        remote_node = network.node(addr=nodeaddr)
 
-        # actor mocks that the messages will land in
-        node['actors'] = [MockRef(Uri.parse(nodename + '/actor%d' % (i + 1))) for i in range(NUM_MSGS)]
-        for receiver in node['actors']:
-            remote_node.publish(receiver)
+        receive_boxes = []
+        sent_msgs = []
 
-        # the refs are bound to the hub of the sender node, so that if we send a message to the ref, an outgoing message
-        # is emitted on the sender's hub's outgoing (mock) socket, with the destination ID being the name of the node the
-        # ref is pointing to:
-        node['refs'] = [sender_node.lookup(str(actor.uri)) for actor in node['actors']]
+        for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
+            actor_box = []  # collects whatever the MockActor receives
+            actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num, publish=True)
+            # we only care about the messages received, not the ref itself
+            receive_boxes.append(actor_box)
 
-        # ...and for each actor/ref we constructed, prepare a respective message:
-        node['msgs'] = [
-            # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure>
-            'dummy-%s-%s-%s' % (nodename, actor.uri, random.randint(1, 10000000))
-            for actor in node['actors']
-        ]
+            # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure> (just for debuggability)
+            msg = 'dummy-%s-%s-%s' % (nodeaddr, actor.uri.name, random.randint(1, 10000000))
+            sender_node.lookup(actor.uri) << msg
+            sent_msgs.append(msg)
 
-        for ref, msg in zip(node['refs'], node['msgs']):
-            ref << msg  # these messages will be stored in `msgs_on_wire` below
+        recipient_nodes.append((sent_msgs, receive_boxes))
 
-    ### END OF SENDER PART--BEGINNING OF RECEIVERS PART
-
-    random.shuffle(network.queue)
+    random.shuffle(network.queue)  # for good measure
     network.simulate(duration=3.0)
 
-    for _, node in recipient_nodes.items():
-        all(eq_(receiver.messages, [msg_sent])
-            for receiver, msg_sent in zip(node['actors'], node['msgs']))
+    for sent_msgs, receive_boxes in recipient_nodes:
+        all(eq_(receive_box, [sent_msg])
+            for sent_msg, receive_box in zip(sent_msgs, receive_boxes))
 
 
 def test_transmitting_refs_and_sending_to_received_refs():
@@ -2259,8 +2250,8 @@ def test_transmitting_refs_and_sending_to_received_refs():
 
 
 @simtime
-def test_TODO_sending_remote_refs(clock):
-    """Test sending remote refs.
+def test_sending_remote_refs(clock):
+    """Sending remote refs.
 
     The sender acquires a remote ref to an actor on the target and sends it to the sender, who then sends a message.
     to the target
@@ -2524,13 +2515,32 @@ def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(cloc
     assert remote_local_ref.is_local and not hasattr(remote_local_ref, '_hub')
 
 
-def test_TODO_looking_up_addresses_that_actually_point_to_the_local_node_return_a_local_ref():
-    # TODO: eager or lazy conversion
-    pass
+@simtime
+def test_looking_up_addresses_that_actually_point_to_the_local_node_return_a_local_ref(clock):
+    node = MockNetwork(clock).node('localhost:123')
+    node.spawn(Actor, name='localactor')
+    ref = node.lookup('localhost:123/localactor')
+    assert ref.is_local
 
 
-def test_TODO_creating_a_remote_ref_that_actually_points_to_an_actor_on_the_local_node_returns_the_local_ref():
-    pass
+@simtime
+def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(clock):
+    network = MockNetwork(clock)
+    node = network.node('localhost:123')
+
+    msgs = []
+    node.spawn(Props(MockActor, msgs), name='localactor', publish=True)
+
+    ref = Ref(cell=None, uri=Uri.parse('localhost:123/localactor'), is_local=False, hub=node.hub)
+    ref << 'foo'
+
+    network.simulate(5.0)
+    assert msgs == ['foo']
+    assert ref.is_local
+
+    ref << 'bar'
+    # no network.simulate should be needed
+    assert msgs == ['foo', 'bar']
 
 
 # ZMQ

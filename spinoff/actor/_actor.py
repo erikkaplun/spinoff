@@ -337,22 +337,28 @@ class Node(object):
     involved by setting a custom `actor.remoting.Hub` to the `Node`.
 
     """
+    hub = None
+
     def __init__(self, hub=None):
-        self.hub = hub
+        guardian_uri = Uri(name=None, parent=None, node=hub.node if hub else None)
+        self.guardian = Guardian(guardian_uri)
+
+        self.set_hub(hub)
+
+    def set_hub(self, hub):
         if hub:
             from .remoting import Hub
             if not isinstance(hub, Hub):
                 raise TypeError("hub parameter to Guardian must be a %s.%s" % (Hub.__module__, Hub.__name__))
             if hub.guardian:
                 raise RuntimeError("Can't bind Guardian to a Hub that is already bound to another Guardian")
-
-        guardian_uri = Uri(name=None, parent=None, node=hub.node if hub else None)
-        self.guardian = Guardian(guardian_uri)
+            hub.guardian = self.guardian
+            self.hub = hub
 
     def lookup(self, uri_or_addr):
         # TODO: move the local lookup logic to _ActorContainer.lookup
         if isinstance(uri_or_addr, Uri):
-            if uri_or_addr.host == self.hub.host:
+            if uri_or_addr.node == self.hub.node:
                 return _ActorContainer.lookup(self, uri_or_addr)
             else:
                 return Ref(cell=None, uri=uri_or_addr, is_local=False, hub=self.hub)
@@ -362,7 +368,7 @@ class Node(object):
                     raise RuntimeError("Address lookups disabled when remoting is not enabled")
                 return self.hub.lookup(uri_or_addr)
             else:
-                Uri.parse(uri_or_addr)
+                return _ActorContainer.lookup(self, uri_or_addr)
 
     def spawn(self, *args, **kwargs):
         publish = kwargs.pop('publish', False)
