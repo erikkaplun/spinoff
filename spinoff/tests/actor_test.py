@@ -28,14 +28,6 @@ from spinoff.actor.remoting import MockNetwork, HubWithNoRemoting
 from spinoff.util.testing.common import simtime
 
 
-def dbg(*args):
-    print(file=sys.stderr, *args)
-
-
-class MockException(Exception):
-    pass
-
-
 ##
 ## SENDING & RECEIVING
 
@@ -3234,6 +3226,14 @@ def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 
 
 # SUPPORT
+
+def dbg(*args):
+    print(file=sys.stderr, *args)
+
+
+class MockException(Exception):
+    pass
+
 
 def TestNode():
     return Node(hub=HubWithNoRemoting())
