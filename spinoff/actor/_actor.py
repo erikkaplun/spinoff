@@ -307,9 +307,6 @@ class Ref(RefBase, _HubBound):
             elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
                 Events.log(DeadLetter(self, message))
 
-    def _stop_noevent(self):
-        Events.consume_one(TopLevelActorTerminated)
-        self.stop()
 
     @property
     def is_stopped(self):
