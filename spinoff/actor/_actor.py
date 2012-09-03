@@ -92,6 +92,12 @@ class Uri(object):
 
     def __div__(self, child):
         """Builds a new child `Uri` of this `Uri` with the given `name`."""
+        if not child or not isinstance(child, str):
+            raise TypeError("Uri traversal expected a non-empty str but got %r" % (child,))
+        if child in ('.', '..'):
+            raise TypeError("Traversing using . and .. is not supported (yet)")
+        elif '/' in child:
+            raise TypeError("Traversing more than 1 level at a time is not supported (yet)")
         return Uri(name=child, parent=self)
 
     @property
