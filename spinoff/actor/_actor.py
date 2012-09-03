@@ -477,6 +477,9 @@ class Node(object):
     def __getstate__(self):
         raise PicklingError("Guardian cannot be serialized")
 
+    def __repr__(self):
+        return '<node:%s>' % (self._uri if self.hub else 'local')
+
     def __call__(self, hub=None):
         """Spawns new, non-default instances of the guardian; useful for testing."""
         return type(self)(hub)
