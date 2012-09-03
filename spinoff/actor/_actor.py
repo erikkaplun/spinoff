@@ -273,6 +273,10 @@ class Ref(RefBase, _HubBound):
 
     # XXX: should be protected/private
     cell = None  # so that .cell could be deleted to save memory
+
+    # XXX: should be is_resolved with perhaps is_local being None while is_resolved is False
+    # Ref constructor should set is_resolved=False by default, but that requires is_dead for creating dead refs, because
+    # currently dead refs are just Refs with no cell and is_local=True
     is_local = True
 
     def __init__(self, cell, uri, is_local=True, hub=None):
