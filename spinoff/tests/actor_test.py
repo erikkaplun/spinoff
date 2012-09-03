@@ -2655,7 +2655,7 @@ def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(clock)
     node = network.node('localhost:123')
 
     msgs = []
-    node.spawn(Props(MockActor, msgs), name='localactor', publish=True)
+    node.spawn(Props(MockActor, msgs), name='localactor')
 
     ref = Ref(cell=None, uri=Uri.parse('localhost:123/localactor'), is_local=False, hub=node.hub)
     ref << 'foo'
