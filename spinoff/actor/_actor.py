@@ -41,10 +41,6 @@ _VALID_NODEID_RE = re.compile('(?:%s|%s):(?P<port>[0-9]+)$' % (_VALID_HOSTNAME_R
 _SYSTEM_MESSAGES = ('_start', '_stop', '_restart', '_suspend', '_resume', ('_child_terminated', ANY))
 
 
-def dbg(*args):
-    print(file=sys.stderr, *args)
-
-
 class NameConflict(Exception):
     pass
 
@@ -1225,3 +1221,7 @@ def _validate_nodeid(nodeid):
     port = int(m.group(1))
     if not (0 <= port <= 65535):
         raise ValueError("Ports should be in the range 0-65535: %d" % (port,))
+
+
+def dbg(*args):
+    print(file=sys.stderr, *args)
