@@ -11,6 +11,7 @@ import weakref
 from nose.tools import eq_, ok_, set_trace
 from nose.twistedtools import deferred
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
+from twisted.internet.task import Clock
 
 from spinoff.actor import (
     spawn, Actor, Props, Node, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision, Ref, Uri)
@@ -22,8 +23,8 @@ from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot)
-from spinoff.util.testing.actor import MockRef, Unclean, MockActor, assert_event_not_emitted
-from spinoff.actor.remoting import MockNetwork
+from spinoff.util.testing.actor import Unclean, MockActor, assert_event_not_emitted
+from spinoff.actor.remoting import MockNetwork, HubWithNoRemoting
 from spinoff.util.testing.common import simtime
 
 
@@ -1265,22 +1266,63 @@ def test_fully_qualified_uri():
     eq_(uri.local, '/foo/bar')
 
 
-def test_TODO_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_reference_to_it():
-    pass
+## LOOKUP
+
+def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference_to_it():
+    node = TestNode()
+    toplevel_actor = node.spawn(Actor, name='toplevel')
+    assert node.lookup('/toplevel') is toplevel_actor
+    assert node.lookup(Uri.parse('/toplevel')) is toplevel_actor
+
+    child_actor = toplevel_actor.cell.spawn(Actor, name='child')
+    assert node.lookup('/toplevel/child') is child_actor
+    assert node.lookup(Uri.parse('/toplevel/child')) is child_actor
 
 
-def test_TODO_looking_up_a_non_existent_path_returns_an_empty_reference():
-    pass
+def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_to_it():
+    node = TestNode()
+    toplevel_actor = node.spawn(Actor, name='toplevel')
+    assert node.lookup('toplevel') is toplevel_actor
+
+    child_actor = toplevel_actor.cell.spawn(Actor, name='child')
+    assert node.lookup('toplevel/child') is child_actor
+    assert toplevel_actor / 'child' is child_actor
 
 
-def test_TODO_messages_to_nonexistent_actors_are_sent_to_dead_letters():
-    # TODO: this requires actor lookups by path
-    # (absolute lookups are trivial but not relative lookups)
-    pass
+def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_reference_to_it():
+    node = TestNode()
+
+    a = node.spawn(Actor, name='a')
+    ok_(node.guardian / 'a' is a)
+
+    b = a.cell.spawn(Actor, name='b')
+    ok_(a / 'b' is b)
+    ok_(node.guardian / 'a/b' is b)
 
 
-def test_TODO_stopped_actors_remote_refs_are_optimised():
-    pass
+def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
+    node = TestNode()
+
+    with assert_raises(RuntimeError):
+        node.guardian / 'noexist'
+
+
+def test_looking_up_a_non_existent_local_actor_returns_a_dead_ref_with_nevertheless_correct_uri():
+    network = MockNetwork(Clock())
+    node = network.node('local:123')
+    eq_(node.guardian, node.lookup('local:123'))
+
+    noexist = node.lookup('local:123/a/b/c')
+    eq_(noexist.uri, 'local:123/a/b/c')
+    ok_(noexist.is_local)
+    with assert_one_event(DeadLetter(noexist, 'foo')):
+        noexist << 'foo'
+
+    hypotheticalchild = noexist / 'hypotheticalchild'
+    ok_(hypotheticalchild.is_local)
+    eq_(hypotheticalchild.uri, 'local:123/a/b/c/hypotheticalchild')
+    with assert_one_event(DeadLetter(hypotheticalchild, 'foo')):
+        hypotheticalchild << 'foo'
 
 
 ##
@@ -3192,6 +3234,10 @@ def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 
 
 # SUPPORT
+
+def TestNode():
+    return Node(hub=HubWithNoRemoting())
+
 
 def wrap_globals():
     """Ensures that errors in actors during tests don't go unnoticed."""

@@ -16,7 +16,7 @@ from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
-from spinoff.actor import Ref, Uri, Node
+from spinoff.actor import Ref, Uri, Node, LookupFailed
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
@@ -85,14 +85,6 @@ class Hub(Logging):
 
     guardian = property(get_guardian, set_guardian)
 
-    def lookup(self, addr):
-        uri = Uri.parse(addr)
-        # self.dbg("looked up %r from %s" % (uri, addr))
-        if uri.root.node == self.node:
-            assert self.guardian
-            return self.guardian.lookup(uri)
-        return Ref(cell=None, uri=uri, is_local=False, hub=self)
-
     def register(self, actor):
         # TODO: use weakref
         # self.dbg(actor, '=>', actor.uri.path)
@@ -100,17 +92,21 @@ class Hub(Logging):
         self.registry[actor.uri.path] = actor
 
     @logstring(u"⇝")
-    def send_message(self, ref, msg, *_, **__):
+    def send_message(self, ref, msg):
         # self.dbg(u"%r → %r" % (msg, ref))
         addr = ref.uri.node
 
-        if addr == self.node:
-            localref = self.guardian.lookup(ref.uri)
-            if not localref:
-                raise RuntimeError("Attempt to look up a non-existent local actor %r" % (ref,))
-            ref.cell = localref.cell
+        # assert addr and addr != self.node, "TODO: remote-ref pointing to the local node detected"
+        # TODO: if it's determined that it makes sense to allow the existence of such refs, enable the following block
+        if not addr or addr == self.node:
+            try:
+                cell = self.guardian.lookup_cell(ref.uri)
+            except LookupFailed:
+                ref.is_local = True  # next time, just put it straight to DeadLetters
+                Events.log(DeadLetter(ref, msg))
+                return
+            ref.cell = cell
             ref.is_local = True
-            del ref._hub
             ref << msg
             return
 
@@ -246,6 +242,18 @@ class Hub(Logging):
 
     def __repr__(self):
         return '<%s>' % (self.node,)
+
+
+class HubWithNoRemoting(object):
+    # to be compatible with Hub:
+    guardian = None
+    node = None
+
+    def send_message(self, ref, msg):
+        raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
+
+    def register(self, actor):
+        pass
 
 
 class IncomingMessageUnpickler(Unpickler):

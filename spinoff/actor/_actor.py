@@ -27,6 +27,7 @@ from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import Logging, logstring
 
 
+TESTING = True
 _NODE = None  # set in __init__.py
 
 
@@ -74,6 +75,10 @@ class BadSupervision(WrappingException):
     def __init__(self, message, exc, tb):
         WrappingException.__init__(self, message)
         self.cause, self.tb = exc, tb
+
+
+class LookupFailed(RuntimeError):
+    pass
 
 
 # XXX: please unit-test this class thoroughly
@@ -198,6 +203,20 @@ class RefBase(object):
     def is_stopped(self):
         raise NotImplementedError
 
+    def __div__(self, next):
+        """Looks up a descendant of this actor.
+
+        Raises `LookupFailed` if this is a local ref and the descendant was not found.
+
+        """
+        # local and not dead
+        if self.is_local and self.cell:
+            return self.cell.lookup_ref(next)
+        # non-local or dead
+        else:
+            return Ref(cell=None, uri=self.uri / next, is_local=self.is_local,
+                       hub=None if self.is_local else self.hub)
+
     def __lshift__(self, message):
         """A fancy looking alias to `RefBase.stop`, which in addition also supports chaining.
 
@@ -311,7 +330,6 @@ class Ref(RefBase, _HubBound):
             elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
                 Events.log(DeadLetter(self, message))
 
-
     @property
     def is_stopped(self):
         """Returns `True` if this actor is guaranteed to have stopped.
@@ -352,9 +370,23 @@ class Ref(RefBase, _HubBound):
         self.uri = Uri.parse(uri)
 
 
-class _ActorContainer(object):
+class _BaseCell(_HubBound):
+    __metaclass__ = abc.ABCMeta
+
     _children = {}  # XXX: should be a read-only dict
     _child_name_gen = None
+
+    @abc.abstractproperty
+    def root(self):
+        raise NotImplementedError
+
+    @abc.abstractproperty
+    def ref(self):
+        raise NotImplementedError
+
+    @abc.abstractproperty
+    def uri(self):
+        raise NotImplementedError
 
     def spawn(self, factory, name=None):
         """Spawns an actor using the given `factory` with the specified `name`.
@@ -377,7 +409,7 @@ class _ActorContainer(object):
 
         assert name not in self._children  # XXX: ordering??
         self._children[name] = None
-        child = _do_spawn(parent=self.ref(), factory=factory, uri=uri)
+        child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
 
@@ -407,17 +439,43 @@ class _ActorContainer(object):
         name = child.uri.name  # rsplit('/', 1)[-1]
         del self._children[name]
 
-    def lookup(self, uri):
-        def rec(uri):
-            if not uri.parent:
-                return self
-            else:
-                child = rec(uri.parent)
-                return child._children[uri.name]
-        return rec(uri)
+    def get_child(self, name):
+        if not (name and isinstance(name, str)):
+            raise TypeError("get_child takes a non-emtpy string")
+        return self._children.get(name, None)
+
+    def lookup_cell(self, uri):
+        """Looks up a local actor by its location relative to this actor."""
+        steps = uri.steps
+
+        if steps[0] == '':
+            found = self.root
+            steps.popleft()
+        else:
+            found = self
+
+        for step in steps:
+            assert step != ''
+            found = found.get_child(step)
+            if not found:
+                break
+            found = found.cell
+        return found
+
+    def lookup_ref(self, uri):
+        if not (uri and isinstance(uri, (Uri, str))):
+            raise TypeError("_BaseCell.lookup expects a non-empty str or Uri")
+
+        uri = uri if isinstance(uri, Uri) else Uri.parse(uri)
+
+        assert not uri.node or uri.node == self.uri.node
+        cell = self.lookup_cell(uri)
+        if not cell:
+            raise LookupFailed("Look-up of local actor failed: %s" % (uri,))
+        return cell.ref
 
 
-class Guardian(_ActorContainer, RefBase):
+class Guardian(_BaseCell, RefBase, Logging):
     """The root of an actor hierarchy.
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
@@ -431,9 +489,19 @@ class Guardian(_ActorContainer, RefBase):
     is_local = True  # imitate Ref
     is_stopped = False  # imitate Ref
 
-    def __init__(self, uri):
-        self.uri = uri
+    root = None
+    node = None
+    uri = None
+    cell = None
 
+    def __init__(self, uri, node, hub):
+        super(Guardian, self).__init__(hub=hub)
+        self.uri = uri
+        self.node = node
+        self.root = self
+        self.cell = self  # for _BaseCell
+
+    @property
     def ref(self):
         return self
 
@@ -469,7 +537,7 @@ class Guardian(_ActorContainer, RefBase):
         raise PicklingError("Guardian cannot be serialized")
 
 
-class Node(object):
+class Node(Logging):
     """`Node` is both a singleton instance and a class lookalike, there is thus always available a default global
     `Node` instance but it is possible to create more, non-default, instances of `Node` by simply calling it as if it
     were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without any network
@@ -479,35 +547,42 @@ class Node(object):
     hub = None
 
     def __init__(self, hub=None):
-        guardian_uri = Uri(name=None, parent=None, node=hub.node if hub else None)
-        self.guardian = Guardian(guardian_uri)
-
+        if not hub:
+            raise TypeError("Node instances must be bound to a Hub")
+        self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
+        self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None)
         self.set_hub(hub)
 
     def set_hub(self, hub):
         if hub:
-            from .remoting import Hub
-            if not isinstance(hub, Hub):
-                raise TypeError("hub parameter to Guardian must be a %s.%s" % (Hub.__module__, Hub.__name__))
+            from .remoting import Hub, HubWithNoRemoting
+            if not isinstance(hub, (Hub, HubWithNoRemoting)):
+                raise TypeError("hub parameter to Guardian must be a %s.%s or a %s.%s" %
+                                (Hub.__module__, Hub.__name__,
+                                 HubWithNoRemoting.__module__, HubWithNoRemoting.__name__))
             if hub.guardian:
                 raise RuntimeError("Can't bind Guardian to a Hub that is already bound to another Guardian")
             hub.guardian = self.guardian
             self.hub = hub
 
     def lookup(self, uri_or_addr):
-        # TODO: move the local lookup logic to _ActorContainer.lookup
-        if isinstance(uri_or_addr, Uri):
-            if uri_or_addr.node == self.hub.node:
-                return _ActorContainer.lookup(self, uri_or_addr)
-            else:
-                return Ref(cell=None, uri=uri_or_addr, is_local=False, hub=self.hub)
+        if not (uri_or_addr and isinstance(uri_or_addr, (Uri, str))):
+            raise TypeError("Node.lookup expects a non-empty str or Uri")
+
+        uri = uri_or_addr if isinstance(uri_or_addr, Uri) else Uri.parse(uri_or_addr)
+
+        if not uri.node or uri.node == self._uri.node:
+            try:
+                return self.guardian.lookup_ref(uri)
+            except LookupFailed if uri.node else None:
+                # for remote lookups that actually try to look up something on the local node, we don't want to raise an
+                # exception because the caller might not be statically aware of the localness of the `Uri`, thus we
+                # return a mere dead ref:
+                return Ref(cell=None, uri=uri, is_local=True)
+        elif not uri.root:
+            raise TypeError("Node can't look up a relative Uri")
         else:
-            if not uri_or_addr.startswith('/'):
-                if not self.hub:
-                    raise RuntimeError("Address lookups disabled when remoting is not enabled")
-                return self.hub.lookup(uri_or_addr)
-            else:
-                return _ActorContainer.lookup(self, uri_or_addr)
+            return Ref(cell=None, uri=uri, is_local=False, hub=self.hub if TESTING else None)
 
     def spawn(self, *args, **kwargs):
         publish = kwargs.pop('publish', False)
@@ -600,7 +675,12 @@ class Actor(object):
 
     @property
     def ref(self):
-        return self.__cell.ref()
+        return self.__cell.ref
+
+    @property
+    def node(self):
+        """Returns a reference to the `Node` whose hierarchy this `Actor` is part of."""
+        return self.__cell.node
 
     def _set_cell(self, cell):
         self.__cell = cell
@@ -636,10 +716,10 @@ class Props(object):
         return '<props:%s(%s%s)>' % (self.cls.__name__, args, ((', ' + kwargs) if args else kwargs) if kwargs else '')
 
 
-def _do_spawn(parent, factory, uri):
-    cell = Cell(parent=parent, factory=factory, uri=uri)
+def _do_spawn(parent, factory, uri, hub):
+    cell = Cell(parent=parent, factory=factory, uri=uri, hub=hub)
     cell.receive('_start', force_async=Actor.SPAWNING_IS_ASYNC)
-    return cell.ref()
+    return cell.ref
 
 
 def default_supervise(exc):
@@ -654,7 +734,7 @@ def default_supervise(exc):
     #     return Escalate  # TODO: needed for BaseException
 
 
-class Cell(_ActorContainer, Logging):
+class Cell(_BaseCell, Logging):
     constructed = False
     started = False
     actor = None
@@ -673,12 +753,14 @@ class Cell(_ActorContainer, Logging):
     _ongoing = None
 
     _ref = None
-
     _child_name_gen = None
+    uri = None
 
     watchers = []
 
-    def __init__(self, parent, factory, uri):
+    def __init__(self, parent, factory, uri, hub):
+        super(Cell, self).__init__(hub=hub)
+
         if not callable(factory):
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.parent = parent
@@ -692,6 +774,10 @@ class Cell(_ActorContainer, Logging):
     @property
     def root(self):
         return self.parent if isinstance(self.parent, Guardian) else self.parent.cell.root
+
+    @property
+    def node(self):
+        return self.root.node
 
     # TODO: benchmark the message methods and optimise
     def has_message(self):
@@ -859,7 +945,7 @@ class Cell(_ActorContainer, Logging):
         if ('terminated', ANY) == message:
             raise UnhandledTermination
         else:
-            Events.log(UnhandledMessage(self.ref(), message))
+            Events.log(UnhandledMessage(self.ref, message))
 
     @logstring("ctor:")
     @inlineCallbacks
@@ -980,7 +1066,7 @@ class Cell(_ActorContainer, Logging):
     def _finish_stop(self, _):
         self.dbg()
         try:
-            ref = self.ref()
+            ref = self.ref
 
             # TODO: test that system messages are not deadlettered
             for message in self.inbox:
@@ -1017,7 +1103,7 @@ class Cell(_ActorContainer, Logging):
     def _do_watched(self, other):
         self.dbg(other)
         if self.stopped:
-            other << ('terminated', self.ref())
+            other << ('terminated', self.ref)
             return
         if not self.watchers:
             self.watchers = []
@@ -1087,15 +1173,16 @@ class Cell(_ActorContainer, Logging):
             # Events.log(Error(self, e, sys.exc_info()[2])),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
-            self.parent.send(('_error', self.ref(), exc, tb), force_async=True)
+            self.parent.send(('_error', self.ref, exc, tb), force_async=True)
         except Exception:
             try:
-                Events.log(ErrorIgnored(self.ref(), exc, tb))
+                Events.log(ErrorIgnored(self.ref, exc, tb))
                 _, sys_exc, sys_tb = sys.exc_info()
-                Events.log(SupervisionFailure(self.ref(), sys_exc, sys_tb))
+                Events.log(SupervisionFailure(self.ref, sys_exc, sys_tb))
             except Exception:
                 self.panic("failed to report:\n", traceback.format_exc(file=sys.stderr))
 
+    @property
     def ref(self):
         if self.stopped:
             return Ref(cell=None, uri=self.uri)
