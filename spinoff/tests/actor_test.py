@@ -2339,7 +2339,7 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
         for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
             actor_box = []  # collects whatever the MockActor receives
-            actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num, publish=True)
+            actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num)
             # we only care about the messages received, not the ref itself
             receive_boxes.append(actor_box)
 
@@ -2377,7 +2377,7 @@ def test_transmitting_refs_and_sending_to_received_refs():
         node2 = network.node(addr='host2:123')
 
         actor2_msgs = []
-        node2.spawn(Props(MockActor, actor2_msgs), name='actor2', publish=True)
+        node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
 
         # send from node1 -> node2:
         node1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)
@@ -2492,8 +2492,7 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time(clock):
 
     node2 = network.node('host2:123')
     actor2_msgs = []
-    actor2 = node2.spawn(Props(MockActor, actor2_msgs), name='actor1')
-    node2.publish(actor2)
+    node2.spawn(Props(MockActor, actor2_msgs), name='actor1')
 
     network.simulate(duration=3.0)
 
@@ -2615,7 +2614,7 @@ def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
 
     node2 = network.node('host2:123')
     actor2_msgs = []
-    node2.spawn(Props(MockActor, actor2_msgs), name='actor2', publish=True)
+    node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
     network.simulate(duration=2.0)
 
     node1.lookup('host2:123/actor2') << 'bar'
@@ -2660,7 +2659,7 @@ def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(cloc
     # guardian2 = Guardian(hub=hub2)
 
     actor2_msgs = []
-    node2.spawn(Props(MockActor, actor2_msgs), name='actor2', publish=True)
+    node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
 
     # send from node1 -> node2:
     node1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)

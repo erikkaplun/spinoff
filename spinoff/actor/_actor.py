@@ -585,23 +585,7 @@ class Node(Logging):
             return Ref(cell=None, uri=uri, is_local=False, hub=self.hub if TESTING else None)
 
     def spawn(self, *args, **kwargs):
-        publish = kwargs.pop('publish', False)
-        ret = self.guardian.spawn(*args, **kwargs)
-        if publish:
-            self.publish(ret)
-        return ret
-
-    def publish(self, actor):
-        """Publishes the actor on the network.
-
-        Make sure you've set a name to the actor and all its parents--otherwise a generated name will end up in the URI.
-
-        """
-        # it is meaningful to simply ignore register if there's no Hub available--this way a combination of actors in
-        # general running distributedly can be run in a single node without any remoting needed at all without having
-        # to change the code
-        if self.hub:
-            self.hub.register(actor)
+        return self.guardian.spawn(*args, **kwargs)
 
     def stop(self):
         self.guardian.stop()

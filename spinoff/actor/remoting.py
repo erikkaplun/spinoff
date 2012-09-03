@@ -9,14 +9,15 @@ import traceback
 from cStringIO import StringIO
 from collections import deque
 from decimal import Decimal
-from pickle import Unpickler, Pickler, BUILD
+from pickle import Unpickler, BUILD
+from cPickle import dumps
 
 from twisted import internet
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
-from spinoff.actor import Ref, Uri, Node, LookupFailed
+from spinoff.actor import Ref, Uri, Node
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
@@ -63,7 +64,6 @@ class Hub(Logging):
         incoming.gotMessage = self.got_message
         incoming.addEndpoints([ZmqEndpoint('bind', node)])
 
-        self.registry = {}
         self.node = node
         self.connections = {}
 
@@ -85,11 +85,6 @@ class Hub(Logging):
 
     guardian = property(get_guardian, set_guardian)
 
-    def register(self, actor):
-        # TODO: use weakref
-        # self.dbg(actor, '=>', actor.uri.path)
-        assert actor.uri.node == self.node
-        self.registry[actor.uri.path] = actor
 
     @logstring(u"⇝")
     def send_message(self, ref, msg):
@@ -99,9 +94,8 @@ class Hub(Logging):
         # assert addr and addr != self.node, "TODO: remote-ref pointing to the local node detected"
         # TODO: if it's determined that it makes sense to allow the existence of such refs, enable the following block
         if not addr or addr == self.node:
-            try:
-                cell = self.guardian.lookup_cell(ref.uri)
-            except LookupFailed:
+            cell = self.guardian.lookup_cell(ref.uri)
+            if not cell:
                 ref.is_local = True  # next time, just put it straight to DeadLetters
                 Events.log(DeadLetter(ref, msg))
                 return
@@ -123,7 +117,7 @@ class Hub(Logging):
             self._connect(addr, conn)
 
         if conn.state == 'visible':
-            self.outgoing.sendMsg((ref.uri.node, self._dumps((ref.uri.path, msg))))
+            self.outgoing.sendMsg((ref.uri.node, dumps((ref.uri.path, msg), protocol=2)))
         else:
             if conn.queue is None:
                 self.emit_deadletter((ref, msg))
@@ -137,10 +131,11 @@ class Hub(Logging):
         else:
             path, msg_ = self._loads(msg)
             self.dbg(u"%r ← %s   → %s" % (msg_, sender_addr, path))
-            if path in self.registry:
-                self.registry[path].send(msg_)
-            else:
+            cell = self.guardian.lookup_cell(Uri.parse(path))
+            if not cell:
                 Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
+            else:
+                cell.receive(msg_)  # XXX: force_async=True perhaps?
 
         if sender_addr not in self.connections:
             assert msg == PING, "initial message sent to another node should be PING"
@@ -161,7 +156,7 @@ class Hub(Logging):
                 while conn.queue:
                     (ref, queued_msg), _ = conn.queue.popleft()
                     assert ref.uri.node == sender_addr
-                    self.outgoing.sendMsg((sender_addr, self._dumps((ref.uri.path, queued_msg))))
+                    self.outgoing.sendMsg((sender_addr, dumps((ref.uri.path, queued_msg), protocol=2)))
 
     def _connect(self, addr, conn):
         # self.dbg("...connecting to %s" % (addr,))
@@ -232,10 +227,6 @@ class Hub(Logging):
     def logstate(self):
         return {str(self.reactor.seconds()): True}
 
-    def _dumps(self, msg):
-        buf = StringIO()
-        OutgoingMessagePickler(self, buf).dump(msg)
-        return buf.getvalue()
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
@@ -251,9 +242,6 @@ class HubWithNoRemoting(object):
 
     def send_message(self, ref, msg):
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
-
-    def register(self, actor):
-        pass
 
 
 class IncomingMessageUnpickler(Unpickler):
@@ -285,21 +273,7 @@ class IncomingMessageUnpickler(Unpickler):
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
 
 
-class OutgoingMessagePickler(Pickler):
-    def __init__(self, hub, *args, **kwargs):
-        Pickler.__init__(self, protocol=2, *args, **kwargs)
-        self.hub = hub
 
-    def save_ref(self, ref):
-        if ref.uri.node == self.hub.node:
-            # we're probably being serialized for wire-transfer, so for the deserialized dopplegangers of us on other nodes
-            # to be able to deliver to us messages, we need to register ourselves with the hub we belong to; if we're being
-            # serialized for other reasons (such as storing to disk), it won't harm us, especially when `Hub.registry` is
-            # made to use weakrefs.
-            self.hub.register(ref)
-        self.save_reduce(Ref, (None, None), ref.__getstate__(), obj=ref)
-    dispatch = dict(Pickler.dispatch)
-    dispatch[Ref] = save_ref
 
 
 class MockNetwork(Logging):
