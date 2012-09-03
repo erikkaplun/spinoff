@@ -11,7 +11,7 @@ from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, Supervisi
 
 from .common import deferred_result, assert_raises
 from spinoff.actor._actor import WrappingException
-from spinoff.actor._actor import RefBase
+from spinoff.actor._actor import _BaseRef
 
 
 class MockMessages(list):
@@ -35,7 +35,7 @@ def make_mock():
     return ret, messages
 
 
-class MockRef(RefBase):
+class MockRef(_BaseRef):
     def __init__(self, uri):
         self.messages = MockMessages()
         self.uri = uri

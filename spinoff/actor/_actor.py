@@ -191,7 +191,7 @@ class Uri(object):
         return str(self) == str(other) or isinstance(other, Matcher) and other == self
 
 
-class RefBase(object):
+class _BaseRef(object):
     """Internal abstract class for all objects that behave like actor references."""
     __metaclass__ = abc.ABCMeta
 
@@ -218,7 +218,7 @@ class RefBase(object):
                        hub=None if self.is_local else self.hub)
 
     def __lshift__(self, message):
-        """A fancy looking alias to `RefBase.stop`, which in addition also supports chaining.
+        """A fancy looking alias to `_BaseRef.stop`, which in addition also supports chaining.
 
             someactor.send(msg1); someactor.send(msg2)
             someactor << msg1 << msg2
@@ -252,7 +252,7 @@ class _HubBound(object):
         return self._hub or _NODE.hub
 
 
-class Ref(RefBase, _HubBound):
+class Ref(_BaseRef, _HubBound):
     """A serializable, location-transparent, encapsulating reference to an actor.
 
     `Ref`s can be obtained in several different ways.
@@ -475,7 +475,7 @@ class _BaseCell(_HubBound):
         return cell.ref
 
 
-class Guardian(_BaseCell, RefBase, Logging):
+class Guardian(_BaseCell, _BaseRef, Logging):
     """The root of an actor hierarchy.
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
@@ -1204,7 +1204,7 @@ class Cell(_BaseCell, Logging):
 
 
 # TODO: replace with serializable temporary actors
-class Future(Deferred):  # TODO: ActorRefBase or IActorRef or smth
+class Future(Deferred):  # TODO: inherit from _BaseRef or similar
     def send(self, message):
         self.callback(message)
 
