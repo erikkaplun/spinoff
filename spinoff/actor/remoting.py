@@ -18,6 +18,7 @@ from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
 from spinoff.actor import Ref, Uri, Node
+from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
@@ -27,6 +28,9 @@ dbg = lambda *args, **kwargs: print(file=sys.stderr, *args, **kwargs)
 
 PING = 'ping'
 PONG = 'pong'
+
+
+_VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
 
 
 _dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')
@@ -56,15 +60,18 @@ class Hub(Logging):
     def __init__(self, incoming, outgoing, node, reactor=reactor):
         """During testing, the address of this hub/node on the mock network can be the same as its name, for added simplicity
         of not having to have a mapping between logical node names and "physical" mock addresses."""
-        assert node
+        if not node or not isinstance(node, str):
+            raise TypeError("The 'node' argument to Hub must be a str")
+        _validate_nodeid(node)
+        self.node = node
+        self.addr = 'tcp://' + node if node else None
 
         self.reactor = reactor
 
         self.outgoing = outgoing
         incoming.gotMessage = self.got_message
-        incoming.addEndpoints([ZmqEndpoint('bind', node)])
+        incoming.addEndpoints([ZmqEndpoint('bind', self.addr)])
 
-        self.node = node
         self.connections = {}
 
         l1 = LoopingCall(self.send_heartbeat)
@@ -88,11 +95,11 @@ class Hub(Logging):
     @logstring(u"⇝")
     def send_message(self, ref, msg):
         # self.dbg(u"%r → %r" % (msg, ref))
-        addr = ref.uri.node
+        nodeid = ref.uri.node
 
         # assert addr and addr != self.node, "TODO: remote-ref pointing to the local node detected"
         # TODO: if it's determined that it makes sense to allow the existence of such refs, enable the following block
-        if not addr or addr == self.node:
+        if not nodeid or nodeid == self.node:
             cell = self.guardian.lookup_cell(ref.uri)
             if not cell:
                 ref.is_local = True  # next time, just put it straight to DeadLetters
@@ -102,6 +109,8 @@ class Hub(Logging):
             ref.is_local = True
             ref << msg
             return
+
+        addr = ref.uri.root.url
 
         conn = self.connections.get(addr)
         if not conn:
@@ -116,7 +125,7 @@ class Hub(Logging):
             self._connect(addr, conn)
 
         if conn.state == 'visible':
-            self.outgoing.sendMsg((ref.uri.node, dumps((ref.uri.path, msg), protocol=2)))
+            self.outgoing.sendMsg((addr, dumps((ref.uri.path, msg), protocol=2)))
         else:
             if conn.queue is None:
                 self.emit_deadletter((ref, msg))
@@ -154,10 +163,11 @@ class Hub(Logging):
             if prevstate != 'visible' and conn.state == 'visible':
                 while conn.queue:
                     (ref, queued_msg), _ = conn.queue.popleft()
-                    assert ref.uri.node == sender_addr
+                    assert ref.uri.root.url == sender_addr
                     self.outgoing.sendMsg((sender_addr, dumps((ref.uri.path, queued_msg), protocol=2)))
 
     def _connect(self, addr, conn):
+        assert _valid_addr(addr)
         # self.dbg("...connecting to %s" % (addr,))
         self.outgoing.addEndpoints([ZmqEndpoint('connect', addr)])
         # send one heartbeat immediately for better latency
@@ -200,6 +210,7 @@ class Hub(Logging):
 
     @logstring(u"⇝ ❤")
     def heartbeat_one(self, addr, signal):
+        assert _valid_addr(addr)
         self.log(u"%s →" % (signal,), addr)
         self.outgoing.sendMsg((addr, signal))
 
@@ -271,6 +282,36 @@ class IncomingMessageUnpickler(Unpickler):
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
 
 
+def _validate_addr(addr):
+    # call from app code
+    m = _VALID_ADDR_RE.match(addr)
+    if not m:
+        raise ValueError("Addresses should be in the format 'tcp://<ip-or-hostname>:<port>': %s" % (addr,))
+    port = int(m.group(1))
+    if not (0 <= port <= 65535):
+        raise ValueError("Ports should be in the range 0-65535: %d" % (port,))
+
+
+def _assert_valid_nodeid(nodeid):
+    try:
+        _validate_nodeid(nodeid)
+    except ValueError as e:
+        raise AssertionError(e.message)
+
+
+def _assert_valid_addr(addr):
+    try:
+        _validate_addr(addr)
+    except ValueError as e:
+        raise AssertionError(e.message)
+
+
+# semantic alias for prefixing with `assert`
+def _valid_addr(addr):
+    _assert_valid_addr(addr)
+    return True
+
+
 class MockNetwork(Logging):
     """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
 
@@ -283,48 +324,53 @@ class MockNetwork(Logging):
 
         self._packet_loss = {}
 
-    def node(self, addr, nodeid=None):
+    def node(self, nodeid):
         """Creates a new node with the specified name, with `MockSocket` instances as incoming and outgoing sockets.
 
         Returns the implementation object created for the node from the cls, args and address specified, and the sockets.
         `cls` must be a callable that takes the insock and outsock, and the specified args and kwargs.
 
         """
-        self._validate_addr(addr)
+        _assert_valid_nodeid(nodeid)
+        addr = 'tcp://' + nodeid
         insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
         outsock = MockOutSocket(addEndpoints=lambda endpoints: self.connect(addr, endpoints),
                                 sendMsg=lambda msg: self.enqueue(addr, msg))
 
-        return Node(hub=Hub(insock, outsock, node=nodeid or addr, reactor=self.clock))
+        return Node(hub=Hub(insock, outsock, node=nodeid, reactor=self.clock))
 
     # def mapperdaemon(self, addr):
     #     pass
 
     def packet_loss(self, percent, src, dst):
+        _assert_valid_addr(src)
+        _assert_valid_addr(dst)
         self._packet_loss[(src, dst)] = percent / 100.0
-
-    def _validate_addr(self, addr):
-        assert re.match('.+:[0-9]+', addr), "addresses should be in the format <ip-or-hostname>:<port>"
 
     def bind(self, addr, sock, endpoints):
         assert all(x.type == 'bind' for x in endpoints), "Hubs should only bind in-sockets and never connect"
         assert len(endpoints) == 1, "Hubs should only bind in-sockets to a single network address"
         endpoint, = endpoints
-        assert endpoint.address == addr, "Hubs should only bind its in-socket to the address given to the Hub"
+        _assert_valid_addr(addr)
+        _assert_valid_addr(endpoint.address)
+        assert endpoint.address == addr, "Hubs should only bind its in-socket to the address given to the Hub: %s != %s" % (addr, endpoint.address)
         if addr in self.listeners:
             raise TypeError("addr %r already registered on the network" % (addr,))
         self.listeners[addr] = sock
 
     def connect(self, addr, endpoints):
+        _assert_valid_addr(addr)
         for endpoint in endpoints:
             assert endpoint.type == 'connect', "Hubs should only connect MockOutSockets and not bind"
-            self._validate_addr(endpoint.address)
+            _assert_valid_addr(endpoint.address)
             assert (addr, endpoint.address) not in self.connections
             self.dbg(u"%s → %s" % (addr, endpoint.address))
             self.connections.add((addr, endpoint.address))
 
     @logstring(u"⇝")
     def enqueue(self, src, (dst, msg)):
+        _assert_valid_addr(src)
+        _assert_valid_addr(dst)
         assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
         assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
 
@@ -345,6 +391,9 @@ class MockNetwork(Logging):
         deliverable = []
 
         for src, dst, msg in self.queue:
+            _assert_valid_addr(src)
+            _assert_valid_addr(dst)
+
             # assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
 
             if random.random() <= self._packet_loss.get((src, dst), 0.0):

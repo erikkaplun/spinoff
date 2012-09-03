@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import abc
 import inspect
+import re
 import sys
 import types
 import traceback
@@ -29,6 +30,11 @@ from spinoff.util.logging import Logging, logstring
 
 TESTING = True
 _NODE = None  # set in __init__.py
+
+
+_VALID_IP_RE = '(?:(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])'
+_VALID_HOSTNAME_RE = '(?:(?:[a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*(?:[A-Za-z]|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9])'
+_VALID_NODEID_RE = re.compile('(?:%s|%s):(?P<port>[0-9]+)$' % (_VALID_HOSTNAME_RE, _VALID_IP_RE))
 
 
 # these messages get special handling from the framework and never reach Actor.receive
@@ -97,6 +103,7 @@ class Uri(object):
             raise TypeError("node specified for a non-root Uri")
         self.name, self.parent = name, parent
         if node:
+            _validate_nodeid(node)
             self._node = node
 
     @property
@@ -1208,3 +1215,13 @@ def spawn(*args, **kwargs):
 def _ignore_error(actor):
     _, exc, tb = sys.exc_info()
     Events.log(ErrorIgnored(actor, exc, tb))
+
+
+def _validate_nodeid(nodeid):
+    # call from app code
+    m = _VALID_NODEID_RE.match(nodeid)
+    if not m:
+        raise ValueError("Node IDs should be in the format '<ip-or-hostname>:<port>': %s" % (nodeid,))
+    port = int(m.group(1))
+    if not (0 <= port <= 65535):
+        raise ValueError("Ports should be in the range 0-65535: %d" % (port,))

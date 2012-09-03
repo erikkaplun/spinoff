@@ -2332,14 +2332,14 @@ def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_a
 
     network = MockNetwork(clock)
 
-    sender_node = network.node(addr='senderhost:123')
+    sender_node = network.node('senderhost:123')
     assert not network.queue
 
     recipient_nodes = []
 
     for node_num in range(1, NUM_NODES + 1):
         nodeaddr = 'recphost%d:123' % node_num
-        remote_node = network.node(addr=nodeaddr)
+        remote_node = network.node(nodeaddr)
 
         receive_boxes = []
         sent_msgs = []
@@ -2374,14 +2374,14 @@ def test_transmitting_refs_and_sending_to_received_refs():
 
         # node1:
 
-        node1 = network.node(addr='host1:123')
+        node1 = network.node('host1:123')
 
         actor1_msgs = MockMessages()
         actor1 = make_actor1(node1, actor1_msgs)
 
         # node2:
 
-        node2 = network.node(addr='host2:123')
+        node2 = network.node('host2:123')
 
         actor2_msgs = []
         node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
@@ -2525,7 +2525,7 @@ def test_sending_stops_if_visibility_is_lost(clock):
     network.simulate(duration=3.0)
 
     # ok, now they both know/have seen each other; let's change that:
-    network.packet_loss(percent=100.0, src='host2:123', dst='host1:123')
+    network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
     network.simulate(duration=node1.hub.max_silence_between_heartbeats + 1.0)
 
     # the next message should fail after 5 seconds
@@ -2550,7 +2550,7 @@ def test_sending_resumes_if_visibility_is_restored(clock):
     network.simulate(duration=3.0)
     # now both visible to the other
 
-    network.packet_loss(percent=100.0, src='host2:123', dst='host1:123')
+    network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
     network.simulate(duration=node1.hub.max_silence_between_heartbeats + 2.0)
     # now host2 is not visible to host1
 
@@ -2558,7 +2558,7 @@ def test_sending_resumes_if_visibility_is_restored(clock):
     network.simulate(duration=node1.hub.queue_item_lifetime - 1.0)
     # host1 still hasn't lost faith
 
-    network.packet_loss(percent=0, src='host2:123', dst='host1:123')
+    network.packet_loss(percent=0, src='tcp://host2:123', dst='tcp://host1:123')
     # and it is rewarded for its patience
     with assert_event_not_emitted(DeadLetter):
         network.simulate(duration=3.0)
@@ -2577,7 +2577,7 @@ def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock
     node1.lookup('host2:123/actor2') << 'foo'
     network.simulate(duration=2.0)
 
-    network.packet_loss(percent=100.0, src='host1:123', dst='host2:123')
+    network.packet_loss(percent=100.0, src='tcp://host1:123', dst='tcp://host2:123')
     network.simulate(duration=6.0)
     # now host2 can't see host1 so it keeps asking host1, so host1 should realise it's not visible to host2 and stop sending
 
@@ -2655,14 +2655,14 @@ def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(cloc
 
     # node1:
 
-    node1 = network.node(addr='host1:123')
+    node1 = network.node('host1:123')
 
     actor1_msgs = MockMessages()
     actor1 = node1.spawn(Props(MockActor, actor1_msgs), name='actor1')
 
     # node2:
 
-    node2 = network.node(addr='host2:123')
+    node2 = network.node('host2:123')
     # guardian2 = Guardian(hub=hub2)
 
     actor2_msgs = []
