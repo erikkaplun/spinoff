@@ -457,22 +457,3 @@ class MockOutSocket(object):
     def __init__(self, sendMsg, addEndpoints):
         self.sendMsg = sendMsg
         self.addEndpoints = addEndpoints
-
-
-class MagicRegistry(object):
-    def __init__(self):
-        self.actors = {}
-        self.created_actors = []
-
-    def __getitem__(self, path):
-        if path not in self.actors:
-            actor = self.actors[path] = MagicActor(path)
-            self.created_actors.append(actor)
-        return self.actors[path]
-
-
-class MagicActor(object):
-    def __init__(self, path):
-        self.path = path
-        self.messages = []
-        self.send = self.messages.append
