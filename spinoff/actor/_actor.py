@@ -74,12 +74,21 @@ class BadSupervision(WrappingException):
 
 # XXX: please unit-test this class thoroughly
 class Uri(object):
-    """Represents the identity and location of an actor"""
+    """Represents the identity and location of an actor.
+
+    Attention: for the sake of consistency, the root `Uri` is represented by an empty string, **not** `'/'`. The `'/'` is
+    used **only** as a path separator. Thus, both of the name and path path of the root `Uri` are `''`, and the steps
+    are `['']`. The root `Uri` is also only `__eq__` to `''` and not `'/'`.
+
+    """
+    _node = None
+
     def __init__(self, name, parent, node=None):
         if name and node:
             raise TypeError("node specified for a non-root Uri")
         self.name, self.parent = name, parent
-        self._node = node
+        if node:
+            self._node = node
 
     @property
     def root(self):
@@ -104,20 +113,18 @@ class Uri(object):
     @property
     def path(self):
         """Returns the `Uri` without the `node` part as a `str`."""
-        ret = '/'.join(self.steps)
-        return '/' if ret == '' else ret
+        return '/'.join(self.steps)
 
-    def _steps(self, include_node=False):
+    @property
+    def steps(self):
         """Returns an iterable containing the steps to this `Uri` from the root `Uri`, including the root `Uri`."""
         def _iter(uri, acc):
-            acc.appendleft(uri.name if uri.name else (uri._node or '' if include_node else ''))
+            acc.appendleft(uri.name if uri.name else '')
             return _iter(uri.parent, acc) if uri.parent else acc
         return _iter(self, acc=deque())
 
-    steps = property(_steps)
-
     def __str__(self):
-        return '/'.join(self._steps(include_node=True))
+        return (self.node or '') + self.path
 
     def __repr__(self):
         return '<@%s>' % (str(self),)
@@ -137,18 +144,29 @@ class Uri(object):
         (None, ['foo', 'bar'], 'foo/bar', 'bar')
 
         """
+        if addr.endswith('/'):
+            raise ValueError("Uris must not end in '/'")
         parts = addr.split('/')
         if ':' in parts[0]:
-            node = parts.pop(0)
+            node, parts[0] = parts[0], ''
         else:
-            if parts[0] == '':
-                parts[0] = None
+            # if parts[0] == '':
+            #     parts[0] = None
             node = None
 
-        ret = Uri(name=None, parent=None, node=node) if node else None
+        ret = None  # Uri(name=None, parent=None, node=node) if node else None
         for step in parts:
-            ret = Uri(name=step, parent=ret)
+            ret = Uri(name=step, parent=ret, node=node)
+            node = None  # only set the node on the root Uri
         return ret
+
+    @property
+    def local(self):
+        """Returns a copy of the `Uri` without the node. If the `Uri` has no node, returns the `Uri`."""
+        if not self.node:
+            return self
+        else:
+            return Uri.parse(self.path)
 
     def __hash__(self):
         return hash(str(self))
@@ -159,6 +177,8 @@ class Uri(object):
         This method is cooperative with the `pattern_matching` module.
 
         """
+        if isinstance(other, str):
+            other = Uri.parse(other)
         return str(self) == str(other) or isinstance(other, Matcher) and other == self
 
 
