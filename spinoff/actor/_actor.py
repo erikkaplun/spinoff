@@ -279,8 +279,8 @@ class Ref(RefBase):
         return '<%s>' % (str(self.uri),)
 
     def __getstate__(self):
-        assert self.cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
-        assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
+        # assert self.cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
+        # assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
         return str(self.uri)
 
     def __setstate__(self, uri):
