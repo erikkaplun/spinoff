@@ -72,6 +72,7 @@ class BadSupervision(WrappingException):
         self.cause, self.tb = exc, tb
 
 
+# XXX: please unit-test this class thoroughly
 class Uri(object):
     """Represents the identity and location of an actor"""
     def __init__(self, name, parent, node=None):
@@ -103,7 +104,8 @@ class Uri(object):
     @property
     def path(self):
         """Returns the `Uri` without the `node` part as a `str`."""
-        return '/'.join(self.steps)
+        ret = '/'.join(self.steps)
+        return '/' if ret == '' else ret
 
     def _steps(self, include_node=False):
         """Returns an iterable containing the steps to this `Uri` from the root `Uri`, including the root `Uri`."""
