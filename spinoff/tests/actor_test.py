@@ -1060,7 +1060,7 @@ def test_messages_to_dead_actors_are_sent_to_dead_letters():
 
 
 def test_guardians_path_is_slash():
-    assert Node.guardian.uri.path == '/'
+    eq_(Node.guardian.uri.path, '/')
 
 
 def test_toplevel_actorrefs_paths_are_prefixed_with_guardians_path():
@@ -2430,14 +2430,14 @@ def test_if_radiosilence_lasts_too_long_all_further_messages_to_that_addr_are_dr
     node1.hub.max_silence_between_heartbeats = 5.0
     node1.hub.time_to_keep_hope = 5.0
 
-    node1.hub.lookup('host2:123/actor2') << 'foo'
+    node1.lookup('host2:123/actor2') << 'foo'
     network.simulate(duration=node1.hub.time_to_keep_hope - 1.0)  # should keep hope
 
     with assert_one_event(DeadLetter):
         network.simulate(duration=2.0)  # should lose hope
 
     with assert_one_event(DeadLetter):
-        node1.hub.lookup('host2:123/actor2') << 'foo'
+        node1.lookup('host2:123/actor2') << 'foo'
 
 
 @simtime
@@ -2512,7 +2512,7 @@ def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(cloc
 
     network.simulate(duration=2.0)
     (_, remote_local_ref), = actor1_msgs
-    assert remote_local_ref.is_local and not hasattr(remote_local_ref, '_hub')
+    assert remote_local_ref.is_local
 
 
 @simtime
