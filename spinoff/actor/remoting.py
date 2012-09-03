@@ -85,7 +85,6 @@ class Hub(Logging):
 
     guardian = property(get_guardian, set_guardian)
 
-
     @logstring(u"⇝")
     def send_message(self, ref, msg):
         # self.dbg(u"%r → %r" % (msg, ref))
@@ -227,7 +226,6 @@ class Hub(Logging):
     def logstate(self):
         return {str(self.reactor.seconds()): True}
 
-
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
 
@@ -271,9 +269,6 @@ class IncomingMessageUnpickler(Unpickler):
 
     dispatch = dict(Unpickler.dispatch)  # make a copy of the original
     dispatch[BUILD] = _load_build  # override the handler of the `BUILD` instruction
-
-
-
 
 
 class MockNetwork(Logging):
