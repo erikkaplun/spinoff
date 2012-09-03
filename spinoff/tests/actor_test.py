@@ -2472,15 +2472,15 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
     network = MockNetwork(clock)
 
     sender_node = network.node('sender:123')
-    sender_node.hub.queue_item_lifetime = 10.0
+    sender_node.hub.QUEUE_ITEM_LIFETIME = 10.0
 
-    # recipient host not reachable within time limit--message dropped after `queue_item_lifetime`
+    # recipient host not reachable within time limit--message dropped after `QUEUE_ITEM_LIFETIME`
 
     ref = sender_node.lookup('nonexistenthost:123/actor2')
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(sender_node.hub.queue_item_lifetime + 1.0)
+        network.simulate(sender_node.hub.QUEUE_ITEM_LIFETIME + 1.0)
 
 
 @simtime
@@ -2488,7 +2488,7 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.queue_item_lifetime = 10.0
+    node1.hub.QUEUE_ITEM_LIFETIME = 10.0
 
     # recipient host reachable within time limit
 
@@ -2511,11 +2511,11 @@ def test_sending_stops_if_visibility_is_lost(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.queue_item_lifetime = 5.0
-    node1.hub.max_silence_between_heartbeats = 5.0
+    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
+    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
 
     node2 = network.node('host2:123')
-    node2.hub.queue_item_lifetime = 5.0
+    node2.hub.QUEUE_ITEM_LIFETIME = 5.0
 
     # set up a normal sending state first
 
@@ -2526,13 +2526,13 @@ def test_sending_stops_if_visibility_is_lost(clock):
 
     # ok, now they both know/have seen each other; let's change that:
     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-    network.simulate(duration=node1.hub.max_silence_between_heartbeats + 1.0)
+    network.simulate(duration=node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS + 1.0)
 
     # the next message should fail after 5 seconds
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(duration=node1.hub.queue_item_lifetime + 2.0)
+        network.simulate(duration=node1.hub.QUEUE_ITEM_LIFETIME + 2.0)
 
 
 @simtime
@@ -2540,8 +2540,8 @@ def test_sending_resumes_if_visibility_is_restored(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.queue_item_lifetime = 5.0
-    node1.hub.max_silence_between_heartbeats = 5.0
+    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
+    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
 
     network.node('host2:123')
 
@@ -2551,11 +2551,11 @@ def test_sending_resumes_if_visibility_is_restored(clock):
     # now both visible to the other
 
     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-    network.simulate(duration=node1.hub.max_silence_between_heartbeats + 2.0)
+    network.simulate(duration=node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS + 2.0)
     # now host2 is not visible to host1
 
     ref << 'bar'
-    network.simulate(duration=node1.hub.queue_item_lifetime - 1.0)
+    network.simulate(duration=node1.hub.QUEUE_ITEM_LIFETIME - 1.0)
     # host1 still hasn't lost faith
 
     network.packet_loss(percent=0, src='tcp://host2:123', dst='tcp://host1:123')
@@ -2569,10 +2569,10 @@ def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.queue_item_lifetime = 5.0
+    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
 
     node2 = network.node('host2:123')
-    node2.hub.max_silence_between_heartbeats = 5.0
+    node2.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
 
     node1.lookup('host2:123/actor2') << 'foo'
     network.simulate(duration=2.0)
@@ -2585,7 +2585,7 @@ def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(node1.hub.queue_item_lifetime + 1.0)
+        network.simulate(node1.hub.QUEUE_ITEM_LIFETIME + 1.0)
 
 
 @simtime
@@ -2593,11 +2593,11 @@ def test_if_radiosilence_lasts_too_long_all_further_messages_to_that_addr_are_dr
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.max_silence_between_heartbeats = 5.0
-    node1.hub.time_to_keep_hope = 5.0
+    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
+    node1.hub.TIME_TO_KEEP_HOPE = 5.0
 
     node1.lookup('host2:123/actor2') << 'foo'
-    network.simulate(duration=node1.hub.time_to_keep_hope - 1.0)  # should keep hope
+    network.simulate(duration=node1.hub.TIME_TO_KEEP_HOPE - 1.0)  # should keep hope
 
     with assert_one_event(DeadLetter):
         network.simulate(duration=2.0)  # should lose hope
@@ -2611,13 +2611,13 @@ def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.max_silence_between_heartbeats = 5.0
-    node1.hub.time_to_keep_hope = 5.0
+    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
+    node1.hub.TIME_TO_KEEP_HOPE = 5.0
 
     node1.lookup('host2:123/actor2') << 'foo'
     Events.consume_one(DeadLetter)
 
-    network.simulate(duration=node1.hub.time_to_keep_hope + 1.0)
+    network.simulate(duration=node1.hub.TIME_TO_KEEP_HOPE + 1.0)
 
     node2 = network.node('host2:123')
     actor2_msgs = []

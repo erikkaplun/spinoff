@@ -49,11 +49,12 @@ class Hub(Logging):
     The wire-transport implementation is specified/overridden by the `incoming` and `outgoing` parameters.
 
     """
+    HEARTBEAT_INTERVAL = 1.0
 
-    max_silence_between_heartbeats = 5.0
-    time_to_keep_hope = 55.0
+    MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
+    TIME_TO_KEEP_HOPE = 55.0
 
-    queue_item_lifetime = max_silence_between_heartbeats + time_to_keep_hope
+    QUEUE_ITEM_LIFETIME = MAX_SILENCE_BETWEEN_HEARTBEATS + TIME_TO_KEEP_HOPE
 
     _guardian = None
 
@@ -76,7 +77,7 @@ class Hub(Logging):
 
         l1 = LoopingCall(self.send_heartbeat)
         l1.clock = reactor
-        l1.start(1.0)
+        l1.start(self.HEARTBEAT_INTERVAL)
 
         l2 = LoopingCall(self.clean_queue)
         l2.clock = reactor
@@ -119,10 +120,10 @@ class Hub(Logging):
             self.dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
             conn = self.connections[addr] = ConnectedNode(
                 state='radiosilence',
-                # so last_seen checks would mark the node as `silentlyhoping` in `time_to_keep_hope` seconds from now;
+                # so last_seen checks would mark the node as `silentlyhoping` in `TIME_TO_KEEP_HOPE` seconds from now;
                 # conceptually speaking, this means the node seems to have always existed but went out of view exactly
                 # now, and before sending can start "again", it needs to come back:
-                last_seen=self.reactor.seconds() - self.max_silence_between_heartbeats
+                last_seen=self.reactor.seconds() - self.MAX_SILENCE_BETWEEN_HEARTBEATS
             )
             self._connect(addr, conn)
 
@@ -181,8 +182,8 @@ class Hub(Logging):
         try:
             # self.dbg("→ %r" % (list(self.connections),))
             t = self.reactor.seconds()
-            consider_dead_from = t - self.max_silence_between_heartbeats
-            consider_lost_from = consider_dead_from - self.time_to_keep_hope
+            consider_dead_from = t - self.MAX_SILENCE_BETWEEN_HEARTBEATS
+            consider_lost_from = consider_dead_from - self.TIME_TO_KEEP_HOPE
             # self.dbg("consider_dead_from", consider_dead_from, "consider_lost_from", consider_lost_from)
 
             for addr, conn in self.connections.items():
@@ -219,8 +220,8 @@ class Hub(Logging):
     def clean_queue(self):
         for conn in self.connections.values():
             try:
-                keep_until = self.reactor.seconds() - self.queue_item_lifetime
-                # self.dbg(conn.queue, "keep_until = %r, queue_item_lifetime = %r" % (keep_until, self.queue_item_lifetime,))
+                keep_until = self.reactor.seconds() - self.QUEUE_ITEM_LIFETIME
+                # self.dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
                 q = conn.queue
                 while q:
                     msg, timestamp = q[0]
