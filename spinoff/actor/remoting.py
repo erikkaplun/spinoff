@@ -93,8 +93,10 @@ class Hub(Logging):
     guardian = property(get_guardian, set_guardian)
 
     @logstring(u"⇝")
-    def send_message(self, ref, msg):
+    def send(self, msg, to_remote_actor_pointed_to_by):
+        ref = to_remote_actor_pointed_to_by
         # self.dbg(u"%r → %r" % (msg, ref))
+
         nodeid = ref.uri.node
 
         # assert addr and addr != self.node, "TODO: remote-ref pointing to the local node detected"
@@ -249,7 +251,7 @@ class HubWithNoRemoting(object):
     guardian = None
     node = None
 
-    def send_message(self, ref, msg):
+    def send(self, ref, msg):
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
 
 

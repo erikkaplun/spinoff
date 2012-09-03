@@ -330,7 +330,7 @@ class Ref(_BaseRef, _HubBound):
         if self.cell:
             self.cell.receive(message, force_async=force_async)
         elif not self.is_local:
-            self.hub.send_message(self, message)
+            self.hub.send(message, to_remote_actor_pointed_to_by=self)
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
