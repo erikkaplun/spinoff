@@ -1131,6 +1131,7 @@ def test_relative_uri():
     eq_(str(uri), 'foo')
     eq_(uri.name, 'foo')
     eq_(uri.path, 'foo')
+    ok_(not uri.url)
 
     eq_(uri, Uri.parse('foo'))
     eq_(uri, 'foo', "Uri.__eq__ supports str")
@@ -1146,6 +1147,7 @@ def test_relative_uri():
     eq_(str(uri), 'foo/bar')
     eq_(uri.name, 'bar')
     eq_(uri.path, 'foo/bar')
+    ok_(not uri.url)
 
     eq_(uri, Uri.parse('foo/bar'))
     eq_(uri, 'foo/bar', "Uri.__eq__ supports str")
@@ -1163,6 +1165,7 @@ def test_absolute_uri():
     eq_(str(uri), '')
     eq_(uri.name, '')
     eq_(uri.path, '')
+    ok_(not uri.url)
 
     eq_(uri, Uri.parse(''))
     eq_(uri, '')
@@ -1178,6 +1181,7 @@ def test_absolute_uri():
     eq_(str(uri), '/foo')
     eq_(uri.name, 'foo')
     eq_(uri.path, '/foo')
+    ok_(not uri.url)
 
     eq_(uri, Uri.parse('/foo'))
     eq_(uri, '/foo', "Uri.__eq__ supports str")
@@ -1193,6 +1197,7 @@ def test_absolute_uri():
     eq_(uri.name, 'bar')
     eq_(uri, '/foo/bar', "Uri.__eq__ supports str")
     eq_(uri.path, '/foo/bar')
+    ok_(not uri.url)
 
     eq_(uri, Uri.parse('/foo/bar'))
     eq_(uri, '/foo/bar', "Uri.__eq__ supports str")
@@ -1210,6 +1215,7 @@ def test_fully_qualified_uri():
     eq_(str(uri), 'localhost:123')
     eq_(uri.name, '')
     eq_(uri.path, '')
+    eq_(uri.url, 'tcp://localhost:123')
 
     eq_(uri, Uri.parse('localhost:123'))
     eq_(uri, 'localhost:123')
@@ -1227,6 +1233,7 @@ def test_fully_qualified_uri():
     eq_(str(uri), 'localhost:123/foo')
     eq_(uri.name, 'foo')
     eq_(uri.path, '/foo')
+    eq_(uri.url, 'tcp://localhost:123/foo')
 
     eq_(uri, Uri.parse('localhost:123/foo'))
     eq_(uri, 'localhost:123/foo', "Uri.__eq__ supports str")
@@ -1244,6 +1251,7 @@ def test_fully_qualified_uri():
     eq_(str(uri), 'localhost:123/foo/bar')
     eq_(uri.name, 'bar')
     eq_(uri.path, '/foo/bar')
+    eq_(uri.url, 'tcp://localhost:123/foo/bar')
 
     eq_(uri, Uri.parse('localhost:123/foo/bar'))
     eq_(uri, 'localhost:123/foo/bar', "Uri.__eq__ supports str")

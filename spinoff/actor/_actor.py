@@ -138,6 +138,10 @@ class Uri(object):
     def __repr__(self):
         return '<@%s>' % (str(self),)
 
+    @property
+    def url(self):
+        return 'tcp://' + str(self) if self.node else None
+
     @classmethod
     def parse(cls, addr):
         """Parses a new `Uri` instance from a string representation of a URI.
