@@ -209,7 +209,27 @@ class RefBase(object):
         self.send('_stop')
 
 
-class Ref(RefBase):
+class _HubBound(object):
+    """Internal abstract class for objects that depend on {being bound to/having available} a `Hub` instance."""
+    _hub = None
+
+    def __init__(self, hub):
+        if hub:
+            self._hub = hub
+
+    @property
+    def hub(self):
+        """Returns the hub that this object should use for remote messaging and lookup.
+
+        During `TESTING`, the `Node`, and from there on, all `_HubBound` objects, propagate the hub they are bound to
+        down to any new `_HubBound` objects created. Otherwise, `Node.hub` is used.
+
+        """
+        assert self._hub if TESTING else not self._hub, (self, TESTING, self._hub)
+        return self._hub or _NODE.hub
+
+
+class Ref(RefBase, _HubBound):
     """A serializable, location-transparent, encapsulating reference to an actor.
 
     `Ref`s can be obtained in several different ways.
@@ -253,15 +273,14 @@ class Ref(RefBase):
 
     def __init__(self, cell, uri, is_local=True, hub=None):
         assert uri is None or isinstance(uri, Uri)
+        super(Ref, self).__init__(hub=hub)
         if cell:
             assert isinstance(cell, Cell)
             self.cell = cell
         self.uri = uri
         if not is_local:
             assert not cell
-            assert hub
             self.is_local = False
-            self._hub = hub
 
     def send(self, message, force_async=False):
         """Sends a message to the actor represented by this `Ref`.
@@ -277,8 +296,7 @@ class Ref(RefBase):
         if self.cell:
             self.cell.receive(message, force_async=force_async)
         elif not self.is_local:
-            assert self._hub
-            self._hub.send_message(self, message)
+            self.hub.send_message(self, message)
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
