@@ -8,6 +8,7 @@ import types
 import traceback
 import warnings
 import weakref
+from functools import wraps
 from pickle import PicklingError
 from collections import deque
 from itertools import count, chain
@@ -24,6 +25,9 @@ from spinoff.util.async import with_timeout
 from spinoff.util.async import Timeout
 from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import Logging, logstring
+
+
+_NODE = None  # set in __init__.py
 
 
 # these messages get special handling from the framework and never reach Actor.receive
@@ -538,9 +542,6 @@ class Node(object):
     def __call__(self, hub=None):
         """Spawns new, non-default instances of the guardian; useful for testing."""
         return type(self)(hub)
-Node = Node()
-
-spawn = Node.spawn
 
 
 class ActorType(abc.ABCMeta):  # ABCMeta to enable Process.run to be @abstractmethod
@@ -1118,6 +1119,14 @@ class Cell(_ActorContainer, Logging):
 class Future(Deferred):  # TODO: ActorRefBase or IActorRef or smth
     def send(self, message):
         self.callback(message)
+
+
+@wraps(_BaseCell.spawn)
+def spawn(*args, **kwargs):
+    if not _NODE:
+        raise TypeError("No active node set")
+    else:
+        return _NODE.spawn(*args, **kwargs)
 
 
 def _ignore_error(actor):
