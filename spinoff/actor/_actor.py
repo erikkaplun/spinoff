@@ -73,47 +73,72 @@ class BadSupervision(WrappingException):
 
 
 class Uri(object):
+    """Represents the identity and location of an actor"""
     def __init__(self, name, parent, node=None):
-        assert parent or not name, "should not set a name of a root Uri"
+        if name and node:
+            raise TypeError("node specified for a non-root Uri")
         self.name, self.parent = name, parent
         self._node = node
 
     @property
     def root(self):
+        """Returns the topmost `Uri` this `Uri` is part of."""
         return self.parent.root if self.parent else self
 
     @property
     def node(self):
+        """Returns the node ID this `Uri` points to."""
         return self.root._node
 
     def __div__(self, child):
+        """Builds a new child `Uri` of this `Uri` with the given `name`."""
         return Uri(name=child, parent=self)
 
     @property
     def path(self):
-        return '/' + str(self).split('/', 1)[1]
+        """Returns the `Uri` without the `node` part as a `str`."""
+        return '/'.join(self.steps)
+
+    def _steps(self, include_node=False):
+        """Returns an iterable containing the steps to this `Uri` from the root `Uri`, including the root `Uri`."""
+        def _iter(uri, acc):
+            acc.appendleft(uri.name if uri.name else (uri._node or '' if include_node else ''))
+            return _iter(uri.parent, acc) if uri.parent else acc
+        return _iter(self, acc=deque())
+
+    steps = property(_steps)
 
     def __str__(self):
-        if not self.parent:
-            return (self._node or '') + '/'
-        else:
-            p = str(self.parent)
-            if p[-1] != '/':
-                return p + '/' + self.name
-            else:
-                return p + self.name
+        return '/'.join(self._steps(include_node=True))
 
     def __repr__(self):
         return '<@%s>' % (str(self),)
 
     @classmethod
     def parse(cls, addr):
-        parts = addr.split('/')
-        node = parts[0] or None  # so parse('/foo') would return a pure-local Uri that has no node
-        steps = parts[1:]
+        """Parses a new `Uri` instance from a string representation of a URI.
 
-        ret = Uri(name=None, parent=None, node=node)
-        for step in steps:
+        >>> u1 = Uri.parse('/foo/bar')
+        >>> u1.node, u1.steps, u1.path, u1.name
+        (None, ['', 'foo', 'bar'], '/foo/bar', 'bar')
+        >>> u2 = Uri.parse('somenode:123/foo/bar')
+        >>> u2.node, u1.steps, u2.path, ur2.name
+        ('somenode:123', ['', 'foo', 'bar'], '/foo/bar', 'bar')
+        >>> u1 = Uri.parse('foo/bar')
+        >>> u1.node, u1.steps, u1.path, u1.name
+        (None, ['foo', 'bar'], 'foo/bar', 'bar')
+
+        """
+        parts = addr.split('/')
+        if ':' in parts[0]:
+            node = parts.pop(0)
+        else:
+            if parts[0] == '':
+                parts[0] = None
+            node = None
+
+        ret = Uri(name=None, parent=None, node=node) if node else None
+        for step in parts:
             ret = Uri(name=step, parent=ret)
         return ret
 
@@ -121,21 +146,70 @@ class Uri(object):
         return hash(str(self))
 
     def __eq__(self, other):
+        """Returns `True` if `other` points to the same actor.
+
+        This method is cooperative with the `pattern_matching` module.
+
+        """
         return str(self) == str(other) or isinstance(other, Matcher) and other == self
 
 
 class RefBase(object):
+    """Common methods for all classes wanting to be, or look like, an actor reference."""
+
     def __lshift__(self, message):
-        """See Ref.send"""
+        """A fancy looking alias to `RefBase.stop`, which in addition also supports chaining.
+
+            someactor.send(msg1); someactor.send(msg2)
+            someactor << msg1 << msg2
+
+        """
         self.send(message)
         return self
 
     def stop(self):
-        """Shortcut for `Ref.send('_stop')`"""
+        """Shortcut for `send('_stop')`"""
         self.send('_stop')
 
 
 class Ref(RefBase):
+    """A serializable, location-transparent, encapsulating reference to an actor.
+
+    `Ref`s can be obtained in several different ways.
+
+    Refs to already existing actors:
+
+    * `Actor.node.guardian`: a ref to the `Guardian` the actor belongs to;
+
+    * `Node.guardian`: a ref to the default `Guardian`
+       (shouldn't be used fron inside an actor hierarchy if networkless, in-process testability is a goal, which it should be);
+
+    * `self.ref`: a ref to the actor itself; this is meant to be the *only* channel an actor should ever be communicated
+       through--an actor should *never* send out messages containing `self` and should instead *always* insert
+       `self.ref` in messages sent out to other actors if it wants them to reach it back;
+
+    By spawning new actors:
+
+    * `self.spawn(...)`:
+
+    * `self.node.spawn(...)`: a ref to a newly created subordinate actor of the spawning actor (a supervisor)
+
+    * `spawn(...)`: **shouldn't be used directly,**; a ref to a newly spawned top-level actor in the default hierarchy;
+       instead spawn a top-level actor by means of obtaining the `Node` whose hierarchy the spawning-actor is part of,
+       or better yet, don't use top-level at all;
+       (this is an alias for `Node.spawn`, in turn alias for `Node.guardian.spawn`)
+
+    By looking up existing actors:
+
+    * `Node.lookup(<uri or path>)`: looks up a local or remote actor;
+
+    * `self.lookup(<path>)`: looks up a child actor
+
+    Note:
+    refs to `Guardian`s are not `Ref`s but merely objects that by all practical means have the same interface as Ref.
+
+    """
+
     # XXX: should be protected/private
     cell = None  # so that .cell could be deleted to save memory
     is_local = True
@@ -153,7 +227,7 @@ class Ref(RefBase):
             self._hub = hub
 
     def send(self, message, force_async=False):
-        """Sends a message to this actor.
+        """Sends a message to the actor represented by this `Ref`.
 
         The send could but might not be asynchronous, depending on how the system has been configured and where the
         recipient is located.
@@ -180,9 +254,9 @@ class Ref(RefBase):
 
     @property
     def is_stopped(self):
-        """Returns `True` if this actor is known to have stopped.
+        """Returns `True` if this actor is guaranteed to have stopped.
 
-        If it returns `False`, the actor still might be running.
+        If it returns `False`, it is not guaranteed that the actor isn't still running.
 
         """
         return self.is_local and not self.cell
@@ -193,6 +267,11 @@ class Ref(RefBase):
         return future
 
     def __eq__(self, other):
+        """Returns `True` if the `other` `Ref` points to the same actor.
+
+        This method is cooperative with the `pattern_matching` module.
+
+        """
         return (isinstance(other, Ref) and self.uri == other.uri
                 or isinstance(other, Matcher) and other == self)
 
@@ -220,7 +299,7 @@ class _ActorContainer(object):
     def spawn(self, factory, name=None):
         """Spawns an actor using the given `factory` with the specified `name`.
 
-        Returns an immediately `Ref` to the newly created actor, regardless of the location of the new actor, or
+        Returns an immediately usable `Ref` to the newly created actor, regardless of the location of the new actor, or
         when the actual spawning will take place.
 
         """
