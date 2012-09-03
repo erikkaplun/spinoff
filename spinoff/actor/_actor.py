@@ -402,7 +402,7 @@ class _BaseCell(_HubBound):
             if name.startswith('$'):
                 raise ValueError("Unable to spawn actor at path %s; name cannot start with '$', it is reserved for auto-generated names" % (uri.path,))
             if name in self._children:
-                raise NameConflict("Unable to spawn actor at path %s; actor %r already sits there" % (uri.path, self._children[name].cell.actor))
+                raise NameConflict("Unable to spawn actor at path %s; actor %r already sits there" % (uri.path, self._children[name]))
         if not uri:
             name = self._generate_name()
             uri = self.uri / name
