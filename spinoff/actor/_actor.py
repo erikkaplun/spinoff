@@ -183,7 +183,16 @@ class Uri(object):
 
 
 class RefBase(object):
-    """Common methods for all classes wanting to be, or look like, an actor reference."""
+    """Internal abstract class for all objects that behave like actor references."""
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractproperty
+    def is_local(self):
+        raise NotImplementedError
+
+    @abc.abstractproperty
+    def is_stopped(self):
+        raise NotImplementedError
 
     def __lshift__(self, message):
         """A fancy looking alias to `RefBase.stop`, which in addition also supports chaining.
