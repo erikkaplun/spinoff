@@ -105,7 +105,7 @@ class Process(Actor, Logging):
                     return self.__queue.pop(ix)
 
             # dbg("PROCESS: ready for message")
-            self.__get_d = PickyDeferred(match)
+            self.__get_d = _PickyDeferred(match)
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:
@@ -178,7 +178,7 @@ class Process(Actor, Logging):
         return Actor.__repr__(self).replace('<actor-impl:', '<proc-impl:')
 
 
-class PickyDeferred(Deferred):
+class _PickyDeferred(Deferred):
     def __init__(self, pattern, *args, **kwargs):
         Deferred.__init__(self, *args, **kwargs)
         self.pattern = pattern
