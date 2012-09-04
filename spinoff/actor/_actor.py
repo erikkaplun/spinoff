@@ -785,6 +785,7 @@ class Cell(_BaseCell, Logging):
             elif message not in _SYSTEM_MESSAGES:
                 # so that it could be sent to dead letters when the stopping is complete:
                 self.inbox.append(message)
+            # XXX: untested
             elif self.priority_inbox:
                 self.priority_inbox.append(message)
             return
