@@ -2404,6 +2404,38 @@ def test_watching_nonexistent_remote_actor_causes_termination_message(clock):
     assert received
 
 
+@simtime
+def test_watching_an_actor_on_a_node_with_whom_connectivity_is_lost_or_limited(clock):
+    def test_it(packet_loss_src, packet_loss_dst):
+        network = MockNetwork(clock)
+        node1, node2 = network.node('watcher-host:123'), network.node('watchee-host:123')
+
+        received = Latch()
+
+        class Watcher(Actor):
+            def pre_start(self):
+                self.watchee = self.watch(self.root.node.lookup('watchee-host:123/remote-watchee'))
+
+            def receive(self, msg):
+                eq_(msg, ('terminated', self.watchee))
+                received()
+        node1.spawn(Watcher)
+
+        node2.spawn(Actor, name='remote-watchee')
+
+        network.simulate(duration=2.0)
+        assert not received
+
+        network.packet_loss(100.0,
+                            src='tcp://' + packet_loss_src + '-host:123',
+                            dst='tcp://' + packet_loss_dst + '-host:123')
+        network.simulate(duration=10.0)
+        assert received
+
+    test_it(packet_loss_src='watchee', packet_loss_dst='watcher')
+    test_it(packet_loss_src='watcher', packet_loss_dst='watchee')
+
+
 ##
 ## REMOTING
 

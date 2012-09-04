@@ -622,6 +622,9 @@ class Actor(object):
             if not self_ok:  # pragma: no cover
                 warnings.warn("Portential problem: actor %s started watching itself; pass self_ok=True to mark as safe")
         else:
+            assert not other.is_local if other.uri.node != self.__cell.uri.node else True
+            if not other.is_local:
+                self.__cell.hub.watch_node_death(ref=other, report_to=self.ref)
             other << ('_watched', self.ref)
         return other
 

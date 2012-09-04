@@ -32,11 +32,67 @@ PONG = 'pong'  # this means "yes, I can hear you!"
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
 
 
-class ConnectedNode(object):
-    def __init__(self, state, last_seen):
-        self.state = state
+class ConnectedNode(Logging):
+    def __init__(self, addr, outsock, state, last_seen):
+        assert outsock
+        self.addr = addr
+        self.outsock = outsock
+        self._state = state
         self.last_seen = last_seen
         self.queue = deque()
+        self.watched_actors = []
+
+        self.dbg("not-known => %s" % (self._state,))
+
+    def _set_state(self, new_state):
+        if new_state != self._state:
+            self.dbg("%s => %s" % (self._state, new_state))
+            if new_state == 'visible':
+                self._flush_queue()
+            elif self._state == 'visible':
+                # XXX: not sure if both radiosilence and reverse-radiosilence should trigger this...?
+                self._emit_termination_messages()
+            elif new_state == 'silentlyhoping':
+                self._drain_queue()
+            self._state = new_state
+
+    def _get_state(self):
+        return self._state
+
+    state = property(_get_state, _set_state)
+
+    def _flush_queue(self):
+        q = self.queue
+        while q:
+            (ref, queued_msg), _ = q.popleft()
+            assert ref.uri.root.url == self.addr
+            self.outsock.sendMsg((self.addr, dumps((ref.uri.path, queued_msg), protocol=2)))
+
+    def _emit_termination_messages(self):
+        self.log()
+        for report_to, ref in self.watched_actors:
+            assert report_to.is_local and not ref.is_local
+            report_to << ('terminated', ref)
+        self.watched_actors = []
+
+    def _purge_old_items_in_queue(self, keep_until):
+        q = self.queue
+        while q:
+            (ref, msg), timestamp = q[0]
+            if timestamp >= keep_until:
+                break
+            else:
+                q.popleft()
+                Events.log(DeadLetter(ref, msg))
+
+    def _drain_queue(self):
+        for (ref, msg), _ in self.queue:
+            # self.dbg("dropping %r" % (msg,))
+            Events.log(DeadLetter(ref, msg))
+        self.queue = None
+
+    def __repr__(self):
+        return '<nodeinfo:%s>' % (self.addr,)
 
 
 class Hub(Logging):
@@ -133,14 +189,7 @@ class Hub(Logging):
         conn = self.connections.get(addr)
         if not conn:
             self.dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
-            conn = self.connections[addr] = ConnectedNode(
-                state='radiosilence',
-                # so last_seen checks would mark the node as `silentlyhoping` in `TIME_TO_KEEP_HOPE` seconds from now;
-                # conceptually speaking, this means the node seems to have always existed but went out of view exactly
-                # now, and before sending can start "again", it needs to come back:
-                last_seen=self.reactor.seconds() - self.MAX_SILENCE_BETWEEN_HEARTBEATS
-            )
-            self._connect(addr, conn)
+            conn = self._make_conn(addr)
 
         if conn.state == 'visible':
             self.outgoing.sendMsg((addr, dumps((ref.uri.path, msg), protocol=2)))
@@ -149,6 +198,13 @@ class Hub(Logging):
                 Events.log(DeadLetter(ref, msg))
             else:
                 conn.queue.append(((ref, msg), self.reactor.seconds()))
+
+    def watch_node_death(self, ref, report_to):
+        node_addr = 'tcp://' + ref.uri.node
+        if node_addr not in self.connections:
+            self._make_conn(node_addr)
+        assert node_addr in self.connections
+        self.connections[node_addr].watched_actors.append((report_to, ref))
 
     @logstring(u"⇜")
     def _got_message(self, sender_addr, msg):
@@ -171,24 +227,29 @@ class Hub(Logging):
 
         if sender_addr not in self.connections:
             assert msg == PING, "initial message sent to another node should be PING"
-            self.dbg("%s went not-known => %s" % (sender_addr, 'reverse-radiosilence',))
             conn = self.connections[sender_addr] = ConnectedNode(
+                addr=sender_addr,
+                outsock=self.outgoing,
                 state='reverse-radiosilence',
                 last_seen=self.reactor.seconds())
             self._connect(sender_addr, conn)
         else:
             conn = self.connections[sender_addr]
             conn.last_seen = self.reactor.seconds()
-
-            prevstate = conn.state
             conn.state = 'reverse-radiosilence' if msg == PING else 'visible'
-            if prevstate != conn.state:
-                self.dbg("%s went %s => %s" % (sender_addr, prevstate, conn.state))
-                if conn.state == 'visible':
-                    while conn.queue:
-                        (ref, queued_msg), _ = conn.queue.popleft()
-                        assert ref.uri.root.url == sender_addr
-                        self.outgoing.sendMsg((sender_addr, dumps((ref.uri.path, queued_msg), protocol=2)))
+
+    def _make_conn(self, addr):
+        conn = self.connections[addr] = ConnectedNode(
+            addr=addr,
+            outsock=self.outgoing,
+            state='radiosilence',
+            # so last_seen checks would mark the node as `silentlyhoping` in `TIME_TO_KEEP_HOPE` seconds from now;
+            # conceptually speaking, this means the node seems to have always existed but went out of view exactly
+            # now, and before sending can start "again", it needs to come back:
+            last_seen=self.reactor.seconds() - self.MAX_SILENCE_BETWEEN_HEARTBEATS
+        )
+        self._connect(addr, conn)
+        return conn
 
     def _connect(self, addr, conn):
         assert _valid_addr(addr)
@@ -213,16 +274,10 @@ class Hub(Logging):
                     # self.dbg("silently hoping...")
                     self._heartbeat_once(addr, PING)
                 elif conn.last_seen < consider_lost_from:
-                    self.dbg("%s went %s => %s after %ds of silence" % (addr, conn.state, 'silentlyhoping', (t - conn.last_seen)))
                     conn.state = 'silentlyhoping'
-                    for (ref, msg), _ in conn.queue:
-                        # self.dbg("dropping %r" % (msg,))
-                        Events.log(DeadLetter(ref, msg))
-                    conn.queue = None
                     self._heartbeat_once(addr, PING)
                 elif conn.last_seen < consider_dead_from:
                     if conn.state != 'radiosilence':
-                        self.dbg("%s went %s => %s" % (addr, conn.state, 'radiosilence',))
                         conn.state = 'radiosilence'
                     self._heartbeat_once(addr, PING)
                 else:
@@ -244,14 +299,7 @@ class Hub(Logging):
             try:
                 keep_until = self.reactor.seconds() - self.QUEUE_ITEM_LIFETIME
                 # self.dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
-                q = conn.queue
-                while q:
-                    (ref, msg), timestamp = q[0]
-                    if timestamp >= keep_until:
-                        break
-                    else:
-                        q.popleft()
-                        Events.log(DeadLetter(ref, msg))
+                conn._purge_old_items_in_queue(keep_until)
             except Exception:  # pragma: no cover
                 self.panic("failed to clean queue:\n", traceback.format_exc())
 
