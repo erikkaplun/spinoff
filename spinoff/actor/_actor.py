@@ -772,8 +772,7 @@ class Cell(_BaseCell, Logging):
     @logstring(u'←')
     def receive(self, message, force_async=False):
         self.dbg(message if isinstance(message, str) else repr(message),)
-        if self.stopped:
-            return
+        assert not self.stopped, "should not reach here"
 
         if self.shutting_down:
             # the shutting_down procedure is waiting for all children to terminate so we make an exception here
@@ -1029,8 +1028,7 @@ class Cell(_BaseCell, Logging):
                 elif ('terminated', ANY) != message:
                     Events.log(DeadLetter(ref, message))
 
-            if self.actor:
-                self.actor = None
+            assert not self.actor
             del self.inbox
             del self.priority_inbox  # don't want no more, just release the memory
 
@@ -1052,9 +1050,7 @@ class Cell(_BaseCell, Logging):
     @logstring("watched:")
     def _do_watched(self, other):
         self.dbg(other)
-        if self.stopped:
-            other << ('terminated', self.ref)
-            return
+        assert not self.stopped
         if not self.watchers:
             self.watchers = []
         self.watchers.append(other)
