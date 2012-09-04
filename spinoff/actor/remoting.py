@@ -25,8 +25,8 @@ from spinoff.util.pattern_matching import ANY
 
 
 # TODO: use shorter messages outside of testing
-PING = 'ping'
-PONG = 'pong'
+PING = 'ping'  # this means "can you hear me?"
+PONG = 'pong'  # this means "yes, I can hear you!"
 
 
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
