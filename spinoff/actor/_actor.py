@@ -266,34 +266,40 @@ class Ref(_BaseRef, _HubBound):
 
     Refs to already existing actors:
 
-    * `Actor.node.guardian`: a ref to the `Guardian` the actor belongs to;
-
-    * `Node.guardian`: a ref to the default `Guardian`
-       (shouldn't be used fron inside an actor hierarchy if networkless, in-process testability is a goal, which it should be);
-
     * `self.ref`: a ref to the actor itself; this is meant to be the *only* channel an actor should ever be communicated
        through--an actor should *never* send out messages containing `self` and should instead *always* insert
        `self.ref` in messages sent out to other actors if it wants them to reach it back;
 
+    * `Node.guardian`: a ref to the default `Guardian`
+       (shouldn't be used fron inside an actor hierarchy if networkless, in-process testability is a goal, which it should be);
+
+    * `self.node.guardian`: a ref to the `Guardian` of the actor hierarchy the actor belongs to; useful during testing
+
     By spawning new actors:
 
-    * `self.spawn(...)`:
+    * `self.spawn(...)`: a ref to a newly created subordinate actor of the spawning actor (a supervisor);
 
-    * `self.node.spawn(...)`: a ref to a newly created subordinate actor of the spawning actor (a supervisor)
-
-    * `spawn(...)`: **shouldn't be used directly,**; a ref to a newly spawned top-level actor in the default hierarchy;
-       instead spawn a top-level actor by means of obtaining the `Node` whose hierarchy the spawning-actor is part of,
-       or better yet, don't use top-level at all;
+    * `spawn(...)`: a ref to a newly spawned top-level actor in the default hierarchy, however, top-level actors should
+       in general be avoided, instead, have only one top-level actor under which your entire application is laid out;
        (this is an alias for `Node.spawn`, in turn alias for `Node.guardian.spawn`)
+
+    * `self.node.spawn(...)`: a ref to a newly created top-level actor of the actor hierarchy that `self` is part of;
+       useful during testing where the default `Node` should not be used, or cannot be used because multiple `Node`s
+       might be residing in the same process;
 
     By looking up existing actors:
 
-    * `Node.lookup(<uri or path>)`: looks up a local or remote actor;
+    * `self.ref / <name>`: looks up a child actor
+    * `self.ref / <path/to/descendant>`: looks up a descendant actor
+    * `self.ref / <name> / <name> / ...`: looks up a descendant actor
 
-    * `self.lookup(<path>)`: looks up a child actor
+    * `Node.lookup(<uri or path>)`: looks up a local or remote actor in the default hierarchy starting from the root
 
-    Note:
-    refs to `Guardian`s are not `Ref`s but merely objects that by all practical means have the same interface as Ref.
+    * `self.node.lookup(<uri or path>)`: looks up a local or remote actor in the hierarchy that `self` belongs to
+       starting from the guardian;
+
+    Note: refs to `Guardian`s are not true `Ref`s but merely objects that by all practical means have the same
+    interface as Ref.
 
     """
 
