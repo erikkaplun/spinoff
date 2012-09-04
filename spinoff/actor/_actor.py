@@ -854,7 +854,7 @@ class Cell(_BaseCell, Logging):
                     self.processing_messages = False
             self.dbg("☺")
         except Exception:
-            self.panic(u"!!BUG!!")
+            self.panic(u"!!BUG!!\n", traceback.format_exc())
             self.report_to_parent()
 
     @logstring(u"↻ ↻ ↻")
@@ -1124,11 +1124,12 @@ class Cell(_BaseCell, Logging):
             self.parent.send(('_error', self.ref, exc, tb), force_async=True)
         except Exception:
             try:
+                self.panic("failed to report:\n", traceback.format_exc())
                 Events.log(ErrorIgnored(self.ref, exc, tb))
                 _, sys_exc, sys_tb = sys.exc_info()
                 Events.log(ErrorReportingFailure(self.ref, sys_exc, sys_tb))
             except Exception:
-                self.panic("failed to report:\n", traceback.format_exc(file=sys.stderr))
+                self.panic("failed to log:\n", traceback.format_exc())
 
     @property
     def ref(self):
