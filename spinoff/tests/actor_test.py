@@ -10,7 +10,7 @@ import weakref
 
 from nose.tools import eq_, ok_, set_trace
 from nose.twistedtools import deferred
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo
+from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo, returnValue
 from twisted.internet.task import Clock
 
 from spinoff.actor import (
@@ -2790,6 +2790,16 @@ def test_process_run_is_a_coroutine():
 
     release()
     assert step2_reached
+
+
+def test_warning_is_emitted_if_process_run_returns_a_value():
+    class ProcThatReturnsValue(Process):
+        def run(self):
+            yield
+            returnValue('foo')
+
+    with assert_one_warning():
+        spawn(ProcThatReturnsValue)
 
 
 def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
