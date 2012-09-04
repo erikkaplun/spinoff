@@ -630,9 +630,13 @@ class Actor(object):
         return self.__cell.ref
 
     @property
-    def node(self):  # pragma: no cover
+    def root(self):
+        return self.__cell.root
+
+    @property
+    def node(self):
         """Returns a reference to the `Node` whose hierarchy this `Actor` is part of."""
-        return self.__cell.node
+        return self.root.node
 
     def _set_cell(self, cell):
         self.__cell = cell
