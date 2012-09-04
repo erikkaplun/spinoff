@@ -2370,26 +2370,24 @@ def test_transmitting_refs_and_sending_to_received_refs():
     def test_it(clock, make_actor1):
         network = MockNetwork(clock)
 
-        # node1:
-
+        #
         node1 = network.node('host1:123')
 
         actor1_msgs = MockMessages()
-        actor1 = make_actor1(node1, actor1_msgs)
+        actor1 = make_actor1(node1, Props(MockActor, actor1_msgs))
 
-        # node2:
-
+        #
         node2 = network.node('host2:123')
 
         actor2_msgs = []
         node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
 
-        # send from node1 -> node2:
+        # send: node1 -> node2:
         node1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)
 
         network.simulate(duration=2.0)
 
-        # reply from node2 -> node1:
+        # reply: node2 -> node1:
         assert actor2_msgs == [ANY], "should be able to send messages to explicitly constructed remote refs"
         _, received_ref = actor2_msgs[0]
         received_ref << 'hello'
@@ -2397,21 +2395,19 @@ def test_transmitting_refs_and_sending_to_received_refs():
         network.simulate(duration=2.0)
         assert actor1_msgs == ['hello'], "should be able to send messages to received remote refs"
 
-    def make_non_toplevel(node, mock_msgs):
+    @test_it
+    def make_toplevel(node, factory):
+        return node.spawn(factory, name='actor1')
+
+    @test_it
+    def make_non_toplevel(node, factory):
         class Parent(Actor):
             def pre_start(self):
-                child << self.spawn(Props(MockActor, mock_msgs), name='actor1')
+                child << self.spawn(factory, name='actor1')
 
         child = Slot()
         node.spawn(Parent, name='parent')
         return child()
-
-    test_it(make_non_toplevel)
-
-    def make_toplevel(node, mock_msgs):
-        return node.spawn(Props(MockActor, mock_msgs), name='actor1')
-
-    test_it(make_toplevel)
 
 
 @simtime
