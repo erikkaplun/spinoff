@@ -119,13 +119,13 @@ class Hub(Logging):
         # TODO: if it's determined that it makes sense to allow the existence of such refs, enable the following block
         if not nodeid or nodeid == self.node:
             cell = self.guardian.lookup_cell(ref.uri)
-            if not cell:
+            if cell:
+                ref._cell = cell
+                ref.is_local = True
+                ref << msg
+            else:
                 ref.is_local = True  # next time, just put it straight to DeadLetters
                 Events.log(DeadLetter(ref, msg))
-                return
-            ref._cell = cell
-            ref.is_local = True
-            ref << msg
             return
 
         addr = ref.uri.root.url
