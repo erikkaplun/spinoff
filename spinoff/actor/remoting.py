@@ -70,7 +70,7 @@ class Hub(Logging):
     node = None
 
     def __init__(self, incoming, outgoing, node, reactor=reactor):
-        if not node or not isinstance(node, str):
+        if not node or not isinstance(node, str):  # pragma: no cover
             raise TypeError("The 'node' argument to Hub must be a str")
         _validate_nodeid(node)
         self.node = node
@@ -94,14 +94,14 @@ class Hub(Logging):
 
     _guardian = None
 
-    def logstate(self):
+    def logstate(self):  # pragma: no cover
         return {str(self.reactor.seconds()): True}
 
     def _get_guardian(self):
         return self._guardian
 
     def _set_guardian(self, guardian):
-        if self._guardian:
+        if self._guardian:  # pragma: no cover
             raise RuntimeError("Hub already bound to a Guardian")
         self._guardian = guardian
 
@@ -222,7 +222,7 @@ class Hub(Logging):
                     # self.dbg("%s still %s; not seen for %s" % (addr, conn.state, '%ds' % (t - conn.last_seen) if conn.last_seen is not None else 'eternity',))
                     self._heartbeat_once(addr, PONG)
             # self.dbg(u"%s ✓" % (self.reactor.seconds(),))
-        except Exception:
+        except Exception:  # pragma: no cover
             self.panic("heartbeat logic failed:\n", traceback.format_exc())
 
     @logstring(u"⇝ ❤")
@@ -245,7 +245,7 @@ class Hub(Logging):
                     else:
                         q.popleft()
                         Events.log(DeadLetter(ref, msg))
-            except Exception:
+            except Exception:  # pragma: no cover
                 self.panic("failed to clean queue:\n", traceback.format_exc())
 
     def _loads(self, data):
@@ -266,7 +266,7 @@ class HubWithNoRemoting(object):
     guardian = None
     node = None
 
-    def send(self, ref, msg):
+    def send(self, ref, msg):  # pragma: no cover
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
 
 
@@ -294,8 +294,9 @@ class IncomingMessageUnpickler(Unpickler, Logging):
                 ref.is_local = True
                 ref._cell = self.hub.guardian.lookup_cell(ref.uri)
                 # self.dbg(("dead " if not ref._cell else "") + "local ref detected")
-                del ref._hub
-        else:
+                if _actor.TESTING:
+                    del ref._hub
+        else:  # pragma: no cover
             self.load_build()
 
     dispatch = dict(Unpickler.dispatch)  # make a copy of the original
@@ -305,21 +306,21 @@ class IncomingMessageUnpickler(Unpickler, Logging):
 def _validate_addr(addr):
     # call from app code
     m = _VALID_ADDR_RE.match(addr)
-    if not m:
+    if not m:  # pragma: no cover
         raise ValueError("Addresses should be in the format 'tcp://<ip-or-hostname>:<port>': %s" % (addr,))
     port = int(m.group(1))
-    if not (0 <= port <= 65535):
+    if not (0 <= port <= 65535):  # pragma: no cover
         raise ValueError("Ports should be in the range 0-65535: %d" % (port,))
 
 
-def _assert_valid_nodeid(nodeid):
+def _assert_valid_nodeid(nodeid):  # pragma: no cover
     try:
         _validate_nodeid(nodeid)
     except ValueError as e:
         raise AssertionError(e.message)
 
 
-def _assert_valid_addr(addr):
+def _assert_valid_addr(addr):  # pragma: no cover
     try:
         _validate_addr(addr)
     except ValueError as e:
@@ -327,12 +328,12 @@ def _assert_valid_addr(addr):
 
 
 # semantic alias for prefixing with `assert`
-def _valid_addr(addr):
+def _valid_addr(addr):  # pragma: no cover
     _assert_valid_addr(addr)
     return True
 
 
-class MockNetwork(Logging):
+class MockNetwork(Logging):  # pragma: no cover
     """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
 
     def __init__(self, clock):
@@ -455,7 +456,7 @@ class MockNetwork(Logging):
         return 'network'
 
 
-class MockInSocket(object):
+class MockInSocket(object):  # pragma: no cover
     """A fake (ZeroMQ-DEALER-like) socket.
 
     This will instead be a ZeroMQ DEALER connection object from the txzmq package under normal conditions.
@@ -468,7 +469,7 @@ class MockInSocket(object):
         assert False, "Hub should define gotMessage on the incoming transport"
 
 
-class MockOutSocket(object):
+class MockOutSocket(object):  # pragma: no cover
     """A fake (ZeroMQ-ROUTER-like) socket.
 
     This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
@@ -479,4 +480,4 @@ class MockOutSocket(object):
         self.addEndpoints = addEndpoints
 
 
-_dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')
+_dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover
