@@ -2103,25 +2103,10 @@ def test_queued_messages_are_logged_as_deadletters_after_stop():
     assert (yield deadletter_event_emitted) == DeadLetter(a, 'dummy')
 
 
-def test_termination_message_after_restart_is_ignored():
-    child = Slot()
-    release_child = Trigger()
-
-    class Child(Actor):
-        def receive(self, _):
-            yield release_child
-            self.stop()
-
-    class Parent(Actor):
-        def pre_start(self):
-            if not child():  # make sure after restart, the child won't exist
-                child << self.spawn(Child)
-
-    parent = spawn(Parent)
-
-    child() << 'dummy'
-    parent << '_restart'
-    release_child()
+def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is_ignored():
+    node = TestNode()
+    a = node.spawn(Actor)
+    a << ('_child_terminated', node.spawn(Actor))
 
 
 ##

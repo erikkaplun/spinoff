@@ -1069,10 +1069,10 @@ class Cell(_BaseCell, Logging):
 
     @logstring("child-term:")
     def _do_child_terminated(self, child):
-        # TODO: PLEASE OPTIMISE
         # probably a child that we already stopped as part of a restart
-        if child not in self.children:
-            # LOGEVENT(TerminationIgnored(self, child))
+        if child.uri.name not in self._children:
+            self.dbg("ignored child termination")
+            # Events.log(TerminationIgnored(self, child))
             return
         self._child_gone(child)
         # itms = self._children.items()
