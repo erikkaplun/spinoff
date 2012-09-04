@@ -2416,19 +2416,23 @@ def test_sending_remote_refs(clock):
     """Sending remote refs.
 
     The sender acquires a remote ref to an actor on the target and sends it to the sender, who then sends a message.
-    to the target
+    to the target. It forms a triangle where 1) M obtains a reference to T, 2) sends it over to S, and then 3) S uses it
+    to start communication with T.
+
+    T ---- S
+     \   /
+      \ /
+       M
 
     """
     network = MockNetwork(clock)
 
-    # target:
-
+    #
     target_node = network.node('target:123')
     target_msgs = []
-    target_node.spawn(Props(MockActor, target_msgs), name='target')
+    target_node.spawn(Props(MockActor, target_msgs), name='T')
 
-    # sender:
-
+    #
     sender_node = network.node('sender:123')
 
     class SenderActor(Actor):
@@ -2438,11 +2442,10 @@ def test_sending_remote_refs(clock):
             target << 'helo'
     sender_node.spawn(SenderActor, name='sender')
 
-    # middle:
-
+    #
     middle_node = network.node('middle:123')
-    ref_to_sender = middle_node.lookup('sender:123/sender')
-    ref_to_target = middle_node.lookup('target:123/target')
+    ref_to_sender = middle_node.lookup('sender:123/S')
+    ref_to_target = middle_node.lookup('target:123/T')
     ref_to_sender << ('send-msg-to', ref_to_target)
 
     network.simulate(duration=5.0)
