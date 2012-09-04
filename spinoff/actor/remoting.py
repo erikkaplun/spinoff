@@ -264,7 +264,7 @@ class HubWithNoRemoting(object):
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
 
 
-class IncomingMessageUnpickler(Unpickler):
+class IncomingMessageUnpickler(Unpickler, Logging):
     """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
 
     def __init__(self, hub, file):
@@ -285,6 +285,8 @@ class IncomingMessageUnpickler(Unpickler):
             ref = self.stack[-1]
             if ref.uri.node == self.hub.node:
                 ref.is_local = True
+                ref._cell = self.hub.guardian.lookup_cell(ref.uri)
+                # self.dbg(("dead " if not ref._cell else "") + "local ref detected")
                 del ref._hub
         else:
             self.load_build()

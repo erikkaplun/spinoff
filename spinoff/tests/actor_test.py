@@ -2391,10 +2391,17 @@ def test_transmitting_refs_and_sending_to_received_refs():
         # reply: node2 -> node1:
         assert actor2_msgs == [ANY], "should be able to send messages to explicitly constructed remote refs"
         _, received_ref = actor2_msgs[0]
-        received_ref << 'hello'
+        received_ref << ('hello', received_ref)
 
         network.simulate(duration=2.0)
-        assert actor1_msgs == ['hello'], "should be able to send messages to received remote refs"
+        assert actor1_msgs == [('hello', received_ref)], "should be able to send messages to received remote refs"
+
+        # send to self without knowing it
+        (_, re_received_ref), = actor1_msgs
+        del actor1_msgs[:]
+        re_received_ref << 'to-myself'
+
+        assert actor1_msgs == ['to-myself']
 
     @test_it
     def make_toplevel(node, factory):
