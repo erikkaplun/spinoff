@@ -53,8 +53,6 @@ class Hub(Logging):
     node = None
 
     def __init__(self, incoming, outgoing, node, reactor=reactor):
-        """During testing, the address of this hub/node on the mock network can be the same as its name, for added simplicity
-        of not having to have a mapping between logical node names and "physical" mock addresses."""
         if not node or not isinstance(node, str):
             raise TypeError("The 'node' argument to Hub must be a str")
         _validate_nodeid(node)
