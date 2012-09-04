@@ -85,7 +85,7 @@ class Hub(Logging):
 
         self.connections = {}
 
-        l1 = LoopingCall(self._send_heartbeat)
+        l1 = LoopingCall(self._manage_heartbeat_and_visibility)
         l1.clock = reactor
         l1.start(self.HEARTBEAT_INTERVAL)
 
@@ -193,7 +193,7 @@ class Hub(Logging):
         self._heartbeat_once(addr, PING if conn.state == 'radiosilence' else PONG)
 
     @logstring(u"❤")
-    def _send_heartbeat(self):
+    def _manage_heartbeat_and_visibility(self):
         try:
             # self.dbg("→ %r" % (list(self.connections),))
             t = self.reactor.seconds()
@@ -224,7 +224,7 @@ class Hub(Logging):
                     self._heartbeat_once(addr, PONG)
             # self.dbg(u"%s ✓" % (self.reactor.seconds(),))
         except Exception:
-            self.panic("failed to send heartbeat:\n", traceback.format_exc())
+            self.panic("heartbeat logic failed:\n", traceback.format_exc())
 
     @logstring(u"⇝ ❤")
     def _heartbeat_once(self, addr, signal):
