@@ -21,6 +21,7 @@ from spinoff.actor import Ref, Uri, Node
 from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
+from spinoff.util.pattern_matching import ANY
 
 
 # TODO: use shorter messages outside of testing
@@ -158,7 +159,13 @@ class Hub(Logging):
             self.dbg(u"%r ← %s   → %s" % (msg_, sender_addr, path))
             cell = self.guardian.lookup_cell(Uri.parse(path))
             if not cell:
-                Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
+                if ('_watched', ANY) == msg_:
+                    watched_ref = Ref(cell=None, is_local=False, uri=Uri.parse(self.node + path))
+                    _, watcher = msg_
+                    self.dbg("%r which does not exist watched by %r" % (watched_ref, watcher))
+                    watcher << ('terminated', watched_ref)
+                else:
+                    Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
             else:
                 cell.receive(msg_)  # XXX: force_async=True perhaps?
 

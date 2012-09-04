@@ -2330,20 +2330,78 @@ def test_termination_message_to_dead_actorref_is_discarded():
     d.addErrback(lambda f: f.trap(CancelledError)).cancel()  # just to be nice
 
 
-def test_TODO_watching_running_remote_actor():
-    pass
+@simtime
+def test_watching_running_remote_actor_that_stops_causes_termination_message(clock):
+    network = MockNetwork(clock)
+    node1, node2 = network.node('host1:123'), network.node('host2:123')
+
+    received = Latch()
+
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watchee = self.watch(self.root.node.lookup('host2:123/remote-watchee'))
+
+        def receive(self, msg):
+            eq_(msg, ('terminated', self.watchee))
+            received()
+    node1.spawn(Watcher)
+
+    remote_watchee = node2.spawn(Actor, name='remote-watchee')
+
+    network.simulate(duration=1.0)
+    assert not received
+
+    remote_watchee.stop()
+
+    network.simulate(duration=1.0)
+    assert received
 
 
-def test_TODO_watching_new_remote_actor():
-    pass
+@simtime
+def test_watching_remote_actor_that_restarts_doesnt_cause_termination_message(clock):
+    network = MockNetwork(clock)
+    node1, node2 = network.node('host1:123'), network.node('host2:123')
+
+    received = Latch()
+
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watchee = self.watch(self.root.node.lookup('host2:123/remote-watchee'))
+
+        def receive(self, msg):
+            eq_(msg, ('terminated', self.watchee))
+            received()
+    node1.spawn(Watcher)
+
+    remote_watchee = node2.spawn(Actor, name='remote-watchee')
+
+    network.simulate(duration=1.0)
+    assert not received
+
+    remote_watchee << '_restart'
+
+    network.simulate(duration=1.0)
+    assert not received
 
 
-def test_TODO_watching_dead_remote_actor():
-    pass
+@simtime
+def test_watching_nonexistent_remote_actor_causes_termination_message(clock):
+    network = MockNetwork(clock)
+    node1, _ = network.node('host1:123'), network.node('host2:123')
 
+    received = Latch()
 
-def test_TODO_watching_nonexistent_remote_actor():
-    pass
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watchee = self.watch(self.root.node.lookup('host2:123/nonexistent-watchee'))
+
+        def receive(self, msg):
+            eq_(msg, ('terminated', self.watchee))
+            received()
+    node1.spawn(Watcher)
+
+    network.simulate(duration=1.0)
+    assert received
 
 
 ##
