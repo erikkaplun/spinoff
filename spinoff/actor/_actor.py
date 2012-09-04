@@ -83,7 +83,6 @@ class LookupFailed(RuntimeError):
     pass
 
 
-# XXX: please unit-test this class thoroughly
 class Uri(object):
     """Represents the identity and location of an actor.
 
