@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from twisted.internet.defer import CancelledError
 
 from spinoff.actor import Actor, spawn
-from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, SupervisionFailure
+from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
 
 from .common import deferred_result, assert_raises
 from spinoff.actor.exceptions import WrappingException
@@ -28,7 +28,7 @@ class MockActor(Actor):
         self.messages.append(message)
 
 
-_ERROR_EVENTS = [UnhandledError, ErrorIgnored, SupervisionFailure]
+_ERROR_EVENTS = [UnhandledError, ErrorIgnored, ErrorReportingFailure]
 
 
 class ErrorCollector(object):

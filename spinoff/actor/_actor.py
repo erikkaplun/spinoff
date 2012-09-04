@@ -18,7 +18,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from txcoroutine import coroutine
 
 from spinoff.actor.events import (
-    UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, SupervisionFailure)
+    UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure)
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision)
@@ -1126,7 +1126,7 @@ class Cell(_BaseCell, Logging):
             try:
                 Events.log(ErrorIgnored(self.ref, exc, tb))
                 _, sys_exc, sys_tb = sys.exc_info()
-                Events.log(SupervisionFailure(self.ref, sys_exc, sys_tb))
+                Events.log(ErrorReportingFailure(self.ref, sys_exc, sys_tb))
             except Exception:
                 self.panic("failed to report:\n", traceback.format_exc(file=sys.stderr))
 
