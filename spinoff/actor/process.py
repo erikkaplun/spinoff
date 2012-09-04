@@ -36,9 +36,6 @@ class ProcessType(ActorType):
         return ret
 
 
-# _STARTING, = enumrange('STARTING')
-
-
 # This class does a lot of two things:
 #  1) use double-underscore prefxied members for stronger privacy--this is normally ugly but in this case warranted to
 #     make sure nobody gets tempted to access that stuff.
@@ -51,7 +48,6 @@ class Process(Actor, Logging):
 
     __get_d = None
     __queue = None
-    # __phase = _STARTING
     __pre_start_complete_d = None
 
     _coroutine = None
