@@ -135,8 +135,7 @@ class Process(Actor, Logging):
                     # self.dbg("...reporting to parent")
                     self._Actor__cell.report_to_parent()
         except Exception:
-            # self.err("failure in handle_faiure")
-            self._Actor__cell.report_to_parent()
+            self.panic("failure in handle_faiure:\n", traceback.format_exc())
 
     def __handle_complete(self, result):
         # self.dbg()
