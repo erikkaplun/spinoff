@@ -17,6 +17,7 @@ from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
+from spinoff.actor import _actor
 from spinoff.actor import Ref, Uri, Node
 from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
 from spinoff.actor.events import Events, DeadLetter
@@ -282,10 +283,11 @@ class IncomingMessageUnpickler(Unpickler, Logging):
         """See `pickle.py` in Python's source code."""
         # if the ctor. function (penultimate on the stack) is the `Ref` class...
         if isinstance(self.stack[-2], Ref):
-            state = self.stack[-1]
-            # Ref.__setstate__ will know it's a remote ref if the state is a tuple
-            self.stack[-1] = (state, self.hub)
-            self.load_build()  # continue with the default implementation
+            if _actor.TESTING:
+                state = self.stack[-1]
+                # Ref.__setstate__ will know it's a remote ref if the state is a tuple
+                self.stack[-1] = (state, self.hub)
+                self.load_build()  # continue with the default implementation
 
             # detect our own refs sent back to us
             ref = self.stack[-1]
