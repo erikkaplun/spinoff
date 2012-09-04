@@ -516,7 +516,7 @@ class Node(Logging):
     """
     hub = None
 
-    def __init__(self, hub=None):
+    def __init__(self, hub):
         if not hub:
             raise TypeError("Node instances must be bound to a Hub")
         self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
