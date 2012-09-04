@@ -38,11 +38,6 @@ class LifecycleEvent(Event):
     pass
 
 
-class LifecycleWarning(Event, fields('actor', 'message')):
-    def repr_args(self):
-        return super(LifecycleWarning, self).repr_args() + (', %r' % (self.message,))
-
-
 class Started(LifecycleEvent, fields('actor')):
     pass
 
