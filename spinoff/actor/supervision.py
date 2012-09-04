@@ -1,6 +1,3 @@
-from spinoff.util.pattern_matching import ANY
-
-
 _EMPTY = object()
 
 

@@ -4,7 +4,6 @@ from __future__ import print_function, absolute_import
 import inspect
 import random
 import re
-import sys
 import traceback
 from cStringIO import StringIO
 from collections import deque
