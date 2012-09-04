@@ -1145,6 +1145,8 @@ def test_relative_uri():
 
     eq_(list(uri.steps), ['foo'])
 
+    ok_(uri.local is uri)
+
     #
     uri = Uri.parse('foo/bar')
     eq_(str(uri), 'foo/bar')
@@ -1160,6 +1162,8 @@ def test_relative_uri():
     eq_(uri.root, 'foo')
 
     eq_(list(uri.steps), ['foo', 'bar'])
+
+    ok_(uri.local is uri)
 
 
 def test_absolute_uri():
@@ -1179,6 +1183,8 @@ def test_absolute_uri():
 
     eq_(list(uri.steps), [''])
 
+    ok_(uri.local is uri)
+
     #
     uri = Uri.parse('/foo')
     eq_(str(uri), '/foo')
@@ -1195,6 +1201,8 @@ def test_absolute_uri():
 
     eq_(list(uri.steps), ['', 'foo'])
 
+    ok_(uri.local is uri)
+
     #
     uri = Uri.parse('/foo/bar')
     eq_(uri.name, 'bar')
@@ -1210,6 +1218,8 @@ def test_absolute_uri():
     eq_(uri.root, '')
 
     eq_(list(uri.steps), ['', 'foo', 'bar'])
+
+    ok_(uri.local is uri)
 
 
 def test_fully_qualified_uri():
@@ -1266,6 +1276,12 @@ def test_fully_qualified_uri():
     eq_(list(uri.steps), ['', 'foo', 'bar'])
 
     eq_(uri.local, '/foo/bar')
+
+
+def test_uri_hash():
+    eq_(hash(Uri.parse('foo')), hash(Uri.parse('foo')))
+    eq_(hash(Uri.parse('/foo')), hash(Uri.parse('/foo')))
+    eq_(hash(Uri.parse('localhost:123/foo')), hash(Uri.parse('localhost:123/foo')))
 
 
 ## LOOKUP
