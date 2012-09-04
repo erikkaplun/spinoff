@@ -256,6 +256,12 @@ class Hub(Logging):
 
 
 class HubWithNoRemoting(object):
+    """A dummy hub used during networkless testing and in production when no remoting should be available.
+
+    All it does is imitate the interface of the real `Hub`, and report attempts to send remote messages as
+    `RuntimeError`s.
+
+    """
     # to be compatible with Hub:
     guardian = None
     node = None
