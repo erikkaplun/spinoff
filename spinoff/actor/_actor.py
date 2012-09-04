@@ -271,6 +271,7 @@ class Ref(_BaseRef, _HubBound):
         assert uri is None or isinstance(uri, Uri)
         super(Ref, self).__init__(hub=hub)
         if cell:
+            assert not hub
             assert isinstance(cell, Cell)
             self._cell = cell
         self.uri = uri
