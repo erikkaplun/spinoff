@@ -184,11 +184,11 @@ class Hub(Logging):
             conn.state = 'reverse-radiosilence' if msg == PING else 'visible'
             if prevstate != conn.state:
                 self.dbg("%s went %s => %s" % (sender_addr, prevstate, conn.state))
-            if prevstate != 'visible' and conn.state == 'visible':
-                while conn.queue:
-                    (ref, queued_msg), _ = conn.queue.popleft()
-                    assert ref.uri.root.url == sender_addr
-                    self.outgoing.sendMsg((sender_addr, dumps((ref.uri.path, queued_msg), protocol=2)))
+                if conn.state == 'visible':
+                    while conn.queue:
+                        (ref, queued_msg), _ = conn.queue.popleft()
+                        assert ref.uri.root.url == sender_addr
+                        self.outgoing.sendMsg((sender_addr, dumps((ref.uri.path, queued_msg), protocol=2)))
 
     def _connect(self, addr, conn):
         assert _valid_addr(addr)
