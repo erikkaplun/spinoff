@@ -30,13 +30,13 @@ class _Restart(Decision):
         if max:
             self.max = max
         if within:
-            if not max:
+            if not max:  # pragma: no cover
                 raise TypeError("Restart.within not applicable if Restart.max is not defined")
             self.within = within
 
     def __call__(self, *args, **kwargs):
         assert not self.__dict__, "Can't construct Restart instances from existing non-default instances"
-        if not args and not kwargs:
+        if not args and not kwargs:  # pragma: no cover
             return self
         return type(self)(*args, **kwargs)
 

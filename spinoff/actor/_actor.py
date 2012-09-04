@@ -53,7 +53,7 @@ class Uri(object):
 
     def __init__(self, name, parent, node=None):
         if name and node:
-            raise TypeError("node specified for a non-root Uri")
+            raise TypeError("node specified for a non-root Uri")  # pragma: no cover
         self.name, self.parent = name, parent
         if node:
             _validate_nodeid(node)
@@ -72,11 +72,11 @@ class Uri(object):
     def __div__(self, child):
         """Builds a new child `Uri` of this `Uri` with the given `name`."""
         if not child or not isinstance(child, str):
-            raise TypeError("Uri traversal expected a non-empty str but got %r" % (child,))
+            raise TypeError("Uri traversal expected a non-empty str but got %r" % (child,))  # pragma: no cover
         if child in ('.', '..'):
-            raise TypeError("Traversing using . and .. is not supported (yet)")
+            raise TypeError("Traversing using . and .. is not supported (yet)")  # pragma: no cover
         elif '/' in child:
-            raise TypeError("Traversing more than 1 level at a time is not supported (yet)")
+            raise TypeError("Traversing more than 1 level at a time is not supported (yet)")  # pragma: no cover
         return Uri(name=child, parent=self)
 
     @property
@@ -118,7 +118,7 @@ class Uri(object):
 
         """
         if addr.endswith('/'):
-            raise ValueError("Uris must not end in '/'")
+            raise ValueError("Uris must not end in '/'")  # pragma: no cover
         parts = addr.split('/')
         if ':' in parts[0]:
             node, parts[0] = parts[0], ''
@@ -409,7 +409,7 @@ class _BaseCell(_HubBound):
 
     def get_child(self, name):
         if not (name and isinstance(name, str)):
-            raise TypeError("get_child takes a non-emtpy string")
+            raise TypeError("get_child takes a non-emtpy string")  # pragma: no cover
         return self._children.get(name, None)
 
     def lookup_cell(self, uri):
@@ -432,7 +432,7 @@ class _BaseCell(_HubBound):
 
     def lookup_ref(self, uri):
         if not (uri and isinstance(uri, (Uri, str))):
-            raise TypeError("_BaseCell.lookup expects a non-empty str or Uri")
+            raise TypeError("_BaseCell.lookup expects a non-empty str or Uri")  # pragma: no cover
 
         uri = uri if isinstance(uri, Uri) else Uri.parse(uri)
 
@@ -495,13 +495,13 @@ class Guardian(_BaseCell, _BaseRef, Logging):
             # dbg("GUARDIAN: joining...", actor, actor._cell)
             try:
                 yield with_timeout(.01, actor.join())
-            except Timeout:
+            except Timeout:  # pragma: no cover
                 # dbg("GUARDIAN: actor %r refused to stop" % (actor,))
                 assert False, "actor %r refused to stop" % (actor,)
                 # TODO: force-stop
             # dbg("GUARDIAN: ...OK", actor)
 
-    def __getstate__(self):
+    def __getstate__(self):  # pragma: no cover
         raise PicklingError("Guardian cannot be serialized")
 
 
@@ -515,7 +515,7 @@ class Node(Logging):
     hub = None
 
     def __init__(self, hub):
-        if not hub:
+        if not hub:  # pragma: no cover
             raise TypeError("Node instances must be bound to a Hub")
         self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
         self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None)
@@ -524,17 +524,17 @@ class Node(Logging):
     def set_hub(self, hub):
         if hub:
             from .remoting import Hub, HubWithNoRemoting
-            if not isinstance(hub, (Hub, HubWithNoRemoting)):
+            if not isinstance(hub, (Hub, HubWithNoRemoting)):  # pragma: no cover
                 raise TypeError("hub parameter to Guardian must be a %s.%s or a %s.%s" %
                                 (Hub.__module__, Hub.__name__,
                                  HubWithNoRemoting.__module__, HubWithNoRemoting.__name__))
-            if hub.guardian:
+            if hub.guardian:  # pragma: no cover
                 raise RuntimeError("Can't bind Guardian to a Hub that is already bound to another Guardian")
             hub.guardian = self.guardian
             self.hub = hub
 
     def lookup(self, uri_or_addr):
-        if not (uri_or_addr and isinstance(uri_or_addr, (Uri, str))):
+        if not (uri_or_addr and isinstance(uri_or_addr, (Uri, str))):  # pragma: no cover
             raise TypeError("Node.lookup expects a non-empty str or Uri")
 
         uri = uri_or_addr if isinstance(uri_or_addr, Uri) else Uri.parse(uri_or_addr)
@@ -547,8 +547,8 @@ class Node(Logging):
                 # exception because the caller might not be statically aware of the localness of the `Uri`, thus we
                 # return a mere dead ref:
                 return Ref(cell=None, uri=uri, is_local=True)
-        elif not uri.root:
-            raise TypeError("Node can't look up a relative Uri")
+        elif not uri.root:  # pragma: no cover
+            raise TypeError("Node can't look up a relative Uri; did you mean Node.guardian.lookup(%r)?" % (uri_or_addr,))
         else:
             return Ref(cell=None, uri=uri, is_local=False, hub=self.hub if TESTING else None)
 
@@ -561,7 +561,7 @@ class Node(Logging):
     def reset(self):
         self.guardian._reset()
 
-    def __getstate__(self):
+    def __getstate__(self):  # pragma: no cover
         raise PicklingError("Node cannot be serialized")
 
     def __repr__(self):
@@ -619,7 +619,7 @@ class Actor(object):
 
     def watch(self, other, self_ok=False):
         if other == self.ref:
-            if not self_ok:
+            if not self_ok:  # pragma: no cover
                 warnings.warn("Portential problem: actor %s started watching itself; pass self_ok=True to mark as safe")
         else:
             other << ('_watched', self.ref)
@@ -630,7 +630,7 @@ class Actor(object):
         return self.__cell.ref
 
     @property
-    def node(self):
+    def node(self):  # pragma: no cover
         """Returns a reference to the `Node` whose hierarchy this `Actor` is part of."""
         return self.__cell.node
 
@@ -644,7 +644,7 @@ class Actor(object):
         """Alias for self.ref.send"""
         self.ref.send(*args, **kwargs)
 
-    def __lshift__(self, message):
+    def __lshift__(self, message):  # pragma: no cover
         self.ref.send(message)
         return self
 
@@ -713,7 +713,7 @@ class Cell(_BaseCell, Logging):
     def __init__(self, parent, factory, uri, hub):
         super(Cell, self).__init__(hub=hub)
 
-        if not callable(factory):
+        if not callable(factory):  # pragma: no cover
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.parent = parent
         self.uri = uri
@@ -737,8 +737,8 @@ class Cell(_BaseCell, Logging):
         except IndexError:
             try:
                 return self.inbox.popleft()
-            except IndexError:
-                return None
+            except IndexError:  # pragma: no cover
+                assert False, "should not reach here"
 
     def peek_message(self):
         try:
@@ -749,11 +749,11 @@ class Cell(_BaseCell, Logging):
             except IndexError:
                 return None
 
-    def logstate(self):
+    def logstate(self):  # pragma: no cover
         return {'--\\': self.shutting_down, '+': self.stopped, 'N': not self.started,
                 '_': self.suspended, '?': self.tainted, 'X': self.processing_messages, }
 
-    def logcomment(self):
+    def logcomment(self):  # pragma: no cover
         if self.priority_inbox and self.inbox:
             def g():
                 for i, msg in enumerate(chain(self.priority_inbox, self.inbox)):
@@ -851,7 +851,7 @@ class Cell(_BaseCell, Logging):
                 finally:
                     self.processing_messages = False
             self.dbg("☺")
-        except Exception:
+        except Exception:  # pragma: no cover
             self.panic(u"!!BUG!!\n", traceback.format_exc())
             self.report_to_parent()
 
@@ -1041,7 +1041,7 @@ class Cell(_BaseCell, Logging):
 
             for watcher in self.watchers:
                 watcher.send(('terminated', ref))
-        except Exception:
+        except Exception:  # pragma: no cover
             self.panic(u"!!BUG!!\n", traceback.format_exc())
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
@@ -1120,7 +1120,7 @@ class Cell(_BaseCell, Logging):
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
             self.parent.send(('_error', self.ref, exc, tb), force_async=True)
-        except Exception:
+        except Exception:  # pragma: no cover
             try:
                 self.panic("failed to report:\n", traceback.format_exc())
                 Events.log(ErrorIgnored(self.ref, exc, tb))
@@ -1158,7 +1158,7 @@ class Future(Deferred):  # TODO: inherit from _BaseRef or similar
 
 @wraps(_BaseCell.spawn)
 def spawn(*args, **kwargs):
-    if not _NODE:
+    if not _NODE:  # pragma: no cover
         raise TypeError("No active node set")
     else:
         return _NODE.spawn(*args, **kwargs)
@@ -1172,12 +1172,12 @@ def _ignore_error(actor):
 def _validate_nodeid(nodeid):
     # call from app code
     m = _VALID_NODEID_RE.match(nodeid)
-    if not m:
+    if not m:  # pragma: no cover
         raise ValueError("Node IDs should be in the format '<ip-or-hostname>:<port>': %s" % (nodeid,))
     port = int(m.group(1))
-    if not (0 <= port <= 65535):
+    if not (0 <= port <= 65535):  # pragma: no cover
         raise ValueError("Ports should be in the range 0-65535: %d" % (port,))
 
 
-def dbg(*args):
+def dbg(*args):  # pragma: no cover
     print(file=sys.stderr, *args)

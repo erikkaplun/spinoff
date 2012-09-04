@@ -15,12 +15,12 @@ class Event(object):
     def __repr__(self):
         return '%s(%s)' % (type(self).__name__, self.repr_args())
 
-    def repr_args(self):
+    def repr_args(self):  # pragma: no cover
         return '%r' % (self.actor,)
 
 
 class MessageReceived(Event, fields('actor', 'message')):
-    def repr_args(self):
+    def repr_args(self):  # pragma: no cover
         return (super(MessageReceived, self).repr_args() +
                 ', message=%r' % (self.message,))
 
@@ -48,7 +48,7 @@ class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
     This is done before the error is reported to the supervisor so even handled errors are logged this way.
 
     """
-    def repr_args(self):
+    def repr_args(self):  # pragma: no cover
         try:
             formatted_traceback = '\n' + traceback.format_exception(self.exc, None, self.tb)
         except Exception:
@@ -124,7 +124,7 @@ class Events(object):
             for fn in subscriptions:
                 try:
                     fn(event)
-                except Exception:
+                except Exception:  # pragma: no cover
                     print("Error in event handler:", file=sys.stderr)
                     traceback.print_exc()
         else:
