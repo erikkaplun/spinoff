@@ -3300,7 +3300,7 @@ def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 # SUPPORT
 
 def dbg(*args):
-    print(file=sys.stderr, *args)
+    print("***", file=sys.stderr, *args)
 
 
 class MockException(Exception):
