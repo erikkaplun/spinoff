@@ -11,7 +11,6 @@ from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, Supervisi
 
 from .common import deferred_result, assert_raises
 from spinoff.actor.exceptions import WrappingException
-from spinoff.actor._actor import _BaseRef
 
 
 class MockMessages(list):
@@ -27,33 +26,6 @@ class MockActor(Actor):
 
     def receive(self, message):
         self.messages.append(message)
-
-
-def make_mock():
-    messages = MockMessages()
-    ret = MockActor.spawn(messages)
-    return ret, messages
-
-
-class MockRef(_BaseRef):
-    def __init__(self, uri):
-        self.messages = MockMessages()
-        self.uri = uri
-
-    def send(self, msg, force_async=None):
-        self.messages.append(msg)
-
-    def __repr__(self):
-        return '<mock@%s>' % (str(self.uri),)
-
-    def __getstate__(self):
-        assert False
-
-    def __eq__(self, _):
-        assert False
-
-    def stop(self):
-        self.send('_stop')
 
 
 _ERROR_EVENTS = [UnhandledError, ErrorIgnored, SupervisionFailure]
