@@ -44,11 +44,27 @@ class Hub(Logging):
     The wire-transport implementation is specified/overridden by the `incoming` and `outgoing` parameters.
 
     """
+    __doc_HEARTBEAT_INTERVAL__ = (
+        "Time on seconds after which to send out a heartbeat signal to all known nodes. Regular messages can be "
+        "subsituted by the framework for heartbeats to save network bandwidth.")
     HEARTBEAT_INTERVAL = 1.0
 
+    __doc_MAX_SILENCE_BETWEEN_HEARTBEATS__ = (
+        "Maximum length of silence in seconds between two consecutive heartbeat signals from a node after which to "
+        "consider the node as temporarily not available, put it in the 'radio-silence' state, and start queueing all "
+        "messages posted to it by actors.")
     MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
+
+    __doc_TIME_TO_KEEP_HOPE__ = (
+        "Time in seconds after which the 'radio-silence' state transforms into a 'silently-hoping' state wherein the "
+        "is considered to have gone offline for an extended duration. All currently queued and any future messages to"
+        "that node will immediately be turned into `DeadLetter` events.")
     TIME_TO_KEEP_HOPE = 55.0
 
+    __doc_QUEUE_ITEM_LIFETIME__ = (
+        "Time in seconds for which to keep a queued message alive, after which the message is turned into a "
+        "`DeadLetter` event. The default value is chosen such that exactly when the target node goes into the "
+        "'silently-hoping' visibility state, all messages to it are discarded.")
     QUEUE_ITEM_LIFETIME = MAX_SILENCE_BETWEEN_HEARTBEATS + TIME_TO_KEEP_HOPE
 
     node = None
