@@ -10,7 +10,7 @@ from spinoff.actor import Actor, spawn
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, SupervisionFailure
 
 from .common import deferred_result, assert_raises
-from spinoff.actor._actor import WrappingException
+from spinoff.actor.exceptions import WrappingException
 from spinoff.actor._actor import _BaseRef
 
 
