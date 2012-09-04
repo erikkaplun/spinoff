@@ -2,8 +2,6 @@ from __future__ import print_function
 
 import traceback
 import sys
-from functools import wraps
-from types import UnboundMethodType
 
 from twisted.python.failure import Failure
 from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, DeferredList
@@ -175,66 +173,3 @@ class EventBuffer(object):
                 _kwargs.update(self._kwargs)
                 _kwargs.update(kwargs)
             self._fn(*_args, **_kwargs)
-
-
-def with_heartbeat(interval, reactor=reactor):
-    if callable(interval):
-        return with_heartbeat(1.0)
-    else:
-        def dec(fn):
-            @wraps(fn)
-            @inlineCallbacks
-            def ret(self, *args, **kwargs):
-                cls = type(self)
-
-                heartbeater_num = None
-                num_heartbeaters = None
-
-                if not hasattr(cls, '_coroutines'):
-                    assert hasattr(self, 'send_heartbeat')
-                    all_methods = [getattr(cls, name).im_func for name in cls.__dict__
-                                   if isinstance(getattr(cls, name), UnboundMethodType)]
-                    cls._coroutines = [method for method in all_methods if hasattr(method, '_is_heartbeater')]
-
-                if heartbeater_num is None:
-                    num_heartbeaters = len(cls._coroutines)
-                    heartbeater_num = cls._coroutines.index(ret)
-
-                if not hasattr(self, '_heartbeat_cycle'):
-                    self._heartbeat_cycle = 0
-                if not hasattr(self, '_first_heartbeat_sent'):
-                    self._first_heartbeat_sent = False
-
-                def single_heartbeat():
-                    self._heartbeat_cycle += 1
-                    if self._heartbeat_cycle == num_heartbeaters:
-                        self.send_heartbeat()
-                        self._heartbeat_cycle = 0
-
-                if not self._first_heartbeat_sent:
-                    self._first_heartbeat_sent = True
-                    self.send_heartbeat()
-
-                heartbeat_active = False
-                coroutine_running = True
-                last_heartbeat = [reactor.seconds()] * num_heartbeaters
-
-                @exec_async
-                def send_heartbeat():
-                    while coroutine_running:
-                        yield sleep(float(interval) / 10.0, reactor=reactor)
-                        if coroutine_running and heartbeat_active and reactor.seconds() - last_heartbeat[heartbeater_num] >= interval:
-                            last_heartbeat[heartbeater_num] = reactor.seconds()
-                            single_heartbeat()
-
-                try:
-                    for d in fn(self, *args, **kwargs):
-                        heartbeat_active = True
-                        yield d
-                        heartbeat_active = False
-                finally:
-                    coroutine_running = False
-
-            ret._is_heartbeater = True
-            return ret
-        return dec
