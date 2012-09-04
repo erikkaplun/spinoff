@@ -17,18 +17,15 @@ from itertools import count, chain
 from twisted.internet.defer import inlineCallbacks, Deferred
 from txcoroutine import coroutine
 
-from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.actor.events import (
-    UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated)
+    UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, SupervisionFailure)
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
-from spinoff.actor.events import SupervisionFailure
-from spinoff.util.async import call_when_idle_unless_already
-from spinoff.util.async import with_timeout
-from spinoff.util.async import Timeout
-from spinoff.util.pattern_matching import Matcher
-from spinoff.util.logging import Logging, logstring
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision)
+from spinoff.util.pattern_matching import IS_INSTANCE, ANY
+from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
+from spinoff.util.pattern_matching import Matcher
+from spinoff.util.logging import Logging, logstring
 
 
 TESTING = True
