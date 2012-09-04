@@ -37,25 +37,22 @@ def test_sent_message_is_received():
     performance reasons.
 
     """
-    messages = MockMessages()
-
-    class MyActor(Actor):
-        def receive(self, message):
-            messages.append(message)
-
-    a = spawn(MyActor)
+    messages = []
+    a = spawn(Props(MockActor, messages))
     a << 'foo'
-    assert messages.clear() == ['foo']
+    assert messages == ['foo']
 
 
 def test_sending_operator_is_chainable():
+    """Trivial send and receive using the << operator.
+
+    The main advantages of the << operator is that it's considerably fancier. Less importantly, it improves readability
+    by bringing out message sends from the rest of the code. Also, it can be chained to send multiple messages to the
+    same actor in a sequence.
+
+    """
     messages = MockMessages()
-
-    class MyActor(Actor):
-        def receive(self, message):
-            messages.append(message)
-
-    a = spawn(MyActor)
+    a = spawn(Props(MockActor, messages))
     a << 'foo' << 'bar'
     assert messages.clear() == ['foo', 'bar']
 
@@ -67,7 +64,8 @@ def test_async_sending():
     `force_async=True` to `send`.
 
     Caveat: if you do an async send, but the message is delayed because the actor is suspended or hasn't started yet,
-    the message will be received immediately when the actor is resumed or started, respectively.
+    the message will be received immediately when the actor is resumed or started, respectively. This might change in
+    the future.
 
     """
     for case in ['via-setting', 'via-explicit-param']:
@@ -134,15 +132,15 @@ def test_receive_is_auto_wrapped_with_txcoroutine_if_its_a_generator_function():
     See also http://pypi.python.org/pypi/txcoroutine/ for more information.
 
     """
-    receive_generator_started = Latch()
+    started = Latch()
 
     class MyActor(Actor):
         def receive(self, message):
-            receive_generator_started()
+            started()
             yield
 
     spawn(MyActor) << None
-    assert receive_generator_started
+    assert started
 
 
 def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferred_receives():
@@ -195,7 +193,7 @@ def test_unhandled_message_is_reported():
     """Unhandled messages are reported to Events"""
 
     class MyActor(Actor):
-        def receive(self, message):
+        def receive(self, _):
             raise Unhandled
 
     a = spawn(MyActor)
