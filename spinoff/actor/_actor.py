@@ -402,7 +402,7 @@ class _BaseCell(_HubBound):
             pass
 
     @property
-    def children(self, child):
+    def children(self):
         return self._children.values()
 
     def _child_gone(self, child):
@@ -491,7 +491,7 @@ class Guardian(_BaseCell, _BaseRef, Logging):
     @inlineCallbacks
     def _do_stop(self):
         # dbg("GUARDIAN: stopping")
-        for actor in self._children.values():
+        for actor in self.children:
             # dbg("GUARDIAN: stopping", actor)
             actor.stop()
             # dbg("GUARDIAN: joining...", actor, actor._cell)
@@ -617,7 +617,7 @@ class Actor(object):
 
     @property
     def children(self):
-        return self.__cell._children.values()
+        return self.__cell.children
 
     def watch(self, other, self_ok=False):
         if other == self.ref:
@@ -947,7 +947,7 @@ class Cell(_BaseCell, Logging):
     @logstring("sup:")
     def _do_supervise(self, child, exc, tb):
         self.dbg1(u"%r ← %r" % (exc, child))
-        if child not in self._children.values():  # TODO: use a denormalized set
+        if child not in self.children:
             Events.log(ErrorIgnored(child, exc, tb))
             return
 
@@ -985,7 +985,7 @@ class Cell(_BaseCell, Logging):
             # self.dbg("calling coroutine.pause on", self.actor._coroutine)
             self.actor._coroutine.pause()
 
-        for child in self._children.values():
+        for child in self.children:
             child.send('_suspend')
 
     @logstring(u"||►")
@@ -1004,7 +1004,7 @@ class Cell(_BaseCell, Logging):
             if hasattr(self.actor, '_coroutine'):
                 self.actor._coroutine.unpause()
 
-            for child in self._children.values():
+            for child in self.children:
                 child.send('_resume')
         self.dbg(u"✓")
 
@@ -1077,7 +1077,7 @@ class Cell(_BaseCell, Logging):
     def _do_child_terminated(self, child):
         # TODO: PLEASE OPTIMISE
         # probably a child that we already stopped as part of a restart
-        if child not in self._children.values():
+        if child not in self.children:
             # LOGEVENT(TerminationIgnored(self, child))
             return
         self._child_gone(child)
@@ -1096,8 +1096,8 @@ class Cell(_BaseCell, Logging):
 
         if self._children:  # we don't want to do the Deferred magic if there're no babies
             self._all_children_stopped = Deferred()
-            # dbg("SHUTDOWN: shutting down children:", self._children.values())
-            for child in self._children.values():
+            # dbg("SHUTDOWN: shutting down children:", self.children)
+            for child in self.children:
                 child.stop()
             # dbg("SHUTDOWN: waiting for all children to stop", self)
             yield self._all_children_stopped
