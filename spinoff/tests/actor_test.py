@@ -27,6 +27,9 @@ from spinoff.util.testing import (
     assert_event_not_emitted,)
 
 
+# ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
+
+
 ##
 ## SENDING & RECEIVING
 
