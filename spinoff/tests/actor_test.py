@@ -2462,10 +2462,10 @@ def test_sending_remote_refs(clock):
 def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
     network = MockNetwork(clock)
 
-    network.node('receivernode:123')
+    sender_node, _ = network.node('sendernode:123'), network.node('receivernode:123')
 
-    sender_node = network.node('sendernode:123')
-    sender_node.lookup('receivernode:123/non-existent-actor') << 'straight-down-the-drain'
+    noexist = sender_node.lookup('receivernode:123/non-existent-actor')
+    noexist << 'straight-down-the-drain'
     with assert_one_event(DeadLetter):
         network.simulate(0.2)
 
