@@ -83,8 +83,10 @@ def test_async_sending():
         a = spawn(MyActor)
         a.send('foo', **({'force_async': True} if case is 'via-explicit-param' else {}))
         a.send('bar', **({'force_async': True} if case is 'via-explicit-param' else {}))
+        assert not messages.pending
         msg1 = yield messages.get()
         assert msg1 == 'foo'
+        assert not messages.pending
         msg2 = yield messages.get()
         assert msg2 == 'bar'
 
