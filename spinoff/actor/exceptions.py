@@ -42,3 +42,7 @@ class BadSupervision(WrappingException):
 
 class LookupFailed(RuntimeError):
     pass
+
+
+class InvalidEscalation(RuntimeError):
+    pass

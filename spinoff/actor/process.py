@@ -12,6 +12,7 @@ from txcoroutine import coroutine
 
 from spinoff.actor import Actor, ActorType, CreateFailed
 from spinoff.actor.events import HighWaterMarkReached, Events
+from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import ANY
 from spinoff.util.logging import Logging, logstring
@@ -161,7 +162,7 @@ class Process(Actor, Logging):
         # self.fail(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
-            raise TypeError("Process.escalate must be called in an exception context")
+            raise InvalidEscalation("Process.escalate must be called in an exception context")
         if self.__pre_start_complete_d:
             # self.fail("illegal escalation")
             # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine

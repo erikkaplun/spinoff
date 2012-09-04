@@ -19,6 +19,7 @@ from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgno
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.remoting import MockNetwork, HubWithNoRemoting
+from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
@@ -3147,6 +3148,28 @@ def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
     yield supervision_invoked
     assert not process_continued
     yield sleep(0)
+
+
+def test_calling_escalate_outside_of_error_context_causes_runtime_error():
+    exc_raised = Latch()
+
+    class FalseAlarmParent(Actor):
+        def supervise(self, exc):
+            ok_(isinstance(exc, InvalidEscalation))
+            exc_raised()
+            return Stop
+
+        def pre_start(self):
+            self.spawn(FalseAlarmChild)
+
+    class FalseAlarmChild(Process):
+        def run(self):
+            self << 'foo'
+            yield self.get()  # put in started-mode
+            self.escalate()
+
+    spawn(FalseAlarmParent)
+    assert exc_raised
 
 
 def test_attempt_to_delegate_an_exception_during_startup_instead_fails_the_actor_immediately():
