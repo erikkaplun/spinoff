@@ -729,10 +729,6 @@ class Cell(_BaseCell, Logging):
     def root(self):
         return self.parent if isinstance(self.parent, Guardian) else self.parent._cell.root
 
-    @property
-    def node(self):
-        return self.root.node
-
     # TODO: benchmark the message methods and optimise
     def has_message(self):
         return self.inbox or self.priority_inbox
