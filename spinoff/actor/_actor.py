@@ -123,8 +123,6 @@ class Uri(object):
         if ':' in parts[0]:
             node, parts[0] = parts[0], ''
         else:
-            # if parts[0] == '':
-            #     parts[0] = None
             node = None
 
         ret = None  # Uri(name=None, parent=None, node=node) if node else None
