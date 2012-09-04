@@ -1359,6 +1359,17 @@ def test_looking_up_a_non_existent_local_actor_returns_a_dead_ref_with_neverthel
         hypotheticalchild << 'foo'
 
 
+def test_manually_ceated_remote_looking_ref_to_a_non_existend_local_actor_is_converted_to_dead_ref_on_send():
+    network = MockNetwork(Clock())
+    node = network.node('local:123')
+
+    noexist = Ref(cell=None, is_local=False, uri=Uri.parse('local:123/a/b/c'), hub=node.hub)
+
+    with assert_one_event(DeadLetter(noexist, 'foo')):
+        noexist << 'foo'
+    ok_(noexist.is_local)
+
+
 ##
 ## SUPERVISION & ERROR HANDLING
 
