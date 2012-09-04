@@ -18,10 +18,6 @@ from spinoff.util.pattern_matching import ANY
 from spinoff.util.logging import Logging, logstring
 
 
-def dbg(*args):
-    print(file=sys.stderr, *args)
-
-
 class ProcessType(ActorType):
     def __new__(self, name, bases, dict_):
         """Verifies that the run method is a generator, and wraps it with `txcoroutine.coroutine`."""
@@ -191,3 +187,7 @@ class _PickyDeferred(Deferred):
             raise RuntimeError("Unwanted value fed into a picky deferred")
         else:
             Deferred.callback(self, result)
+
+
+def dbg(*args):  # pragma: no cover
+    print(file=sys.stderr, *args)
