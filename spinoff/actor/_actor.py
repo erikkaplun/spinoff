@@ -564,7 +564,7 @@ class Node(Logging):
         self.guardian._reset()
 
     def __getstate__(self):
-        raise PicklingError("Guardian cannot be serialized")
+        raise PicklingError("Node cannot be serialized")
 
     def __repr__(self):
         return '<node:%s>' % (self._uri if self.hub else 'local')
