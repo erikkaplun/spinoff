@@ -1035,7 +1035,7 @@ def test_actors_are_garbage_collected_on_termination():
 def test_cells_are_garbage_collected_on_termination():
     ac = spawn(Actor)
 
-    cell = weakref.ref(ac.cell)
+    cell = weakref.ref(ac._cell)
     assert cell()
     ac.stop()
 
@@ -1273,7 +1273,7 @@ def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference
     assert node.lookup('/toplevel') is toplevel_actor
     assert node.lookup(Uri.parse('/toplevel')) is toplevel_actor
 
-    child_actor = toplevel_actor.cell.spawn(Actor, name='child')
+    child_actor = toplevel_actor._cell.spawn(Actor, name='child')
     assert node.lookup('/toplevel/child') is child_actor
     assert node.lookup(Uri.parse('/toplevel/child')) is child_actor
 
@@ -1283,7 +1283,7 @@ def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_t
     toplevel_actor = node.spawn(Actor, name='toplevel')
     assert node.lookup('toplevel') is toplevel_actor
 
-    child_actor = toplevel_actor.cell.spawn(Actor, name='child')
+    child_actor = toplevel_actor._cell.spawn(Actor, name='child')
     assert node.lookup('toplevel/child') is child_actor
     assert toplevel_actor / 'child' is child_actor
 
@@ -1294,7 +1294,7 @@ def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_refe
     a = node.spawn(Actor, name='a')
     ok_(node.guardian / 'a' is a)
 
-    b = a.cell.spawn(Actor, name='b')
+    b = a._cell.spawn(Actor, name='b')
     ok_(a / 'b' is b)
     ok_(node.guardian / 'a/b' is b)
 

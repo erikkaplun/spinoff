@@ -56,7 +56,7 @@ class Hub(Logging):
 
     QUEUE_ITEM_LIFETIME = MAX_SILENCE_BETWEEN_HEARTBEATS + TIME_TO_KEEP_HOPE
 
-    _guardian = None
+    node = None
 
     def __init__(self, incoming, outgoing, node, reactor=reactor):
         """During testing, the address of this hub/node on the mock network can be the same as its name, for added simplicity
@@ -70,28 +70,33 @@ class Hub(Logging):
         self.reactor = reactor
 
         self.outgoing = outgoing
-        incoming.gotMessage = self.got_message
+        incoming.gotMessage = self._got_message
         incoming.addEndpoints([ZmqEndpoint('bind', self.addr)])
 
         self.connections = {}
 
-        l1 = LoopingCall(self.send_heartbeat)
+        l1 = LoopingCall(self._send_heartbeat)
         l1.clock = reactor
         l1.start(self.HEARTBEAT_INTERVAL)
 
-        l2 = LoopingCall(self.clean_queue)
+        l2 = LoopingCall(self._purge_old_items_in_queue)
         l2.clock = reactor
         l2.start(1.0)
 
-    def get_guardian(self):
+    _guardian = None
+
+    def logstate(self):
+        return {str(self.reactor.seconds()): True}
+
+    def _get_guardian(self):
         return self._guardian
 
-    def set_guardian(self, guardian):
+    def _set_guardian(self, guardian):
         if self._guardian:
             raise RuntimeError("Hub already bound to a Guardian")
         self._guardian = guardian
 
-    guardian = property(get_guardian, set_guardian)
+    guardian = property(_get_guardian, _set_guardian)
 
     @logstring(u"⇝")
     def send(self, msg, to_remote_actor_pointed_to_by):
@@ -108,7 +113,7 @@ class Hub(Logging):
                 ref.is_local = True  # next time, just put it straight to DeadLetters
                 Events.log(DeadLetter(ref, msg))
                 return
-            ref.cell = cell
+            ref._cell = cell
             ref.is_local = True
             ref << msg
             return
@@ -131,12 +136,12 @@ class Hub(Logging):
             self.outgoing.sendMsg((addr, dumps((ref.uri.path, msg), protocol=2)))
         else:
             if conn.queue is None:
-                self.emit_deadletter((ref, msg))
+                Events.log(DeadLetter(ref, msg))
             else:
                 conn.queue.append(((ref, msg), self.reactor.seconds()))
 
     @logstring(u"⇜")
-    def got_message(self, sender_addr, msg):
+    def _got_message(self, sender_addr, msg):
         if msg in (PING, PONG):
             self.dbg(u"❤ %s ← %s" % (msg, sender_addr,))
         else:
@@ -175,10 +180,10 @@ class Hub(Logging):
         self.outgoing.addEndpoints([ZmqEndpoint('connect', addr)])
         # send one heartbeat immediately for better latency
         self.dbg(u"►► ❤ → %s" % (addr,))
-        self.heartbeat_one(addr, PING if conn.state == 'radiosilence' else PONG)
+        self._heartbeat_once(addr, PING if conn.state == 'radiosilence' else PONG)
 
     @logstring(u"❤")
-    def send_heartbeat(self):
+    def _send_heartbeat(self):
         try:
             # self.dbg("→ %r" % (list(self.connections),))
             t = self.reactor.seconds()
@@ -190,55 +195,49 @@ class Hub(Logging):
                 # self.dbg("%s last seen at %ss" % (addr, conn.last_seen))
                 if conn.state == 'silentlyhoping':
                     # self.dbg("silently hoping...")
-                    self.heartbeat_one(addr, PING)
+                    self._heartbeat_once(addr, PING)
                 elif conn.last_seen < consider_lost_from:
                     self.dbg("%s went %s => %s after %ds of silence" % (addr, conn.state, 'silentlyhoping', (t - conn.last_seen)))
                     conn.state = 'silentlyhoping'
-                    for msg, _ in conn.queue:
+                    for (ref, msg), _ in conn.queue:
                         # self.dbg("dropping %r" % (msg,))
-                        self.emit_deadletter(msg)
+                        Events.log(DeadLetter(ref, msg))
                     conn.queue = None
-                    self.heartbeat_one(addr, PING)
+                    self._heartbeat_once(addr, PING)
                 elif conn.last_seen < consider_dead_from:
                     if conn.state != 'radiosilence':
                         self.dbg("%s went %s => %s" % (addr, conn.state, 'radiosilence',))
                         conn.state = 'radiosilence'
-                    self.heartbeat_one(addr, PING)
+                    self._heartbeat_once(addr, PING)
                 else:
                     # self.dbg("%s still %s; not seen for %s" % (addr, conn.state, '%ds' % (t - conn.last_seen) if conn.last_seen is not None else 'eternity',))
-                    self.heartbeat_one(addr, PONG)
+                    self._heartbeat_once(addr, PONG)
             # self.dbg(u"%s ✓" % (self.reactor.seconds(),))
         except Exception:
             self.panic("failed to send heartbeat:\n", traceback.format_exc())
 
     @logstring(u"⇝ ❤")
-    def heartbeat_one(self, addr, signal):
+    def _heartbeat_once(self, addr, signal):
         assert _valid_addr(addr)
         self.log(u"%s →" % (signal,), addr)
         self.outgoing.sendMsg((addr, signal))
 
-    def clean_queue(self):
+    @logstring("PURGE")
+    def _purge_old_items_in_queue(self):
         for conn in self.connections.values():
             try:
                 keep_until = self.reactor.seconds() - self.QUEUE_ITEM_LIFETIME
                 # self.dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
                 q = conn.queue
                 while q:
-                    msg, timestamp = q[0]
+                    (ref, msg), timestamp = q[0]
                     if timestamp >= keep_until:
                         break
                     else:
                         q.popleft()
-                        self.emit_deadletter(msg)
+                        Events.log(DeadLetter(ref, msg))
             except Exception:
                 self.panic("failed to clean queue:\n", traceback.format_exc())
-
-    def emit_deadletter(self, (ref, msg)):
-        # self.dbg(DeadLetter(ref, msg))
-        Events.log(DeadLetter(ref, msg))
-
-    def logstate(self):
-        return {str(self.reactor.seconds()): True}
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()

@@ -217,8 +217,8 @@ class _BaseRef(object):
 
         """
         # local and not dead
-        if self.is_local and self.cell:
-            return self.cell.lookup_ref(next)
+        if self.is_local and self._cell:
+            return self._cell.lookup_ref(next)
         # non-local or dead
         else:
             return Ref(cell=None, uri=self.uri / next, is_local=self.is_local,
@@ -297,8 +297,7 @@ class Ref(_BaseRef, _HubBound):
 
     """
 
-    # XXX: should be protected/private
-    cell = None  # so that .cell could be deleted to save memory
+    _cell = None  # so that ._cell could be deleted to save memory
 
     # XXX: should be is_resolved with perhaps is_local being None while is_resolved is False
     # Ref constructor should set is_resolved=False by default, but that requires is_dead for creating dead refs, because
@@ -310,7 +309,7 @@ class Ref(_BaseRef, _HubBound):
         super(Ref, self).__init__(hub=hub)
         if cell:
             assert isinstance(cell, Cell)
-            self.cell = cell
+            self._cell = cell
         self.uri = uri
         if not is_local:
             assert not cell
@@ -327,8 +326,8 @@ class Ref(_BaseRef, _HubBound):
         globally changing this is not recommended however unless you know what you're doing (e.g. during testing).
 
         """
-        if self.cell:
-            self.cell.receive(message, force_async=force_async)
+        if self._cell:
+            self._cell.receive(message, force_async=force_async)
         elif not self.is_local:
             self.hub.send(message, to_remote_actor_pointed_to_by=self)
         else:
@@ -344,7 +343,7 @@ class Ref(_BaseRef, _HubBound):
         If it returns `False`, it is not guaranteed that the actor isn't still running.
 
         """
-        return self.is_local and not self.cell
+        return self.is_local and not self._cell
 
     def join(self):
         future = Future()
@@ -364,7 +363,7 @@ class Ref(_BaseRef, _HubBound):
         return '<%s>' % (str(self.uri),)
 
     def __getstate__(self):
-        # assert self.cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
+        # assert self._cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
         # assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
         return str(self.uri)
 
@@ -466,7 +465,7 @@ class _BaseCell(_HubBound):
             found = found.get_child(step)
             if not found:
                 break
-            found = found.cell
+            found = found._cell
         return found
 
     def lookup_ref(self, uri):
@@ -506,7 +505,7 @@ class Guardian(_BaseCell, _BaseRef, Logging):
         self.uri = uri
         self.node = node
         self.root = self
-        self.cell = self  # for _BaseCell
+        self._cell = self  # for _BaseCell
 
     @property
     def ref(self):
@@ -531,7 +530,7 @@ class Guardian(_BaseCell, _BaseRef, Logging):
         for actor in self._children.values():
             # dbg("GUARDIAN: stopping", actor)
             actor.stop()
-            # dbg("GUARDIAN: joining...", actor, actor.cell)
+            # dbg("GUARDIAN: joining...", actor, actor._cell)
             try:
                 yield with_timeout(.01, actor.join())
             except Timeout:
@@ -764,7 +763,7 @@ class Cell(_BaseCell, Logging):
 
     @property
     def root(self):
-        return self.parent if isinstance(self.parent, Guardian) else self.parent.cell.root
+        return self.parent if isinstance(self.parent, Guardian) else self.parent._cell.root
 
     @property
     def node(self):
@@ -1076,7 +1075,7 @@ class Cell(_BaseCell, Logging):
             del self.priority_inbox  # don't want no more, just release the memory
 
             # self.dbg("unlinking reference")
-            del ref.cell
+            del ref._cell
             self.stopped = True
 
             # XXX: which order should the following two operations be done?
