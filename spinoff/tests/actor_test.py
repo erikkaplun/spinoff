@@ -204,6 +204,12 @@ def test_unhandled_message_is_reported():
         a << 'foo'
 
 
+def test_unhandled_message_to_guardian_is_also_reported():
+    guardian = TestNode().guardian
+    with assert_one_event(UnhandledMessage(guardian, 'foo')):
+        guardian << 'foo'
+
+
 def test_with_no_receive_method_all_messages_are_unhandled():
     a = spawn(Actor)
     with assert_one_event(UnhandledMessage(a, 'dummy')):
