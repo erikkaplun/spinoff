@@ -2300,10 +2300,6 @@ def test_termination_message_to_dead_actorref_is_discarded():
     d.addErrback(lambda f: f.trap(CancelledError)).cancel()  # just to be nice
 
 
-def test_TODO_watching_nonexistent_actor():
-    pass
-
-
 def test_TODO_watching_running_remote_actor():
     pass
 
