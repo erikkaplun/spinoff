@@ -3249,11 +3249,14 @@ def wrap_globals():
         @inlineCallbacks
         def ret():
             # dbg("\n============================================\n")
+            # TODO: create a fresh Node for each test function by passing it to the function automatically.
             Node.reset()  # nosetests reuses the same interpreter state for better performance
             assert not Node.guardian._children, Node.guardian._children
 
             Actor.reset_flags(debug=True)
 
+            # TODO: once the above TODO (fresh Node for each test fn) is complete, consider making Events non-global by
+            # having each Node have its own Events instance.
             Events.reset()
 
             with ErrorCollector():
