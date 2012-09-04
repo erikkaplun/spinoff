@@ -297,7 +297,7 @@ class Ref(_BaseRef, _HubBound):
 
     """
 
-    _cell = None  # so that ._cell could be deleted to save memory
+    _cell = None
 
     # XXX: should be is_resolved with perhaps is_local being None while is_resolved is False
     # Ref constructor should set is_resolved=False by default, but that requires is_dead for creating dead refs, because
