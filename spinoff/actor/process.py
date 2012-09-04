@@ -50,7 +50,7 @@ class Process(Actor, Logging):
     _coroutine = None
 
     @abc.abstractmethod
-    def run(self):
+    def run(self):  # pragma: no cover
         yield
 
     def pre_start(self):
@@ -104,7 +104,7 @@ class Process(Actor, Logging):
             self.__get_d = _PickyDeferred(match)
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
-        except Exception:
+        except Exception:  # pragma: no cover
             self.panic(traceback.format_exc(file=sys.stderr))
 
     def __clear_get_d(self, result):
@@ -131,7 +131,7 @@ class Process(Actor, Logging):
                     self._Actor__cell.tainted = True
                     # self.dbg("...reporting to parent")
                     self._Actor__cell.report_to_parent()
-        except Exception:
+        except Exception:  # pragma: no cover
             self.panic("failure in handle_faiure:\n", traceback.format_exc())
 
     def __handle_complete(self, result):
@@ -183,10 +183,8 @@ class _PickyDeferred(Deferred):
         return result == self.pattern
 
     def callback(self, result):
-        if not self.wants(result):
-            raise RuntimeError("Unwanted value fed into a picky deferred")
-        else:
-            Deferred.callback(self, result)
+        assert self.wants(result)
+        Deferred.callback(self, result)
 
 
 def dbg(*args):  # pragma: no cover
