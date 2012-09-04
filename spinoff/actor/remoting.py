@@ -23,6 +23,7 @@ from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
 
+# TODO: use shorter messages outside of testing
 PING = 'ping'
 PONG = 'pong'
 
