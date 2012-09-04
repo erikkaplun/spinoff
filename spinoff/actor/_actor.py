@@ -1043,6 +1043,7 @@ class Cell(_BaseCell, Logging):
             for watcher in self.watchers:
                 watcher.send(('terminated', ref))
         except Exception:
+            self.panic(u"!!BUG!!\n", traceback.format_exc())
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
         self.dbg(u"✓")
