@@ -23,17 +23,11 @@ from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.logging import Logging, logstring
 
 
-dbg = lambda *args, **kwargs: print(file=sys.stderr, *args, **kwargs)
-
-
 PING = 'ping'
 PONG = 'pong'
 
 
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
-
-
-_dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')
 
 
 class ConnectedNode(object):
@@ -459,3 +453,6 @@ class MockOutSocket(object):
     def __init__(self, sendMsg, addEndpoints):
         self.sendMsg = sendMsg
         self.addEndpoints = addEndpoints
+
+
+_dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')
