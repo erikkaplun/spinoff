@@ -267,9 +267,9 @@ class HubWithNoRemoting(object):
 class IncomingMessageUnpickler(Unpickler):
     """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
 
-    def __init__(self, dude, file):
+    def __init__(self, hub, file):
         Unpickler.__init__(self, file)
-        self.dude = dude
+        self.hub = hub
 
     # called by `Unpickler.load` before an uninitalized object is about to be filled with members;
     def _load_build(self):
@@ -278,12 +278,12 @@ class IncomingMessageUnpickler(Unpickler):
         if isinstance(self.stack[-2], Ref):
             state = self.stack[-1]
             # Ref.__setstate__ will know it's a remote ref if the state is a tuple
-            self.stack[-1] = (state, self.dude)
+            self.stack[-1] = (state, self.hub)
             self.load_build()  # continue with the default implementation
 
             # detect our own refs sent back to us
             ref = self.stack[-1]
-            if ref.uri.node == self.dude.node:
+            if ref.uri.node == self.hub.node:
                 ref.is_local = True
                 del ref._hub
         else:
