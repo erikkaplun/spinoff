@@ -140,11 +140,11 @@ class Process(Actor, Logging):
 
     def __handle_complete(self, result):
         # self.dbg()
+        if result:
+            warnings.warn("Process.run should not return anything--it's ignored")
         del self._coroutine
         if self.__pre_start_complete_d:
             self.__pre_start_complete_d.callback(None)
-        if result:
-            warnings.warn("Process.run should not return anything--it's ignored")
         self.stop()
 
     def __shutdown(self):
