@@ -10,7 +10,6 @@ from twisted.python.failure import Failure
 
 from spinoff.actor import spawn, Actor, Props
 from spinoff.util.pattern_matching import ANY
-from spinoff.actor.supervision import Default
 
 
 _EMPTY = object()
@@ -18,7 +17,8 @@ _EMPTY = object()
 
 class ActorRunner(Service):
 
-    def __init__(self, actor_cls, initial_message=_EMPTY):
+    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY):
+        self._init_params = init_params
         self._initial_message = initial_message
         self._actor_cls = actor_cls
         self._wrapper = None
@@ -30,7 +30,7 @@ class ActorRunner(Service):
 
         def start_actor():
             try:
-                self._wrapper = spawn(Props(Wrapper, self._actor_cls), name='runner')
+                self._wrapper = spawn(Props(Wrapper, Props(self._actor_cls, **self._init_params)), name='runner')
             except Exception:
                 print("*** Failed to start wrapper for %s\n" % (actor_path,), file=sys.stderr)
                 Failure().printTraceback(file=sys.stderr)
@@ -48,11 +48,14 @@ class ActorRunner(Service):
 
 
 class Wrapper(Actor):
-    def __init__(self, actor_cls):
-        self.actor_cls = actor_cls
+    def __init__(self, actor_factory):
+        self.actor_factory = actor_factory
 
     def pre_start(self):
-        self.actor = self.watch(self.node.spawn(self.actor_cls, name=self.actor_cls.__name__))
+        name = (self.actor_factory.__name__
+                if isinstance(self.actor_factory, type) else
+                self.actor_factory.cls.__name__)
+        self.actor = self.watch(self.node.spawn(self.actor_factory, name=name))
 
     def receive(self, message):
         if message == ('_forward', ANY):
