@@ -26,6 +26,7 @@ from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
 from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import Logging, logstring
+from spinoff.actor.events import Error
 
 
 TESTING = True
@@ -1123,7 +1124,8 @@ class Cell(_BaseCell, Logging):
         else:
             exc, tb = exc_and_tb
         try:
-            # Events.log(Error(self, e, sys.exc_info()[2])),
+            traceback.print_exception(type(exc), exc, tb, file=sys.stderr)
+            Events.log(Error(self.ref, exc, tb)),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
             self.parent.send(('_error', self.ref, exc, tb), force_async=True)
