@@ -1171,6 +1171,13 @@ def spawn(*args, **kwargs):
         return _NODE.spawn(*args, **kwargs)
 
 
+def lookup(uri):
+    if not _NODE:  # pragma: no cover
+        raise TypeError("No active node set")
+    else:
+        return _NODE.lookup(uri)
+
+
 def _ignore_error(actor):
     _, exc, tb = sys.exc_info()
     Events.log(ErrorIgnored(actor, exc, tb))
