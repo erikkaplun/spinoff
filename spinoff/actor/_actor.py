@@ -21,7 +21,7 @@ from spinoff.actor.events import (
     UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure)
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.exceptions import (
-    NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision)
+    NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
 from spinoff.util.pattern_matching import Matcher
@@ -1125,6 +1125,10 @@ class Cell(_BaseCell, Logging):
             exc, tb = exc_and_tb
         try:
             traceback.print_exception(type(exc), exc, tb, file=sys.stderr)
+            if isinstance(exc, WrappingException):
+                inner = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
+                inner_indented = '\n'.join('      ' + line for line in inner)
+                print("-----\nCAUSE:\n", inner_indented, file=sys.stderr)
             Events.log(Error(self.ref, exc, tb)),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
