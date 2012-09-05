@@ -364,6 +364,8 @@ class _BaseCell(_HubBound):
         when the actual spawning will take place.
 
         """
+        if name and '/' in name:
+            raise TypeError("Actor names cannot contain slashes")
         if not self._children:
             self._children = {}
         uri = self.uri / name if name else None
