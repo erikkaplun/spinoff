@@ -54,7 +54,7 @@ class Process(Actor, Logging):
         yield
 
     def pre_start(self):
-        self.dbg()
+        # self.dbg()
         self.__pre_start_complete_d = Deferred()
         try:
             self._coroutine = self.run()
@@ -62,9 +62,9 @@ class Process(Actor, Logging):
             self._coroutine.addCallback(self.__handle_complete)
             if self._coroutine:
                 self._coroutine.addErrback(self.__handle_failure)
-            self.dbg("...waiting for ready...")
+            # self.dbg("...waiting for ready...")
             yield self.__pre_start_complete_d
-            self.dbg(u"✓")
+            # self.dbg(u"✓")
         finally:
             del self.__pre_start_complete_d
 
