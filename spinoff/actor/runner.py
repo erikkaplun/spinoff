@@ -30,7 +30,7 @@ class ActorRunner(Service):
 
         def start_actor():
             try:
-                self._wrapper = spawn(Props(Wrapper, self._actor_cls), name='wrapper')
+                self._wrapper = spawn(Props(Wrapper, self._actor_cls), name='runner')
             except Exception:
                 print("*** Failed to start wrapper for %s\n" % (actor_path,), file=sys.stderr)
                 Failure().printTraceback(file=sys.stderr)
@@ -51,12 +51,8 @@ class Wrapper(Actor):
     def __init__(self, actor_cls):
         self.actor_cls = actor_cls
 
-    def supervise(self, exc):
-        print("*** Actor failed: %r" % (exc,), file=sys.stderr)
-        return Default
-
     def pre_start(self):
-        self.actor = self.watch(self.spawn(self.actor_cls))
+        self.actor = self.watch(self.node.spawn(self.actor_cls, name=self.actor_cls.__name__))
 
     def receive(self, message):
         if message == ('_forward', ANY):
