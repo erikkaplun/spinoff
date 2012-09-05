@@ -30,11 +30,24 @@ def sleep(seconds, reactor=reactor):
 def after(seconds, reactor=reactor):
     """Readability sugar for `sleep`.
 
+    Supports specifying delayed actions with `do` or `then`. `do` does not pass any arguments to the callback, whereas
+    `then` passes to the callback the return value of the last callable. So the behaviour of `then` is identical to
+    `Deferred.addCallbacks`.
+
     Examples:
 
         after(2.0).do(lambda: print("Printed 2 seconds later"))
-
+        after(2.0).do(print, "Printed 2 seconds later")
         after(2.0).do(some_fn, 'arg1', some='kwarg')
+
+        after(2.0) \
+            .do(some_fn, 'arg1', some='kwarg') \
+            .do(other_fn, 'arg2')
+
+        after(2.0) \
+            .do(compute_factorial, 25) \
+            .then(print)
+
 
     """
     return _AfterWrap(sleep(seconds, reactor))
@@ -87,7 +100,10 @@ class _AfterWrap(object):
         self.d = d
 
     def do(self, fn, *args, **kwargs):
-        return self.d.addCallback(lambda _: fn(*args, **kwargs))
+        return _AfterWrap(self.d.addCallback(lambda _: fn(*args, **kwargs)))
+
+    def then(self, fn, *args, **kwargs):
+        return _AfterWrap(self.d.addCallback(lambda result: fn(result, *args, **kwargs)))
 
 
 exec_async = lambda f: inlineCallbacks(f)()
