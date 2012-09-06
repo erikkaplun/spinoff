@@ -1161,7 +1161,7 @@ class Cell(_BaseCell):
         return self._child_name_gen.next()
 
     def __repr__(self):
-        return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else repr(self.factory)),
+        return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__),
                                  self.uri.path,)
 
 
