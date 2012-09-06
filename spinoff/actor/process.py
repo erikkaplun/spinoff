@@ -117,10 +117,10 @@ class Process(Actor):
         if isinstance(f.value, CancelledError):
             return
 
-        # fail()
+        # dbg()
         try:
             if self.__pre_start_complete_d:
-                # fail("failure during start")
+                # dbg("failure during start")
                 self.__pre_start_complete_d.errback(f)
             else:
                 try:
@@ -155,12 +155,12 @@ class Process(Actor):
             self._Actor__cell._unhandled(message)
 
     def escalate(self):
-        # fail(repr(sys.exc_info()[1]))
+        # dbg(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
             raise InvalidEscalation("Process.escalate must be called in an exception context")
         if self.__pre_start_complete_d:
-            # fail("illegal escalation")
+            # dbg("illegal escalation")
             # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
             raise CreateFailed("Actor failed to start", self)
         ret = Deferred()

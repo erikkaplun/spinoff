@@ -854,7 +854,7 @@ class Cell(_BaseCell):
                     #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
                     # yield d
                 except Exception:
-                    fail("☹")
+                    dbg("☹")
                     self.report_to_parent()
                 else:
                     dbg(message, u"✓")
@@ -914,7 +914,7 @@ class Cell(_BaseCell):
         try:
             actor = factory()
         except Exception:
-            fail(u"☹")
+            dbg(u"☹")
             raise CreateFailed("Constructing actor failed", factory)
         else:
             self.actor = actor
@@ -929,7 +929,7 @@ class Cell(_BaseCell):
                 yield self._ongoing
                 del self._ongoing
             except Exception:
-                fail(u"☹")
+                dbg(u"☹")
                 raise CreateFailed("Actor failed to start", actor)
 
         self.constructed = True
@@ -1120,17 +1120,20 @@ class Cell(_BaseCell):
         self.shutting_down = False
         # dbg(u"✓")
 
+    @logstring("failure report")
     def report_to_parent(self, exc_and_tb=None):
         if not exc_and_tb:
             _, exc, tb = sys.exc_info()
         else:
             exc, tb = exc_and_tb
         try:
-            traceback.print_exception(type(exc), exc, tb, file=sys.stderr)
+            exc_fmt = traceback.format_exception(type(exc), exc, tb)
+            exc_fmt = '\n'.join(exc_fmt)
             if isinstance(exc, WrappingException):
-                inner = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
-                inner_indented = '\n'.join('      ' + line for line in inner)
-                print("-----\nCAUSE:\n", inner_indented, file=sys.stderr)
+                inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
+                inner_exc_fm = '\n'.join('      ' + line for line in inner_exc_fm)
+                exc_fmt += "\n-------\nCAUSE:\n\n" + inner_exc_fm
+            fail('\n\n', exc_fmt)
             Events.log(Error(self.ref, exc, tb)),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency

@@ -47,7 +47,7 @@ def log(*args, **kwargs):
 
 
 def fail(*args, **kwargs):
-    _write(5, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+    _write(5, *args, **kwargs)
 
 
 def err(*args, **kwargs):
