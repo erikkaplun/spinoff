@@ -30,7 +30,7 @@ class ActorRunner(Service):
 
         def start_actor():
             try:
-                self._wrapper = spawn(Props(Wrapper, Props(self._actor_cls, **self._init_params)), name='runner')
+                self._wrapper = spawn(Props(Wrapper, Props(self._actor_cls, **self._init_params)), name='_runner')
             except Exception:
                 print("*** Failed to start wrapper for %s\n" % (actor_path,), file=sys.stderr)
                 Failure().printTraceback(file=sys.stderr)
