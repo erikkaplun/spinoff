@@ -1,7 +1,7 @@
 import functools
 
 
-__all__ = ['combomethod', 'EnumValue', 'enums', 'enumrange', 'noreturn']
+__all__ = ['combomethod', 'EnumValue', 'enums', 'enumrange', 'noreturn', 'clean_tb', 'clean_tb_twisted']
 
 
 # thanks to:
@@ -89,3 +89,18 @@ def noreturn(gen):
 
     """
     raise _NoReturn(gen)
+
+
+def clean_tb(tb_lines, excludes):
+    for line in tb_lines:
+        if not any(all(exclusion in line for exclusion in exclude) for exclude in excludes):
+            yield line
+
+
+def clean_tb_twisted(tb_lines):
+    excludes = [
+        ('txcoroutine/__init__.py', '_inlineCallbacks'),
+        ('twisted/internet/defer.py', '_inlineCallbacks'),
+        ('twisted/python/failure.py', 'throwExceptionIntoGenerator'),
+    ]
+    return clean_tb(tb_lines, excludes)
