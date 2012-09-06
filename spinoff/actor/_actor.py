@@ -486,7 +486,7 @@ class Guardian(_BaseCell, _BaseRef):
             self._child_gone(sender)
             Events.log(TopLevelActorTerminated(sender))
         elif '_stop' == message:
-            self._do_stop()
+            return self._do_stop()
         else:
             Events.log(UnhandledMessage(self, message))
 
@@ -517,6 +517,13 @@ class Node(object):
 
     """
     hub = None
+    _all = []
+
+    @classmethod
+    def stop_all(cls):
+        for node in cls._all:
+            node.stop()
+        del cls._all[:]
 
     def __init__(self, hub):
         if not hub:  # pragma: no cover
@@ -524,6 +531,7 @@ class Node(object):
         self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
         self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None)
         self.set_hub(hub)
+        Node._all.append(self)
 
     def set_hub(self, hub):
         if hub:
@@ -559,8 +567,10 @@ class Node(object):
     def spawn(self, *args, **kwargs):
         return self.guardian.spawn(*args, **kwargs)
 
+    @inlineCallbacks
     def stop(self):
-        self.guardian.stop()
+        yield self.hub.stop()
+        yield self.guardian.stop()
 
     def reset(self):
         self.guardian._reset()

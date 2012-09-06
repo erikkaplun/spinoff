@@ -135,6 +135,7 @@ class Hub(object):
 
         self.reactor = reactor
 
+        self.incoming = incoming
         self.outgoing = outgoing
         incoming.gotMessage = self._got_message
         incoming.addEndpoints([ZmqEndpoint('bind', self.addr)])
@@ -148,6 +149,8 @@ class Hub(object):
         l2 = LoopingCall(self._purge_old_items_in_queue)
         l2.clock = reactor
         l2.start(1.0)
+
+        self._looping_calls = [l1, l2]
 
     _guardian = None
 
@@ -205,6 +208,12 @@ class Hub(object):
             self._make_conn(node_addr)
         assert node_addr in self.connections
         self.connections[node_addr].watched_actors.append((report_to, ref))
+
+    def stop(self):
+        for x in self._looping_calls:
+            x.stop()
+        self.incoming.shutdown()
+        self.outgoing.shutdown()
 
     @logstring(u"⇜")
     def _got_message(self, sender_addr, msg):
@@ -323,6 +332,9 @@ class HubWithNoRemoting(object):
 
     def send(self, ref, msg):  # pragma: no cover
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
+
+    def stop(self):  # pragma: no cover
+        pass
 
 
 class IncomingMessageUnpickler(Unpickler):
@@ -523,6 +535,9 @@ class MockInSocket(object):  # pragma: no cover
     def gotMessage(self, msg):
         assert False, "Hub should define gotMessage on the incoming transport"
 
+    def shutdown(self):
+        pass
+
 
 class MockOutSocket(object):  # pragma: no cover
     """A fake (ZeroMQ-ROUTER-like) socket that only supports sending.
@@ -533,6 +548,9 @@ class MockOutSocket(object):  # pragma: no cover
     def __init__(self, sendMsg, addEndpoints):
         self.sendMsg = sendMsg
         self.addEndpoints = addEndpoints
+
+    def shutdown(self):
+        pass
 
 
 _dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover

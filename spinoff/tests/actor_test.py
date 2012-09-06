@@ -3489,9 +3489,9 @@ def wrap_globals():
                 try:
                     yield fn()
                 finally:
-                    # dbg("TESTWRAP: ------------------------- cleaning up")
+                    # dbg("TESTWRAP: ------------------------- cleaning up after %s" % (fn.__name__,))
 
-                    Node.stop()
+                    yield Node.stop_all()
 
                     if _idle_calls:
                         # dbg("TESTWRAP: processing all remaining scheduled calls...")
