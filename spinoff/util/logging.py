@@ -73,7 +73,7 @@ def _write(level, *args, **kwargs):
                 return
 
             f_code = frame.f_code
-            file, lineno, caller_name = f_code.co_filename, f_code.co_firstlineno, f_code.co_name
+            file, lineno, caller_name = f_code.co_filename, frame.f_lineno, f_code.co_name
             file = file.rsplit('/', 1)[-1]
 
             caller_fn = getattr(caller, caller_name)
