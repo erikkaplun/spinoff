@@ -66,7 +66,7 @@ class ConnectedNode(object):
         while q:
             (ref, queued_msg), _ = q.popleft()
             assert ref.uri.root.url == self.addr
-            self.outsock.sendMsg((self.addr, dumps((ref.uri.path, queued_msg), protocol=2)))
+            self.outsock.sendMsg(self.addr, dumps((ref.uri.path, queued_msg), protocol=2))
 
     def _emit_termination_messages(self):
         log()
@@ -192,7 +192,7 @@ class Hub(object):
             conn = self._make_conn(addr)
 
         if conn.state == 'visible':
-            self.outgoing.sendMsg((addr, dumps((ref.uri.path, msg), protocol=2)))
+            self.outgoing.sendMsg(addr, dumps((ref.uri.path, msg), protocol=2))
         else:
             if conn.queue is None:
                 Events.log(DeadLetter(ref, msg))
@@ -291,7 +291,7 @@ class Hub(object):
     def _heartbeat_once(self, addr, signal):
         assert _valid_addr(addr)
         log(u"%s →" % (signal,), addr)
-        self.outgoing.sendMsg((addr, signal))
+        self.outgoing.sendMsg(addr, signal)
 
     @logstring("PURGE")
     def _purge_old_items_in_queue(self):
@@ -411,7 +411,7 @@ class MockNetwork(object):  # pragma: no cover
         addr = 'tcp://' + nodeid
         insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
         outsock = MockOutSocket(addEndpoints=lambda endpoints: self.connect(addr, endpoints),
-                                sendMsg=lambda msg: self.enqueue(addr, msg))
+                                sendMsg=lambda dst, msg: self.enqueue(addr, dst, msg))
 
         return Node(hub=Hub(insock, outsock, node=nodeid, reactor=self.clock))
 
@@ -444,7 +444,7 @@ class MockNetwork(object):  # pragma: no cover
             self.connections.add((addr, endpoint.address))
 
     @logstring(u"⇝")
-    def enqueue(self, src, (dst, msg)):
+    def enqueue(self, src, dst, msg):
         _assert_valid_addr(src)
         _assert_valid_addr(dst)
         assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
@@ -512,9 +512,9 @@ class MockNetwork(object):  # pragma: no cover
 
 
 class MockInSocket(object):  # pragma: no cover
-    """A fake (ZeroMQ-DEALER-like) socket.
+    """A fake (ZeroMQ-ROUTER-like) socket that only supports receiving.
 
-    This will instead be a ZeroMQ DEALER connection object from the txzmq package under normal conditions.
+    This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
 
     """
     def __init__(self, addEndpoints):
@@ -525,7 +525,7 @@ class MockInSocket(object):  # pragma: no cover
 
 
 class MockOutSocket(object):  # pragma: no cover
-    """A fake (ZeroMQ-ROUTER-like) socket.
+    """A fake (ZeroMQ-ROUTER-like) socket that only supports sending.
 
     This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
 
