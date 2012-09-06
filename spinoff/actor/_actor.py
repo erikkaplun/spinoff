@@ -849,10 +849,10 @@ class Cell(_BaseCell):
                     dbg(u"↪ %r" % (message,))
                 first = False
                 try:
-                    d = self._process_one_message(message)
+                    yield self._process_one_message(message)
                     # if isinstance(ret, Deferred) and not self.receive_is_coroutine:
                     #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
-                    yield d
+                    # yield d
                 except Exception:
                     fail("☹")
                     self.report_to_parent()
