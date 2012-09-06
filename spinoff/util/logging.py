@@ -50,6 +50,14 @@ def fail(*args, **kwargs):
     _write(5, *args, **kwargs)
 
 
+def flaw(*args, **kwargs):
+    """Logs a failure that is more important to the developer than a regular failure because there might be a static
+    programming flaw in the code as opposed to a state/conflict/interaction induced one.
+
+    """
+    _write(6, *args, **kwargs)
+
+
 def err(*args, **kwargs):
     _write(7, *((RED,) + args + (RESET_COLOR,)), **kwargs)
 
