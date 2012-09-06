@@ -18,14 +18,14 @@ from spinoff.actor import (
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
-from spinoff.actor.remoting import MockNetwork, HubWithNoRemoting
+from spinoff.actor.remoting import Hub, MockNetwork, HubWithNoRemoting
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
     ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, Unclean, MockActor,
-    assert_event_not_emitted,)
+    assert_event_not_emitted, Barrier,)
 
 
 # ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
@@ -2835,8 +2835,74 @@ def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(clock)
 
 # ZMQ
 
-def test_TODO_remoting_with_real_zeromq():
-    pass
+def test_remoting_with_real_zeromq():
+    from nose.twistedtools import reactor
+    from txzmq import ZmqFactory, ZmqRouterConnection
+
+    class MyActor(Actor):
+        def __init__(self, msgs, triggers):
+            self.msgs = msgs
+            self.triggers = triggers
+
+        def receive(self, msg):
+            self.msgs.append(msg)
+            self.triggers.pop(0)()
+
+    f1 = ZmqFactory()
+    insock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
+    outsock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
+    ip = '127.0.0.1'
+    node1 = Node(hub=Hub(insock, outsock, '%s:9501' % (ip,)))
+
+    f2 = ZmqFactory()
+    insock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
+    outsock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
+    ip = yield reactor.resolve('localhost')
+    node2 = Node(hub=Hub(insock, outsock, '%s:9502' % (ip,)))
+
+    yield sleep(0.001)
+
+    actor1_msgs, actor1_triggers = MockMessages(), [Barrier(), Barrier(), Barrier()]
+    actor1 = node1.spawn(Props(MyActor, actor1_msgs, actor1_triggers), 'actor1')
+
+    actor2_msgs, actor2_triggers = MockMessages(), [Barrier(), Barrier(), Barrier()]
+    node2.spawn(Props(MyActor, actor2_msgs, actor2_triggers), 'actor2')
+
+    # simple message: @node1 => actor2@node2
+    actor2_from_node1 = node1.lookup('127.0.0.1:9502/actor2')
+
+    actor2_from_node1 << 'helloo!'
+    yield actor2_triggers[0]
+    eq_(actor2_msgs.clear(), ['helloo!'])
+
+    # message containing actor1's ref: @node1 => actor2@node2
+    actor2_from_node1 << actor1
+
+    yield actor2_triggers[0]
+    tmp = actor2_msgs.clear()
+    eq_(tmp, [actor1])
+    actor1_from_node2 = tmp[0]
+
+    # message to received actor1's ref: @node2 => actor1@node1
+    actor1_from_node2 << 'helloo2!'
+
+    yield actor1_triggers[0]
+    eq_(actor1_msgs.clear(), ['helloo2!'])
+
+    # message containing the received actor1's ref to actor1 (via the same ref): @node2 => actor1@node1
+    actor1_from_node2 << ('msg-with-ref', actor1_from_node2)
+
+    yield actor1_triggers[0]
+    tmp = actor1_msgs.clear()
+    eq_(tmp, [('msg-with-ref', actor1)])
+    _, self_ref = tmp[0]
+    ok_(self_ref.is_local)
+    ok_(self_ref, actor1)
+
+    self_ref << 'hello, stranger!'
+    eq_(actor1_msgs.clear(), ['hello, stranger!'])
+
+    yield sleep(0.001)
 
 
 ##
@@ -3388,10 +3454,6 @@ def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 
 
 # SUPPORT
-
-def dbg(*args):
-    print("***", file=sys.stderr, *args)
-
 
 class MockException(Exception):
     pass
