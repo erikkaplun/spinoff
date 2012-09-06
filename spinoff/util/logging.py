@@ -78,7 +78,7 @@ def _write(level, *args, **kwargs):
     try:
         if level >= LEVEL:
             frame = sys._getframe(2)
-            caller = frame.f_locals.get('self', None)
+            caller = frame.f_locals.get('self', frame.f_locals.get('cls', None))
 
             f_code = frame.f_code
             file, lineno, caller_name = f_code.co_filename, frame.f_lineno, f_code.co_name
@@ -86,7 +86,8 @@ def _write(level, *args, **kwargs):
 
             if caller:
                 caller_module = caller.__module__
-                caller_full_path = '%s.%s' % (caller_module, type(caller).__name__)
+                cls_name = caller.__name__ if isinstance(caller, type) else type(caller).__name__
+                caller_full_path = '%s.%s' % (caller_module, cls_name)
             else:
                 # TODO: find a faster way to get the module than inspect.getmodule
                 caller = inspect.getmodule(frame)
@@ -136,10 +137,12 @@ def _write(level, *args, **kwargs):
         print(traceback.format_exc(), RESET_COLOR, file=sys.stderr)
 
 
-def get_logname(fn_or_module):
-    return (repr(fn_or_module).strip('<>')
-            if not isinstance(fn_or_module, types.ModuleType) else
-            '(module) ' + fn_or_module.__name__)
+def get_logname(obj):
+    return (repr(obj).strip('<>')
+            if not isinstance(obj, type) else
+            obj.__name__
+            if not isinstance(obj, types.ModuleType) else
+            '(module) ' + obj.__name__)
 
 
 def get_logstate(obj):
