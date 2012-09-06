@@ -2851,14 +2851,12 @@ def test_remoting_with_real_zeromq():
     f1 = ZmqFactory()
     insock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
     outsock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
-    ip = '127.0.0.1'
-    node1 = Node(hub=Hub(insock, outsock, '%s:9501' % (ip,)))
+    node1 = Node(hub=Hub(insock, outsock, '127.0.0.1:9501'))
 
     f2 = ZmqFactory()
     insock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
     outsock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
-    ip = yield reactor.resolve('localhost')
-    node2 = Node(hub=Hub(insock, outsock, '%s:9502' % (ip,)))
+    node2 = Node(hub=Hub(insock, outsock, '127.0.0.1:9502'))
 
     yield sleep(0.001)
 
