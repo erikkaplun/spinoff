@@ -15,7 +15,7 @@ from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import ANY
-from spinoff.util.logging import logstring, dbg, panic
+from spinoff.util.logging import logstring, flaw, panic
 
 
 class ProcessType(ActorType):
@@ -159,10 +159,13 @@ class Process(Actor):
         # dbg(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
+            flaw("programming flaw: escalate called outside of exception context")
             raise InvalidEscalation("Process.escalate must be called in an exception context")
         if self.__pre_start_complete_d:
-            # dbg("illegal escalation")
-            # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
+            # if the Process tried to .escalate() before it went into receive-mode, i.e. pre_start was still
+            # incomplete, simply turn the escalation into a regular exception reported as CreateFailed; CreateFailed
+            # will get the exc and tb from context.
+            # (would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine)
             raise CreateFailed("Actor failed to start", self)
         ret = Deferred()
         call_when_idle(lambda: (
