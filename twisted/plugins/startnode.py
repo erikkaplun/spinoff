@@ -33,8 +33,8 @@ class Options(usage.Options):
 class ActorRunnerMaker(object):
     implements(IServiceMaker, IPlugin)
 
-    tapname = 'runactor'
-    description = 'Runs an actor'
+    tapname = 'startnode'
+    description = 'Starts a node with the specified actor running in it'
     options = Options
 
     def makeService(self, options):
