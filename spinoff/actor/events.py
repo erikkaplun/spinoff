@@ -148,5 +148,8 @@ class Events(object):
     def reset(self):
         self.subscriptions = {}
         self.consumers = {}
+
+    def __repr__(self):
+        return "<Events>"
 Events = Events()
 
