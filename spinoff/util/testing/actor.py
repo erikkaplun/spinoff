@@ -103,10 +103,10 @@ class ErrorCollector(object):
                 if not stack:
                     print(tb_formatted, file=sys.stderr)
 
-                # XXX: copy-paste
-                if isinstance(exc, WrappingException):
-                    fmted = exc.formatted_original_tb()
-                    print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+                    # XXX: copy-paste
+                    if isinstance(exc, WrappingException):
+                        fmted = exc.formatted_original_tb()
+                        print('\n'.join('    ' + line for line in fmted.split('\n') if line))
 
                 raise exc
         if not clean:
