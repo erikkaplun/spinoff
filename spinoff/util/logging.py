@@ -1,8 +1,10 @@
 # coding: utf8
 from __future__ import print_function
 
+import inspect
 import sys
 import traceback
+import types
 from collections import defaultdict
 
 
@@ -75,9 +77,15 @@ def _write(level, *args, **kwargs):
     try:
         if level >= LEVEL:
             frame = sys._getframe(2)
-            caller = frame.f_locals['self']
+            caller = frame.f_locals.get('self', None)
+            if caller:
+                caller_module = caller.__module__
+            else:
+                # TODO: find a faster way to get the module than inspect.getmodule
+                caller = inspect.getmodule(frame)
+                caller_module = caller.__name__
 
-            if ENABLE_ONLY and not any(caller.__module__.startswith(x) for x in ENABLE_ONLY):
+            if ENABLE_ONLY and not any(caller_module.startswith(x) for x in ENABLE_ONLY):
                 return
 
             f_code = frame.f_code
@@ -93,17 +101,19 @@ def _write(level, *args, **kwargs):
                     if isinstance(logstring, unicode):
                         logstring = logstring.encode('utf8')
                 else:
-                    logstring = caller_name.replace('_', '-') + ':'
+                    logstring = caller_name + ':'
 
-                logstring = YELLOW + logstring.upper() + RESET_COLOR
+                logstring = YELLOW + logstring + RESET_COLOR
 
                 # cache it
-                caller_fn.im_func._r_logstring = logstring
+                if isinstance(caller_fn, types.MethodType):
+                    caller_fn.im_func._r_logstring = logstring
+                else:
+                    caller_fn._r_logstring = logstring
 
             logname = getattr(caller, '_r_logname', None)
             if not logname:
-                logname = CYAN + get_logname(caller) + RESET_COLOR
-                caller._r_logname = logname
+                logname = caller._r_logname = CYAN + get_logname(caller) + RESET_COLOR
 
             statestr = GREEN + ' '.join(k for k, v in get_logstate(caller).items() if v) + RESET_COLOR
 
@@ -123,8 +133,10 @@ def _write(level, *args, **kwargs):
         print(traceback.format_exc(), RESET_COLOR, file=sys.stderr)
 
 
-def get_logname(obj):
-    return repr(obj).strip('<>')
+def get_logname(fn_or_module):
+    return (repr(fn_or_module).strip('<>')
+            if not isinstance(fn_or_module, types.ModuleType) else
+            '(module) ' + fn_or_module.__name__.rsplit('.', 1)[-1])
 
 
 def get_logstate(obj):
