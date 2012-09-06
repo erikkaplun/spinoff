@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 from twisted.internet.defer import CancelledError
 
-from spinoff.actor import Actor, spawn
+from spinoff.actor import Actor
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
 
 from .common import deferred_result, assert_raises
@@ -123,6 +123,11 @@ class Unclean(Exception):
 
 
 def test_errorcollector_can_be_used_with_assert_raises():
+    from spinoff.actor import Node
+    from spinoff.actor.remoting import HubWithNoRemoting
+
+    spawn = Node(hub=HubWithNoRemoting()).spawn
+
     class MockException(Exception):
         pass
 

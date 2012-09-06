@@ -14,7 +14,7 @@ from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fai
 from twisted.internet.task import Clock
 
 from spinoff.actor import (
-    spawn, Actor, Props, Node, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision, Ref, Uri)
+    Actor, Props, Node, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision, Ref, Uri)
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
@@ -41,6 +41,8 @@ def test_sent_message_is_received():
     performance reasons.
 
     """
+    spawn = TestNode().spawn
+
     messages = []
     a = spawn(Props(MockActor, messages))
     a << 'foo'
@@ -55,6 +57,8 @@ def test_sending_operator_is_chainable():
     same actor in a sequence.
 
     """
+    spawn = TestNode().spawn
+
     messages = MockMessages()
     a = spawn(Props(MockActor, messages))
     a << 'foo' << 'bar'
@@ -72,6 +76,8 @@ def test_async_sending():
     the future.
 
     """
+    spawn = TestNode().spawn
+
     for case in ['via-setting', 'via-explicit-param']:
         if case is 'via-setting':
             Actor.SENDING_IS_ASYNC = True
@@ -105,6 +111,8 @@ def test_receive_of_the_same_actor_never_executes_concurrently():
     receive case.
 
     """
+    spawn = TestNode().spawn
+
     receive_called = Counter()
 
     class MyActor(Actor):
@@ -136,6 +144,8 @@ def test_receive_is_auto_wrapped_with_txcoroutine_if_its_a_generator_function():
     See also http://pypi.python.org/pypi/txcoroutine/ for more information.
 
     """
+    spawn = TestNode().spawn
+
     started = Latch()
 
     class MyActor(Actor):
@@ -159,6 +169,8 @@ def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferre
     test_receive_is_auto_wrapped_with_txcoroutine_if_its_a_generator_function.
 
     """
+    spawn = TestNode().spawn
+
     receive_called = Counter()
     triggers = []
 
@@ -195,6 +207,7 @@ def test_receive_of_the_same_actor_never_executes_concurrently_even_with_deferre
 
 def test_unhandled_message_is_reported():
     """Unhandled messages are reported to Events"""
+    spawn = TestNode().spawn
 
     class MyActor(Actor):
         def receive(self, _):
@@ -212,6 +225,7 @@ def test_unhandled_message_to_guardian_is_also_reported():
 
 
 def test_with_no_receive_method_all_messages_are_unhandled():
+    spawn = TestNode().spawn
     a = spawn(Actor)
     with assert_one_event(UnhandledMessage(a, 'dummy')):
         a << 'dummy'
@@ -222,6 +236,7 @@ def test_with_no_receive_method_all_messages_are_unhandled():
 
 def test_spawning_is_async():
     """Spawning child actors by default is delayed and the spawn call returns immediately."""
+    spawn = TestNode().spawn
 
     Actor.SPAWNING_IS_ASYNC = True  # False by default during testing
 
@@ -248,6 +263,8 @@ def test_spawning_can_be_synchronous():
     This is only recommended (and is the default) during testing.
 
     """
+    spawn = TestNode().spawn
+
     Actor.SPAWNING_IS_ASYNC = False
 
     actor_spawned = Latch()
@@ -262,11 +279,14 @@ def test_spawning_can_be_synchronous():
 
 def test_spawning_a_toplevel_actor_assigns_guardian_as_its_parent():
     """Top-level actor's parent is the Guardian"""
+    node = TestNode()
+    spawn = node.spawn
+
     pre_start_called = Latch()
 
     class MyActor(Actor):
         def pre_start(self):
-            assert self._parent is Node.guardian
+            assert self._parent is node.guardian
             pre_start_called()
 
     spawn(MyActor)
@@ -275,6 +295,8 @@ def test_spawning_a_toplevel_actor_assigns_guardian_as_its_parent():
 
 def test_spawning_child_actor_assigns_the_spawner_as_parent():
     """Child actor's parent is the spawner"""
+    spawn = TestNode().spawn
+
     childs_parent = Slot()
 
     class MyActor(Actor):
@@ -291,6 +313,8 @@ def test_spawning_child_actor_assigns_the_spawner_as_parent():
 
 
 def test_spawning_returns_an_immediately_usable_ref():
+    spawn = TestNode().spawn
+
     other_receive_called = Latch()
 
     class MyActor(Actor):
@@ -306,6 +330,8 @@ def test_spawning_returns_an_immediately_usable_ref():
 
 
 def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available():
+    node = TestNode()
+
     message_received = Latch()
 
     class MyActor(Actor):
@@ -320,12 +346,14 @@ def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(
         def pre_start(self):
             self._parent << self.ref
 
-    spawn(MyActor) << 'init'
+    node.spawn(MyActor) << 'init'
     assert message_received
 
 
 def test_pre_start_can_return_a_Deferred():
     """Pre start can return a Deferred."""
+    spawn = TestNode().spawn
+
     mock_d = Deferred()
     received = Latch()
 
@@ -345,6 +373,8 @@ def test_pre_start_can_return_a_Deferred():
 
 def test_pre_start_can_be_a_coroutine():
     """Pre start can be a coroutine."""
+    node = TestNode()
+
     pre_start_called = Latch()
     release = Trigger()
     pre_start_continued = Latch()
@@ -355,7 +385,7 @@ def test_pre_start_can_be_a_coroutine():
             yield release
             pre_start_continued()
 
-    spawn(MyActor)
+    node.spawn(MyActor)
 
     assert pre_start_called
     assert not pre_start_continued
@@ -371,6 +401,7 @@ def test_actor_is_not_started_until_deferred_pre_start_completes():
     The actor is not considered to be started (i.e. ready to receive messages) until `pre_start` completes.
 
     """
+    spawn = TestNode().spawn
 
     release = Trigger()
     received = Latch()
@@ -391,6 +422,7 @@ def test_actor_is_not_started_until_deferred_pre_start_completes():
 
 def test_errors_in_deferred_pre_start_are_reported_as_in_a_normal_pre_start():
     """Pre start can return a Deferred or be a coroutine."""
+    spawn = TestNode().spawn
 
     class MyActor(Actor):
         def pre_start(self):
@@ -403,6 +435,8 @@ def test_errors_in_deferred_pre_start_are_reported_as_in_a_normal_pre_start():
 
 
 def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_started():
+    spawn = TestNode().spawn
+
     message_received = Latch()
 
     class MyActor(Actor):
@@ -452,6 +486,8 @@ def test_TODO_test_stub_registration_and_sending_of_eggs():
 ## LIFECYCLE
 
 def test_suspending():
+    spawn = TestNode().spawn
+
     message_received = Counter()
 
     class MyActor(Actor):
@@ -474,6 +510,8 @@ def test_suspending():
 
 
 def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
+    spawn = TestNode().spawn
+
     release = Trigger()
     after_release = Latch()
 
@@ -493,6 +531,8 @@ def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
 
 
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
+    spawn = TestNode().spawn
+
     release = Trigger()
     message_received = Counter()
 
@@ -516,6 +556,8 @@ def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
 
 
 def test_suspending_while_receive_is_blocked_pauses_the_receive():
+    spawn = TestNode().spawn
+
     release_child = Trigger()
     after_release_reached = Latch()
 
@@ -544,6 +586,8 @@ def test_suspending_while_already_suspended():
     This can happen when an actor is suspended and then its parent gets suspended.
 
     """
+    spawn = TestNode().spawn
+
     message_received = Latch()
 
     class DoubleSuspendingActor(Actor):
@@ -564,6 +608,8 @@ def test_TODO_force_stopping_does_not_wait_for_a_deferred_post_stop_to_complete(
 
 
 def test_resuming():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def receive(self, message):
             message_received()
@@ -580,6 +626,8 @@ def test_resuming():
 
 
 def test_restarting():
+    spawn = TestNode().spawn
+
     actor_started = Counter()
     message_received = Latch()
     post_stop_called = Latch()
@@ -603,6 +651,8 @@ def test_restarting():
 
 
 def test_restarting_is_not_possible_on_stopped_actors():
+    spawn = TestNode().spawn
+
     actor_started = Counter()
 
     class MyActor(Actor):
@@ -617,6 +667,8 @@ def test_restarting_is_not_possible_on_stopped_actors():
 
 
 def test_restarting_doesnt_destroy_the_inbox():
+    spawn = TestNode().spawn
+
     messages_received = []
     started = Counter()
 
@@ -642,6 +694,8 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
     For this reason, non-blocking operations in `receive` should always be guarded against infinitely blocking
     operations.
     """
+    spawn = TestNode().spawn
+
     started = Counter()
     received_messages = []
     deferred_cancelled = Latch()
@@ -670,6 +724,8 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
 
 
 def test_restarting_does_not_complete_until_a_deferred_pre_start_completes():
+    spawn = TestNode().spawn
+
     release = Trigger()
     received = Latch()
 
@@ -701,6 +757,8 @@ def test_tainted_resume_does_not_complete_until_the_underlying_restart_completes
     deferred `pre_start`, thus, the actor must not be marked as resumed until the deferred `pre_start` completes.
 
     """
+    spawn = TestNode().spawn
+
     started = Latch()
     pre_start_complete = Trigger()
     received = Latch()
@@ -736,6 +794,8 @@ def test_tainted_resume_does_not_complete_until_the_underlying_restart_completes
 
 
 def test_actor_is_untainted_after_a_restarting_resume():
+    spawn = TestNode().spawn
+
     started = Latch()
     child = Slot()
 
@@ -771,6 +831,8 @@ def test_actor_is_untainted_after_a_restarting_resume():
 
 
 def test_stopping_waits_till_the_ongoing_receive_is_complete():
+    spawn = TestNode().spawn
+
     stopped = Counter()
     deferred_cancelled = []
 
@@ -794,6 +856,8 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete():
 
 
 def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart():
+    spawn = TestNode().spawn
+
     parent_started = Counter()
     parent_received = Latch()
 
@@ -817,6 +881,8 @@ def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_aft
 
 
 def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def receive(self, _):
             received()
@@ -835,6 +901,8 @@ def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
 
 
 def test_stopping_calls_post_stop():
+    spawn = TestNode().spawn
+
     post_stop_called = Latch()
 
     class MyActor(Actor):
@@ -846,6 +914,8 @@ def test_stopping_calls_post_stop():
 
 
 def test_stopping_waits_for_post_stop():
+    spawn = TestNode().spawn
+
     def _do_test(child_cls):
         class Parent(Actor):
             def pre_start(self):
@@ -883,6 +953,8 @@ def test_stopping_waits_for_post_stop():
 
 
 def test_actor_is_not_stopped_until_its_children_are_stopped():
+    spawn = TestNode().spawn
+
     stop_complete = Trigger()
     parent_stopped = Latch()
 
@@ -905,6 +977,8 @@ def test_actor_is_not_stopped_until_its_children_are_stopped():
 
 
 def test_actor_is_not_restarted_until_its_children_are_stopped():
+    spawn = TestNode().spawn
+
     stop_complete = Trigger()
     parent_started = Counter()
 
@@ -925,6 +999,8 @@ def test_actor_is_not_restarted_until_its_children_are_stopped():
 
 
 def test_error_reports_to_a_stopping_actor_are_ignored():
+    spawn = TestNode().spawn
+
     child = Slot()
     release_child = Trigger()
     post_stop_called = Latch()
@@ -950,6 +1026,8 @@ def test_error_reports_to_a_stopping_actor_are_ignored():
 
 
 def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_deferred():
+    spawn = TestNode().spawn
+
     canceller_called = Latch()
     stopped = Latch()
     mock_d = Deferred(canceller=lambda _: canceller_called.__setitem__(0, True))
@@ -971,6 +1049,8 @@ def test_stopping_an_actor_with_a_pending_deferred_receive_doesnt_cancel_the_def
 
 
 def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
+    spawn = TestNode().spawn
+
     message_received = Latch()
 
     class MyActor(Actor):
@@ -989,6 +1069,8 @@ def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
 
 
 def test_stop_message_received_twice_is_ignored():
+    spawn = TestNode().spawn
+
     a = spawn(Actor)
     a.send('_stop', force_async=True)
     a.send('_stop', force_async=True)
@@ -1027,6 +1109,8 @@ def test_TODO_remote_stopping():
 
 
 def test_actors_are_garbage_collected_on_termination():
+    spawn = TestNode().spawn
+
     del_called = Latch()
 
     class MyActor(Actor):
@@ -1043,6 +1127,8 @@ def test_actors_are_garbage_collected_on_termination():
 
 
 def test_cells_are_garbage_collected_on_termination():
+    spawn = TestNode().spawn
+
     ac = spawn(Actor)
 
     cell = weakref.ref(ac._cell)
@@ -1054,6 +1140,8 @@ def test_cells_are_garbage_collected_on_termination():
 
 
 def test_messages_to_dead_actors_are_sent_to_dead_letters():
+    spawn = TestNode().spawn
+
     a = spawn(Actor)
     a.stop()
 
@@ -1062,10 +1150,13 @@ def test_messages_to_dead_actors_are_sent_to_dead_letters():
 
 
 def test_guardians_path_is_the_root_uri():
-    eq_(Node.guardian.uri.path, '')
+    node = TestNode()
+    eq_(node.guardian.uri.path, '')
 
 
 def test_toplevel_actorrefs_paths_are_prefixed_with_guardians_path():
+    spawn = TestNode().spawn
+
     a = spawn(Actor, name='a')
     assert a.uri.path == '/a'
 
@@ -1074,6 +1165,8 @@ def test_toplevel_actorrefs_paths_are_prefixed_with_guardians_path():
 
 
 def test_non_toplevel_actorrefs_are_prefixed_with_their_parents_path():
+    spawn = TestNode().spawn
+
     child_ref = Slot()
 
     class MyActor(Actor):
@@ -1085,12 +1178,16 @@ def test_non_toplevel_actorrefs_are_prefixed_with_their_parents_path():
 
 
 def test_toplevel_actor_paths_must_be_unique():
+    spawn = TestNode().spawn
+
     spawn(Actor, name='a')
     with assert_raises(NameConflict):
         spawn(Actor, name='a')
 
 
 def test_non_toplevel_actor_paths_must_be_unique():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def pre_start(self):
             self.spawn(Actor, name='a')
@@ -1101,6 +1198,8 @@ def test_non_toplevel_actor_paths_must_be_unique():
 
 
 def test_spawning_toplevel_actors_without_name_assigns_autogenerated_names():
+    spawn = TestNode().spawn
+
     a = spawn(Actor)
     assert re.match(r'/[^/]+$', a.uri.path)
 
@@ -1111,6 +1210,8 @@ def test_spawning_toplevel_actors_without_name_assigns_autogenerated_names():
 
 
 def test_spawning_non_toplevel_actors_without_name_assigns_autogenerated_names_with_prefixed_parent_path():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def pre_start(self):
             l = len(self.ref.uri.path)
@@ -1129,6 +1230,8 @@ def test_spawning_non_toplevel_actors_without_name_assigns_autogenerated_names_w
 
 
 def test_spawning_with_autogenerated_looking_name_raises_an_exception():
+    spawn = TestNode().spawn
+
     with assert_raises(ValueError):
         spawn(Actor, name='$1')
 
@@ -1376,6 +1479,8 @@ def test_manually_ceated_remote_looking_ref_to_a_non_existend_local_actor_is_con
 
 def test_child_is_resumed_if_supervise_returns_resume():
     """Child is resumed if `supervise` returns `Resume`"""
+    spawn = TestNode().spawn
+
     message_received = Latch()
 
     class Child(Actor):
@@ -1399,6 +1504,8 @@ def test_child_is_resumed_if_supervise_returns_resume():
 
 def test_child_is_restarted_if_supervise_returns_restart():
     """Child is restarted if `supervise` returns `Restart`"""
+    spawn = TestNode().spawn
+
     child_started = Counter()
 
     class Child(Actor):
@@ -1421,6 +1528,8 @@ def test_child_is_restarted_if_supervise_returns_restart():
 
 def test_child_is_stopped_if_supervise_returns_stop():
     """Child is stopped if `supervise` returns `Stop`"""
+    spawn = TestNode().spawn
+
     child_stopped = Latch()
 
     class Child(Actor):
@@ -1444,6 +1553,8 @@ def test_child_is_stopped_if_supervise_returns_stop():
 
 def test_child_is_stop_if_supervise_returns_stop():
     """Exception is escalated if `supervise` returns `Escalate`"""
+    spawn = TestNode().spawn
+
     escalated = Latch()
 
     class Child(Actor):
@@ -1475,6 +1586,8 @@ def test_TODO_exception_escalations_are_reported_as_events():
 
 
 def test_child_error_suspends_child():
+    spawn = TestNode().spawn
+
     release_parent = Trigger()
 
     child = Slot()
@@ -1514,6 +1627,8 @@ def test_child_error_suspends_child():
 
 
 def test_error_in_deferred_receive_behaves_the_same_as_non_deferred():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def receive(self, _):
             return fail(MockException())
@@ -1525,6 +1640,8 @@ def test_error_in_deferred_receive_behaves_the_same_as_non_deferred():
 
 
 def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
+    spawn = TestNode().spawn
+
     class Child(Actor):
         def receive(self, _):
             self.stop()
@@ -1542,6 +1659,8 @@ def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
 
 
 def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent():
+    spawn = TestNode().spawn
+
     termination_message_received = Latch()
 
     class Child(Actor):
@@ -1565,6 +1684,8 @@ def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_m
 
 
 def test_supervision_message_is_handled_directly_by_supervise_method():
+    spawn = TestNode().spawn
+
     supervise_called = Latch()
     exc_received = Slot()
 
@@ -1589,6 +1710,8 @@ def test_supervision_message_is_handled_directly_by_supervise_method():
 
 
 def test_init_error_reports_to_supervisor():
+    spawn = TestNode().spawn
+
     # TODO: see akka ActorInitializationException
     received_exception = Slot()
 
@@ -1613,6 +1736,8 @@ def test_init_error_reports_to_supervisor():
 
 
 def test_pre_start_error_reports_to_supervisor():
+    spawn = TestNode().spawn
+
     received_exception = Slot()
     post_stop_called = Latch()
 
@@ -1642,6 +1767,8 @@ def test_pre_start_error_reports_to_supervisor():
 
 
 def test_receive_error_reports_to_supervisor():
+    spawn = TestNode().spawn
+
     received_exception = Slot()
 
     class Parent(Actor):
@@ -1664,6 +1791,8 @@ def test_receive_error_reports_to_supervisor():
 
 
 def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def __init__(self, child_cls, supervisor_decision):
             self.child_cls = child_cls
@@ -1719,6 +1848,8 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
 
 
 def test_error_report_after_restart_is_ignored():
+    spawn = TestNode().spawn
+
     child = Slot()
     release_child = Trigger()
 
@@ -1742,6 +1873,8 @@ def test_error_report_after_restart_is_ignored():
 
 
 def test_default_supervision_stops_for_create_failed():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             self.child = self.watch(self.spawn(Child))
@@ -1775,6 +1908,8 @@ def test_default_supervision_stops_for_create_failed():
 
 
 def test_default_supervision_restarts_for_any_other_exception():
+    spawn = TestNode().spawn
+
     child_started = Counter()
 
     class Parent(Actor):
@@ -1793,6 +1928,8 @@ def test_default_supervision_restarts_for_any_other_exception():
 
 
 def test_default_supervision_is_applied_if_supervision_returns_default():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             c = self.spawn(child_cls)
@@ -1836,6 +1973,8 @@ def test_default_supervision_is_applied_if_supervision_returns_default():
 
 
 def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
+    spawn = TestNode().spawn
+
     class Supervisor(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1860,6 +1999,8 @@ def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
 
 
 def test_error_is_escalated_if_supervision_raises_exception():
+    spawn = TestNode().spawn
+
     class SupervisorException(Exception):
         pass
 
@@ -1882,6 +2023,8 @@ def test_error_is_escalated_if_supervision_raises_exception():
 
 
 def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
+    spawn = TestNode().spawn
+
     class Supervisor(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1942,6 +2085,8 @@ def test_TODO_guardian_supervision():
 ## HIERARCHY
 
 def test_actors_remember_their_children():
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def pre_start(self):
             assert not self.children
@@ -1956,6 +2101,8 @@ def test_actors_remember_their_children():
 
 
 def test_stopped_child_is_removed_from_its_parents_list_of_children():
+    spawn = TestNode().spawn
+
     receive_called = Latch()
 
     class MyActor(Actor):
@@ -1978,6 +2125,8 @@ def test_stopped_child_is_removed_from_its_parents_list_of_children():
 
 def test_suspending_suspends_and_resuming_resumes_all_children():
     # Actor.SENDING_IS_ASYNC = True  # so that we could use EvSeq
+
+    spawn = TestNode().spawn
 
     # so that we could control them from the outside
     child, subchild = Slot(), Slot()
@@ -2014,6 +2163,8 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
 
 
 def test_stopping_stops_children():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -2031,6 +2182,8 @@ def test_stopping_stops_children():
 
 
 def test_stopping_parent_from_child():
+    spawn = TestNode().spawn
+
     child = Slot()
     started = Counter()
 
@@ -2063,6 +2216,8 @@ def test_stopping_parent_from_child():
 
 
 def test_restarting_stops_children():
+    spawn = TestNode().spawn
+
     started = Counter()
 
     class Parent(Actor):
@@ -2090,6 +2245,8 @@ def test_TODO_restarting_does_not_restart_children_if_told_so():
 
 
 def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the_message():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -2108,6 +2265,8 @@ def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the
 
 
 def test_queued_messages_are_logged_as_deadletters_after_stop():
+    spawn = TestNode().spawn
+
     Actor.SENDING_IS_ASYNC = True
 
     deadletter_event_emitted = Events.consume_one(DeadLetter)
@@ -2132,6 +2291,8 @@ def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is
 
 def test_watch_returns_the_actor_that_was_watched():
     """Actor.watch returns the actor that was passed to it"""
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             a = self.watch(self.spawn(Actor))
@@ -2155,6 +2316,8 @@ def _do_test_watching_actor(async=False):
     # We could just set this after we have already spawned the Watcher to avoid needing 2 monitoring Deferreds, but for
     # safety, we set it for the entire duration of the test.
     Actor.SPAWNING_IS_ASYNC = async
+
+    spawn = TestNode().spawn
 
     watcher_spawned = Deferred()
     message_receieved = Deferred()
@@ -2180,6 +2343,8 @@ def _do_test_watching_actor(async=False):
 
 def test_watching_self_is_noop_or_warning():
     """Watching self warns by default and does nothing if explicitly told it's safe"""
+    spawn = TestNode().spawn
+
     self_ok = False
 
     class MyActor(Actor):
@@ -2203,6 +2368,8 @@ def test_watching_self_is_noop_or_warning():
 
 def test_watching_self_still_returns_the_ref():
     """Calling self.watch(self.ref, self_ok=True) returns self.ref for consistency"""
+    spawn = TestNode().spawn
+
     class MyActor(Actor):
         def pre_start(self):
             ref = self.watch(self.ref, self_ok=True)
@@ -2212,6 +2379,8 @@ def test_watching_self_still_returns_the_ref():
 
 
 def test_termination_message_contains_ref_that_forwards_to_deadletters():
+    spawn = TestNode().spawn
+
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -2228,6 +2397,8 @@ def test_termination_message_contains_ref_that_forwards_to_deadletters():
 
 
 def test_watching_dead_actor():
+    spawn = TestNode().spawn
+
     message_receieved = Latch()
 
     class Watcher(Actor):
@@ -2246,6 +2417,8 @@ def test_watching_dead_actor():
 
 
 def test_watching_dying_actor():
+    spawn = TestNode().spawn
+
     release_watchee = Trigger()
     message_receieved = Latch()
 
@@ -2273,6 +2446,8 @@ def test_watching_dying_actor():
 
 
 def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination():
+    spawn = TestNode().spawn
+
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -2288,6 +2463,8 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
 
 
 def test_termination_message_to_dead_actor_is_discarded():
+    spawn = TestNode().spawn
+
     class Parent(Actor):
         def pre_start(self):
             child = self.watch(self.spawn(Actor))
@@ -2300,6 +2477,8 @@ def test_termination_message_to_dead_actor_is_discarded():
 
 
 def test_system_messages_to_dead_actorrefs_are_discarded():
+    spawn = TestNode().spawn
+
     a = spawn(Actor)
     a.stop()
 
@@ -2311,6 +2490,8 @@ def test_system_messages_to_dead_actorrefs_are_discarded():
 
 
 def test_termination_message_to_dead_actorref_is_discarded():
+    spawn = TestNode().spawn
+
     release_child = Trigger()
 
     class Child(Actor):
@@ -2914,6 +3095,8 @@ def test_process_run_must_return_a_generator():
 
 
 def test_processes_run_is_called_when_the_process_is_spawned():
+    spawn = TestNode().spawn
+
     run_called = Latch()
 
     class MyProc(Process):
@@ -2927,6 +3110,8 @@ def test_processes_run_is_called_when_the_process_is_spawned():
 
 
 def test_process_run_is_a_coroutine():
+    spawn = TestNode().spawn
+
     step1_reached = Latch()
     release = Trigger()
     step2_reached = Latch()
@@ -2947,6 +3132,8 @@ def test_process_run_is_a_coroutine():
 
 
 def test_warning_is_emitted_if_process_run_returns_a_value():
+    spawn = TestNode().spawn
+
     class ProcThatReturnsValue(Process):
         def run(self):
             yield
@@ -2957,6 +3144,8 @@ def test_warning_is_emitted_if_process_run_returns_a_value():
 
 
 def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
+    spawn = TestNode().spawn
+
     release = Trigger()
     after_release = Latch()
 
@@ -2977,6 +3166,8 @@ def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resume
 
 
 def test_process_run_is_cancelled_if_the_actor_is_stopped():
+    spawn = TestNode().spawn
+
     exited = Latch()
 
     class MyProc(Process):
@@ -2992,6 +3183,8 @@ def test_process_run_is_cancelled_if_the_actor_is_stopped():
 
 
 def test_sending_to_a_process_injects_the_message_into_its_coroutine():
+    spawn = TestNode().spawn
+
     random_message = 'dummy-%s' % (random.random(),)
 
     received_message = Slot()
@@ -3009,6 +3202,8 @@ def test_sending_to_a_process_injects_the_message_into_its_coroutine():
 
 
 def test_getting_two_messages_in_a_row_waits_till_the_next_message_is_received():
+    spawn = TestNode().spawn
+
     second_message = Slot()
     first_message = Slot()
 
@@ -3027,6 +3222,8 @@ def test_getting_two_messages_in_a_row_waits_till_the_next_message_is_received()
 
 
 def test_sending_to_a_process_that_is_processing_a_message_queues_it():
+    spawn = TestNode().spawn
+
     first_message_received = Latch()
     second_message_received = Latch()
 
@@ -3053,6 +3250,8 @@ def test_sending_to_a_process_that_is_processing_a_message_queues_it():
 
 
 def test_errors_in_process_run_before_the_first_get_are_reported_as_startup_errors():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         def run(self):
             raise MockException
@@ -3080,6 +3279,8 @@ def test_errors_in_process_run_before_the_first_get_are_reported_as_startup_erro
 
 
 def test_errors_in_process_while_processing_a_message_are_reported_as_normal_failures():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         def run(self):
             yield self.get()
@@ -3107,6 +3308,8 @@ def test_errors_in_process_while_processing_a_message_are_reported_as_normal_fai
 
 
 def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_normal_failures():
+    spawn = TestNode().spawn
+
     release = Trigger()
 
     class MyProc(Process):
@@ -3124,6 +3327,8 @@ def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_
 
 
 def test_restarting_a_process_reinvokes_its_run_method():
+    spawn = TestNode().spawn
+
     proc = Slot()
     supervision_invoked = Trigger()
     restarted = Trigger()
@@ -3160,6 +3365,8 @@ def test_restarting_a_process_reinvokes_its_run_method():
 
 
 def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts_it():
+    spawn = TestNode().spawn
+
     proc = Slot()
     restarted = Trigger()
 
@@ -3190,6 +3397,8 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts
 
 
 def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         def run(self):
             try:
@@ -3203,6 +3412,8 @@ def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_
 
 
 def test_all_queued_messages_are_reported_as_unhandled_on_flush():
+    spawn = TestNode().spawn
+
     release = Trigger()
 
     class MyProc(Process):
@@ -3219,6 +3430,8 @@ def test_all_queued_messages_are_reported_as_unhandled_on_flush():
 
 
 def test_process_is_stopped_when_the_coroutine_exits():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         def run(self):
             yield self.get()
@@ -3229,6 +3442,8 @@ def test_process_is_stopped_when_the_coroutine_exits():
 
 
 def test_process_is_stopped_when_the_coroutine_exits_during_startup():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         def run(self):
             yield
@@ -3238,6 +3453,8 @@ def test_process_is_stopped_when_the_coroutine_exits_during_startup():
 
 
 def test_process_can_get_messages_selectively():
+    spawn = TestNode().spawn
+
     messages = []
 
     release1 = Trigger()
@@ -3286,6 +3503,8 @@ def test_process_can_get_messages_selectively():
 
 
 def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
+    spawn = TestNode().spawn
+
     process_continued = Latch()
     supervision_invoked = Trigger()
 
@@ -3315,6 +3534,8 @@ def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
 
 
 def test_calling_escalate_outside_of_error_context_causes_runtime_error():
+    spawn = TestNode().spawn
+
     exc_raised = Latch()
 
     class FalseAlarmParent(Actor):
@@ -3337,6 +3558,8 @@ def test_calling_escalate_outside_of_error_context_causes_runtime_error():
 
 
 def test_attempt_to_delegate_an_exception_during_startup_instead_fails_the_actor_immediately():
+    spawn = TestNode().spawn
+
     started = Counter()
 
     class Parent(Actor):
@@ -3363,6 +3586,8 @@ def test_attempt_to_delegate_an_exception_during_startup_instead_fails_the_actor
 
 
 def test_optional_process_high_water_mark_emits_an_event_for_every_multiple_of_that_nr_of_msgs_in_the_queue():
+    spawn = TestNode().spawn
+
     class MyProc(Process):
         hwm = 100  # emit warning every 100 pending messages in the queue
 
@@ -3473,9 +3698,6 @@ def wrap_globals():
         @inlineCallbacks
         def ret():
             # dbg("\n============================================\n")
-            # TODO: create a fresh Node for each test function by passing it to the function automatically.
-            Node.reset()  # nosetests reuses the same interpreter state for better performance
-            assert not Node.guardian._children, Node.guardian._children
 
             Actor.reset_flags(debug=True)
 

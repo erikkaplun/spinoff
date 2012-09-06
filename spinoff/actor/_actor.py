@@ -392,17 +392,6 @@ class _BaseCell(_HubBound):
             self._child_name_gen = ('$%d' % i for i in count(1))
         return self._child_name_gen.next()
 
-    def _reset(self):
-        # XXX: not sure why but Python thinks these attributes don't exist sometimes
-        try:
-            del self._children
-        except AttributeError:
-            pass
-        try:
-            del self._child_name_gen
-        except AttributeError:
-            pass
-
     @property
     def children(self):
         return self._children.values()
@@ -571,9 +560,6 @@ class Node(object):
     def stop(self):
         yield self.hub.stop()
         yield self.guardian.stop()
-
-    def reset(self):
-        self.guardian._reset()
 
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Node cannot be serialized")
