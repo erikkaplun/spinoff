@@ -850,7 +850,8 @@ class Cell(_BaseCell):
     @logstring(u'↻ ↻')
     @inlineCallbacks
     def _process_messages(self):
-        dbg(self.peek_message())
+        # XXX: this method can be called after the actor is stopped--add idle call cancelling
+        # dbg(self.peek_message())
         first = True
         try:
             while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and ('_child_terminated', ANY) == self.peek_message()):
