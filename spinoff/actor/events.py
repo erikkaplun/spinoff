@@ -5,6 +5,7 @@ import traceback
 from collections import namedtuple
 
 from twisted.internet.defer import Deferred
+from spinoff.util.logging import err, log, fail
 
 
 def fields(*args):
@@ -125,10 +126,9 @@ class Events(object):
                 try:
                     fn(event)
                 except Exception:  # pragma: no cover
-                    print("Error in event handler:", file=sys.stderr)
-                    traceback.print_exc()
+                    err("Error in event handler:\n", traceback.format_exc())
         else:
-            print("*** %r" % (event,), file=self.ERRFILE if isinstance(event, Error) else self.LOGFILE)
+            (fail if isinstance(event, Error) else log)("*** %r" % (event,))
 
     def subscribe(self, event_type, fn):
         self.subscriptions.setdefault(event_type, []).append(fn)
