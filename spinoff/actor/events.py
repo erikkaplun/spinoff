@@ -114,21 +114,24 @@ class Events(object):
     consumers = {}
 
     def log(self, event):
-        consumers = self.consumers.get(type(event))
-        if consumers:
-            consumer_d = consumers.pop(0)
-            consumer_d.callback(event)
-            return
+        try:
+            consumers = self.consumers.get(type(event))
+            if consumers:
+                consumer_d = consumers.pop(0)
+                consumer_d.callback(event)
+                return
 
-        subscriptions = self.subscriptions.get(type(event))
-        if subscriptions:
-            for fn in subscriptions:
-                try:
-                    fn(event)
-                except Exception:  # pragma: no cover
-                    err("Error in event handler:\n", traceback.format_exc())
-        else:
-            (fail if isinstance(event, Error) else log)("*** %r" % (event,))
+            subscriptions = self.subscriptions.get(type(event))
+            if subscriptions:
+                for fn in subscriptions:
+                    try:
+                        fn(event)
+                    except Exception:  # pragma: no cover
+                        err("Error in event handler:\n", traceback.format_exc())
+            else:
+                (fail if isinstance(event, Error) else log)("*** %r" % (event,))
+        except Exception:  # pragma: no cover
+            print("Events.log failed:\n", traceback.format_exc(), file=sys.stderr)
 
     def subscribe(self, event_type, fn):
         self.subscriptions.setdefault(event_type, []).append(fn)
@@ -152,4 +155,3 @@ class Events(object):
     def __repr__(self):
         return "<Events>"
 Events = Events()
-
