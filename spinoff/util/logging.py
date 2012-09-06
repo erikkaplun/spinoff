@@ -1,10 +1,9 @@
 # coding: utf8
 from __future__ import print_function
 
-import inspect
-import os
 import sys
 import traceback
+from collections import defaultdict
 
 
 BLUE = '\x1b[1;34m'
@@ -21,101 +20,121 @@ YELLOW = '\x1b[1;33m'
 BLINK = '\x1b[5;31m'
 
 
-class Logging(object):
-    OUTFILE = sys.stderr
-    LEVEL = 7
+OUTFILE = sys.stderr
+LEVEL = 0
 
-    ENABLE_ONLY = []
+ENABLE_ONLY = False
 
-    def dbg(self, *args, **kwargs):
-        self._write(0, *args, **kwargs)
 
-    def dbg1(self, *args, **kwargs):
-        self._write(0, end='', *args, **kwargs)
+def dbg(*args, **kwargs):
+    _write(0, *args, **kwargs)
 
-    # def dbg2(self, *args, **kwargs):
-    #     self._write(0, end='.', *args, **kwargs)
 
-    def dbg3(self, *args, **kwargs):
-        self._write(0, end='\n', *args, **kwargs)
+def dbg1(*args, **kwargs):
+    _write(0, end='', *args, **kwargs)
 
-    def log(self, *args, **kwargs):
-        self._write(1, *args, **kwargs)
 
-    def fail(self, *args, **kwargs):
-        self._write(5, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+# def dbg2(*args, **kwargs):
+#     _write(0, end='.', *args, **kwargs)
 
-    def err(self, *args, **kwargs):
-        self._write(7, *((RED,) + args + (RESET_COLOR,)), **kwargs)
 
-    def panic(self, *args, **kwargs):
-        self._write(9, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+def dbg3(*args, **kwargs):
+    _write(0, end='\n', *args, **kwargs)
 
-    _pending_end = False
 
-    def _write(self, level, *args, **kwargs):
-        try:
-            if level >= self.LEVEL:
-                if self.ENABLE_ONLY and not any(self.__module__.startswith(x) for x in self.ENABLE_ONLY):
-                    return
+def log(*args, **kwargs):
+    _write(1, *args, **kwargs)
 
-                if kwargs.get('end') == '\n':
-                    print(' ', file=self.OUTFILE, *(args + (self._get_logcomment(),)), **kwargs)
-                    self._pending_end = False
-                    return
-                elif kwargs.get('end') == '':
-                    self._pending_end = True
 
-                info = inspect.stack()[2]
-                file, lineno, caller_name = info[1].rsplit(os.path.sep, 1)[-1], info[2], info[3]
+def fail(*args, **kwargs):
+    _write(5, *((RED,) + args + (RESET_COLOR,)), **kwargs)
 
-                caller_fn = getattr(self, caller_name)
-                if hasattr(caller_fn, 'logstring'):
-                    caller_name = caller_fn.logstring
-                    if isinstance(caller_name, unicode):
-                        caller_name = caller_name.encode('utf8')
+
+def err(*args, **kwargs):
+    _write(7, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+
+
+def panic(*args, **kwargs):
+    _write(9, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+
+_pending_end = defaultdict(bool)
+
+
+_logstrings = {}
+
+
+def _write(level, *args, **kwargs):
+    try:
+        if level >= LEVEL:
+            frame = sys._getframe(2)
+            caller = frame.f_locals['self']
+
+            if ENABLE_ONLY and not any(caller.__module__.startswith(x) for x in ENABLE_ONLY):
+                return
+
+            f_code = frame.f_code
+            file, lineno, caller_name = f_code.co_filename, f_code.co_firstlineno, f_code.co_name
+            file = file.rsplit('/', 1)[-1]
+
+            caller_fn = getattr(caller, caller_name)
+
+            logstring = getattr(caller_fn, '_r_logstring', None)
+            if not logstring:
+                logstring = getattr(caller_fn, '_logstring', None)
+                if logstring:
+                    if isinstance(logstring, unicode):
+                        logstring = logstring.encode('utf8')
                 else:
-                    caller_name = caller_name.replace('_', '-') + ':'
-                caller_name = YELLOW + caller_name.upper() + RESET_COLOR
+                    logstring = caller_name.replace('_', '-') + ':'
 
-                logstr = CYAN + self.logstring() + RESET_COLOR
+                logstring = YELLOW + logstring.upper() + RESET_COLOR
 
-                statestr = GREEN + ' '.join(k for k, v in self.logstate().items() if v) + RESET_COLOR
+                # cache it
+                caller_fn.im_func._r_logstring = logstring
 
-                logcomment = ''
-                if kwargs.get('end') != '':
-                    logcomment = self._get_logcomment()
+            logname = getattr(caller, '_r_logname', None)
+            if not logname:
+                logname = CYAN + get_logname(caller) + RESET_COLOR
+                caller._r_logname = logname
 
-                loc = "%s:%s" % (file, lineno)
-                if level >= 9:  # blink for panics
-                    loc = BLINK + loc + RESET_COLOR
+            statestr = GREEN + ' '.join(k for k, v in get_logstate(caller).items() if v) + RESET_COLOR
 
-                print("%s %s  %s  %s" %
-                      (loc, logstr, statestr, caller_name),
-                      file=self.OUTFILE, *(args + (logcomment,)), **kwargs)
-        except Exception:
-            print("!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
-            traceback.print_exc()
+            comment = get_logcomment(caller)
 
-    def logstring(self):
-        return repr(self).strip('<>')
+            loc = "%s:%s" % (file, lineno)
+            if level >= 9:  # blink for panics
+                loc = BLINK + loc + RESET_COLOR
 
-    def logstate(self):
+            # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
+            print("%s %s  %s  %s" %
+                  (loc, logname, statestr, logstring),
+                  file=OUTFILE, *(args + (comment,)), **kwargs)
+    except Exception:
+        # from nose.tools import set_trace; set_trace()
+        print(RED, u"!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
+        print(traceback.format_exc(), RESET_COLOR, file=sys.stderr)
+
+
+def get_logname(obj):
+    return repr(obj).strip('<>')
+
+
+def get_logstate(obj):
+    try:
+        return obj.logstate()
+    except AttributeError:
         return {}
 
-    def logcomment(self):
-        return ''
 
-    def _get_logcomment(self):
-        logcomment = self.logcomment()
-        if logcomment:
-            return '     ' + logcomment
-        else:
-            return ''
+def get_logcomment(obj):
+    try:
+        return '     ' + obj.logcomment()
+    except AttributeError:
+        return ''
 
 
 def logstring(logstr):
     def dec(fn):
-        fn.logstring = logstr
+        fn._logstring = logstr
         return fn
     return dec

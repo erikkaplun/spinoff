@@ -25,7 +25,7 @@ from spinoff.actor.exceptions import (
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
 from spinoff.util.pattern_matching import Matcher
-from spinoff.util.logging import Logging, logstring
+from spinoff.util.logging import logstring, dbg, fail, panic
 from spinoff.actor.events import Error
 
 
@@ -446,7 +446,7 @@ class _BaseCell(_HubBound):
         return cell.ref
 
 
-class Guardian(_BaseCell, _BaseRef, Logging):
+class Guardian(_BaseCell, _BaseRef):
     """The root of an actor hierarchy.
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
@@ -508,7 +508,7 @@ class Guardian(_BaseCell, _BaseRef, Logging):
         raise PicklingError("Guardian cannot be serialized")
 
 
-class Node(Logging):
+class Node(object):
     """`Node` is both a singleton instance and a class lookalike, there is thus always available a default global
     `Node` instance but it is possible to create more, non-default, instances of `Node` by simply calling it as if it
     were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without any network
@@ -696,7 +696,7 @@ def default_supervise(exc):
     #     return Escalate  # TODO: needed for BaseException
 
 
-class Cell(_BaseCell, Logging):
+class Cell(_BaseCell):
     constructed = False
     started = False
     actor = None
@@ -779,7 +779,7 @@ class Cell(_BaseCell, Logging):
     # TODO: change `force_async` to `async` and make it completely override the global setting, not just when it's `True`.
     @logstring(u'←')
     def receive(self, message, force_async=False):
-        self.dbg(message if isinstance(message, str) else repr(message),)
+        dbg(message if isinstance(message, str) else repr(message),)
         assert not self.stopped, "should not reach here"
 
         if self.shutting_down:
@@ -820,33 +820,33 @@ class Cell(_BaseCell, Logging):
     @logstring(u'↻')
     def process_messages(self, force_async=False):
         next_message = self.peek_message()
-        self.dbg(next_message)
+        dbg(next_message)
 
         is_startstop = next_message in ('_start', '_stop')
         is_untaint = next_message in ('_resume', '_restart')
 
         if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
             if Actor.SENDING_IS_ASYNC or force_async:
-                self.dbg(u'⇝')
+                dbg(u'⇝')
                 # dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
                 call_when_idle_unless_already(self._process_messages)  # TODO: check if there's an already scheduled call to avoid redundant calls
             else:
-                self.dbg(u'↯')
+                dbg(u'↯')
                 self._process_messages()
         else:
-            self.dbg(u'  →X')
+            dbg(u'  →X')
 
     @logstring(u'↻ ↻')
     @inlineCallbacks
     def _process_messages(self):
-        self.dbg(self.peek_message())
+        dbg(self.peek_message())
         first = True
         try:
             while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and ('_child_terminated', ANY) == self.peek_message()):
                 message = self.consume_message()
                 self.processing_messages = repr(message)
                 if not first:
-                    self.dbg(u"↪ %r" % (message,))
+                    dbg(u"↪ %r" % (message,))
                 first = False
                 try:
                     d = self._process_one_message(message)
@@ -854,21 +854,21 @@ class Cell(_BaseCell, Logging):
                     #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
                     yield d
                 except Exception:
-                    self.fail(u"☹")
+                    fail("☹")
                     self.report_to_parent()
                 else:
-                    self.dbg(message, "✓")
+                    dbg(message, u"✓")
                 finally:
                     self.processing_messages = False
-            self.dbg("☺")
+            dbg("☺")
         except Exception:  # pragma: no cover
-            self.panic(u"!!BUG!!\n", traceback.format_exc())
+            panic(u"!!BUG!!\n", traceback.format_exc())
             self.report_to_parent()
 
     @logstring(u"↻ ↻ ↻")
     @inlineCallbacks
     def _process_one_message(self, message):
-        self.dbg(message)
+        dbg(message)
         if '_start' == message:
             yield self._do_start()
         elif ('_error', ANY, ANY, ANY) == message:
@@ -908,13 +908,13 @@ class Cell(_BaseCell, Logging):
     @logstring("ctor:")
     @inlineCallbacks
     def _construct(self):
-        self.dbg()
+        dbg()
         factory = self.factory
 
         try:
             actor = factory()
         except Exception:
-            self.fail(u"☹")
+            fail(u"☹")
             raise CreateFailed("Constructing actor failed", factory)
         else:
             self.actor = actor
@@ -929,16 +929,16 @@ class Cell(_BaseCell, Logging):
                 yield self._ongoing
                 del self._ongoing
             except Exception:
-                self.fail(u"☹")
+                fail(u"☹")
                 raise CreateFailed("Actor failed to start", actor)
 
         self.constructed = True
-        self.dbg(u"✓")
+        dbg(u"✓")
 
     @logstring(u"►►")
     @inlineCallbacks
     def _do_start(self):
-        # self.dbg()
+        # dbg()
         try:
             yield self._construct()
         except Exception:
@@ -946,11 +946,11 @@ class Cell(_BaseCell, Logging):
             raise
         else:
             self.started = True
-            self.dbg(u"✓")
+            dbg(u"✓")
 
     @logstring("sup:")
     def _do_supervise(self, child, exc, tb):
-        self.dbg1(u"%r ← %r" % (exc, child))
+        dbg(u"%r ← %r" % (exc, child))
         if child not in self.children:
             Events.log(ErrorIgnored(child, exc, tb))
             return
@@ -960,10 +960,10 @@ class Cell(_BaseCell, Logging):
         if supervise:
             decision = supervise(exc)
         if not supervise or decision == Default:
-            # self.dbg("...fallback to default...")
+            # dbg("...fallback to default...")
             decision = default_supervise(exc)
 
-        self.dbg3(u"→", decision)
+        dbg(u"            ... →", decision)
 
         if not isinstance(decision, Decision):
             raise BadSupervision("Bad supervisor decision: %s" % (decision,), exc, tb)
@@ -980,13 +980,13 @@ class Cell(_BaseCell, Logging):
 
     @logstring(u"||")
     def _do_suspend(self):
-        self.dbg()
+        dbg()
         self.suspended = True
         if self._ongoing:
-            # self.dbg("ongoing.pause")
+            # dbg("ongoing.pause")
             self._ongoing.pause()
         if hasattr(self.actor, '_coroutine') and self.actor._coroutine:
-            # self.dbg("calling coroutine.pause on", self.actor._coroutine)
+            # dbg("calling coroutine.pause on", self.actor._coroutine)
             self.actor._coroutine.pause()
 
         for child in self.children:
@@ -994,14 +994,14 @@ class Cell(_BaseCell, Logging):
 
     @logstring(u"||►")
     def _do_resume(self):
-        self.dbg()
+        dbg()
         if self.tainted:
-            self.dbg("...tainted → restarting...")
+            dbg("...tainted → restarting...")
             warnings.warn("Attempted to resume an actor that failed to start; falling back to restarting:\n%s" % (''.join(traceback.format_stack()),))
             self.tainted = False
             return self._do_restart()
         else:
-            # self.dbg("resuming...")
+            # dbg("resuming...")
             self.suspended = False
             if self._ongoing:
                 self._ongoing.unpause()
@@ -1010,11 +1010,11 @@ class Cell(_BaseCell, Logging):
 
             for child in self.children:
                 child.send('_resume')
-        self.dbg(u"✓")
+        dbg(u"✓")
 
     @logstring("stop:")
     def _do_stop(self):
-        self.dbg()
+        dbg()
         if self._ongoing:
             del self._ongoing
         # del self.watchers
@@ -1022,7 +1022,7 @@ class Cell(_BaseCell, Logging):
 
     @logstring("finish-stop:")
     def _finish_stop(self, _):
-        self.dbg()
+        dbg()
         try:
             ref = self.ref
 
@@ -1041,7 +1041,7 @@ class Cell(_BaseCell, Logging):
             del self.inbox
             del self.priority_inbox  # don't want no more, just release the memory
 
-            # self.dbg("unlinking reference")
+            # dbg("unlinking reference")
             del ref._cell
             self.stopped = True
 
@@ -1052,14 +1052,14 @@ class Cell(_BaseCell, Logging):
             for watcher in self.watchers:
                 watcher.send(('terminated', ref))
         except Exception:  # pragma: no cover
-            self.panic(u"!!BUG!!\n", traceback.format_exc())
+            panic(u"!!BUG!!\n", traceback.format_exc())
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
-        self.dbg(u"✓")
+        dbg(u"✓")
 
     @logstring("watched:")
     def _do_watched(self, other):
-        self.dbg(other)
+        dbg(other)
         assert not self.stopped
         if not self.watchers:
             self.watchers = []
@@ -1068,18 +1068,18 @@ class Cell(_BaseCell, Logging):
     @logstring(u"► ↻")
     @inlineCallbacks
     def _do_restart(self):
-        # self.dbg()
+        # dbg()
         self.suspended = True
         yield self._shutdown()
         yield self._construct()
         self.suspended = False
-        self.dbg(u"✓")
+        dbg(u"✓")
 
     @logstring("child-term:")
     def _do_child_terminated(self, child):
         # probably a child that we already stopped as part of a restart
         if child.uri.name not in self._children:
-            self.dbg("ignored child termination")
+            dbg("ignored child termination")
             # Events.log(TerminationIgnored(self, child))
             return
         self._child_gone(child)
@@ -1093,7 +1093,7 @@ class Cell(_BaseCell, Logging):
     @logstring("shutdown:")
     @inlineCallbacks
     def _shutdown(self):
-        # self.dbg()
+        # dbg()
         self.shutting_down = True
 
         if self._children:  # we don't want to do the Deferred magic if there're no babies
@@ -1118,7 +1118,7 @@ class Cell(_BaseCell, Logging):
 
         self.actor = None
         self.shutting_down = False
-        # self.dbg(u"✓")
+        # dbg(u"✓")
 
     def report_to_parent(self, exc_and_tb=None):
         if not exc_and_tb:
@@ -1137,12 +1137,12 @@ class Cell(_BaseCell, Logging):
             self.parent.send(('_error', self.ref, exc, tb), force_async=True)
         except Exception:  # pragma: no cover
             try:
-                self.panic("failed to report:\n", traceback.format_exc())
+                panic("failed to report:\n", traceback.format_exc())
                 Events.log(ErrorIgnored(self.ref, exc, tb))
                 _, sys_exc, sys_tb = sys.exc_info()
                 Events.log(ErrorReportingFailure(self.ref, sys_exc, sys_tb))
             except Exception:
-                self.panic("failed to log:\n", traceback.format_exc())
+                panic("failed to log:\n", traceback.format_exc())
 
     @property
     def ref(self):
@@ -1199,7 +1199,3 @@ def _validate_nodeid(nodeid):
     port = int(m.group(1))
     if not (0 <= port <= 65535):  # pragma: no cover
         raise ValueError("Ports should be in the range 0-65535: %d" % (port,))
-
-
-def dbg(*args):  # pragma: no cover
-    print(file=sys.stderr, *args)

@@ -20,7 +20,7 @@ from spinoff.actor import _actor
 from spinoff.actor import Ref, Uri, Node
 from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
 from spinoff.actor.events import Events, DeadLetter
-from spinoff.util.logging import Logging, logstring
+from spinoff.util.logging import logstring, dbg, log, panic
 from spinoff.util.pattern_matching import ANY
 
 
@@ -32,7 +32,7 @@ PONG = 'pong'  # this means "yes, I can hear you!"
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
 
 
-class ConnectedNode(Logging):
+class ConnectedNode(object):
     def __init__(self, addr, outsock, state, last_seen):
         assert outsock
         self.addr = addr
@@ -42,11 +42,11 @@ class ConnectedNode(Logging):
         self.queue = deque()
         self.watched_actors = []
 
-        self.dbg("not-known => %s" % (self._state,))
+        dbg("not-known => %s" % (self._state,))
 
     def _set_state(self, new_state):
         if new_state != self._state:
-            self.dbg("%s => %s" % (self._state, new_state))
+            dbg("%s => %s" % (self._state, new_state))
             if new_state == 'visible':
                 self._flush_queue()
             elif self._state == 'visible':
@@ -69,7 +69,7 @@ class ConnectedNode(Logging):
             self.outsock.sendMsg((self.addr, dumps((ref.uri.path, queued_msg), protocol=2)))
 
     def _emit_termination_messages(self):
-        self.log()
+        log()
         for report_to, ref in self.watched_actors:
             assert report_to.is_local and not ref.is_local
             report_to << ('terminated', ref)
@@ -87,7 +87,7 @@ class ConnectedNode(Logging):
 
     def _drain_queue(self):
         for (ref, msg), _ in self.queue:
-            # self.dbg("dropping %r" % (msg,))
+            # dbg("dropping %r" % (msg,))
             Events.log(DeadLetter(ref, msg))
         self.queue = None
 
@@ -95,7 +95,7 @@ class ConnectedNode(Logging):
         return '<nodeinfo:%s>' % (self.addr,)
 
 
-class Hub(Logging):
+class Hub(object):
     """Handles traffic between actors on different nodes.
 
     The wire-transport implementation is specified/overridden by the `incoming` and `outgoing` parameters.
@@ -167,7 +167,7 @@ class Hub(Logging):
     @logstring(u"⇝")
     def send(self, msg, to_remote_actor_pointed_to_by):
         ref = to_remote_actor_pointed_to_by
-        # self.dbg(u"%r → %r" % (msg, ref))
+        # dbg(u"%r → %r" % (msg, ref))
 
         nodeid = ref.uri.node
 
@@ -188,7 +188,7 @@ class Hub(Logging):
 
         conn = self.connections.get(addr)
         if not conn:
-            self.dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
+            dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
             conn = self._make_conn(addr)
 
         if conn.state == 'visible':
@@ -209,16 +209,16 @@ class Hub(Logging):
     @logstring(u"⇜")
     def _got_message(self, sender_addr, msg):
         if msg in (PING, PONG):
-            self.dbg(u"❤ %s ← %s" % (msg, sender_addr,))
+            dbg(u"❤ %s ← %s" % (msg, sender_addr,))
         else:
             path, msg_ = self._loads(msg)
-            self.dbg(u"%r ← %s   → %s" % (msg_, sender_addr, path))
+            dbg(u"%r ← %s   → %s" % (msg_, sender_addr, path))
             cell = self.guardian.lookup_cell(Uri.parse(path))
             if not cell:
                 if ('_watched', ANY) == msg_:
                     watched_ref = Ref(cell=None, is_local=False, uri=Uri.parse(self.node + path))
                     _, watcher = msg_
-                    self.dbg("%r which does not exist watched by %r" % (watched_ref, watcher))
+                    dbg("%r which does not exist watched by %r" % (watched_ref, watcher))
                     watcher << ('terminated', watched_ref)
                 else:
                     Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
@@ -253,25 +253,25 @@ class Hub(Logging):
 
     def _connect(self, addr, conn):
         assert _valid_addr(addr)
-        # self.dbg("...connecting to %s" % (addr,))
+        # dbg("...connecting to %s" % (addr,))
         self.outgoing.addEndpoints([ZmqEndpoint('connect', addr)])
         # send one heartbeat immediately for better latency
-        self.dbg(u"►► ❤ → %s" % (addr,))
+        dbg(u"►► ❤ → %s" % (addr,))
         self._heartbeat_once(addr, PING if conn.state == 'radiosilence' else PONG)
 
     @logstring(u"❤")
     def _manage_heartbeat_and_visibility(self):
         try:
-            # self.dbg("→ %r" % (list(self.connections),))
+            # dbg("→ %r" % (list(self.connections),))
             t = self.reactor.seconds()
             consider_dead_from = t - self.MAX_SILENCE_BETWEEN_HEARTBEATS
             consider_lost_from = consider_dead_from - self.TIME_TO_KEEP_HOPE
-            # self.dbg("consider_dead_from", consider_dead_from, "consider_lost_from", consider_lost_from)
+            # dbg("consider_dead_from", consider_dead_from, "consider_lost_from", consider_lost_from)
 
             for addr, conn in self.connections.items():
-                # self.dbg("%s last seen at %ss" % (addr, conn.last_seen))
+                # dbg("%s last seen at %ss" % (addr, conn.last_seen))
                 if conn.state == 'silentlyhoping':
-                    # self.dbg("silently hoping...")
+                    # dbg("silently hoping...")
                     self._heartbeat_once(addr, PING)
                 elif conn.last_seen < consider_lost_from:
                     conn.state = 'silentlyhoping'
@@ -281,16 +281,16 @@ class Hub(Logging):
                         conn.state = 'radiosilence'
                     self._heartbeat_once(addr, PING)
                 else:
-                    # self.dbg("%s still %s; not seen for %s" % (addr, conn.state, '%ds' % (t - conn.last_seen) if conn.last_seen is not None else 'eternity',))
+                    # dbg("%s still %s; not seen for %s" % (addr, conn.state, '%ds' % (t - conn.last_seen) if conn.last_seen is not None else 'eternity',))
                     self._heartbeat_once(addr, PONG)
-            # self.dbg(u"%s ✓" % (self.reactor.seconds(),))
+            # dbg(u"%s ✓" % (self.reactor.seconds(),))
         except Exception:  # pragma: no cover
-            self.panic("heartbeat logic failed:\n", traceback.format_exc())
+            panic("heartbeat logic failed:\n", traceback.format_exc())
 
     @logstring(u"⇝ ❤")
     def _heartbeat_once(self, addr, signal):
         assert _valid_addr(addr)
-        self.log(u"%s →" % (signal,), addr)
+        log(u"%s →" % (signal,), addr)
         self.outgoing.sendMsg((addr, signal))
 
     @logstring("PURGE")
@@ -298,10 +298,10 @@ class Hub(Logging):
         for conn in self.connections.values():
             try:
                 keep_until = self.reactor.seconds() - self.QUEUE_ITEM_LIFETIME
-                # self.dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
+                # dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
                 conn._purge_old_items_in_queue(keep_until)
             except Exception:  # pragma: no cover
-                self.panic("failed to clean queue:\n", traceback.format_exc())
+                panic("failed to clean queue:\n", traceback.format_exc())
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
@@ -325,7 +325,7 @@ class HubWithNoRemoting(object):
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
 
 
-class IncomingMessageUnpickler(Unpickler, Logging):
+class IncomingMessageUnpickler(Unpickler):
     """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
 
     def __init__(self, hub, file):
@@ -348,7 +348,7 @@ class IncomingMessageUnpickler(Unpickler, Logging):
             if ref.uri.node == self.hub.node:
                 ref.is_local = True
                 ref._cell = self.hub.guardian.lookup_cell(ref.uri)
-                # self.dbg(("dead " if not ref._cell else "") + "local ref detected")
+                # dbg(("dead " if not ref._cell else "") + "local ref detected")
                 if _actor.TESTING:
                     del ref._hub
         else:  # pragma: no cover
@@ -388,7 +388,7 @@ def _valid_addr(addr):  # pragma: no cover
     return True
 
 
-class MockNetwork(Logging):  # pragma: no cover
+class MockNetwork(object):  # pragma: no cover
     """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
 
     def __init__(self, clock):
@@ -440,7 +440,7 @@ class MockNetwork(Logging):  # pragma: no cover
             assert endpoint.type == 'connect', "Hubs should only connect MockOutSockets and not bind"
             _assert_valid_addr(endpoint.address)
             assert (addr, endpoint.address) not in self.connections
-            self.dbg(u"%s → %s" % (addr, endpoint.address))
+            dbg(u"%s → %s" % (addr, endpoint.address))
             self.connections.add((addr, endpoint.address))
 
     @logstring(u"⇝")
@@ -450,7 +450,7 @@ class MockNetwork(Logging):  # pragma: no cover
         assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
         assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
 
-        # self.dbg(u"%r → %s" % (_dumpmsg(msg), dst))
+        # dbg(u"%r → %s" % (_dumpmsg(msg), dst))
         self.queue.append((src, dst, msg))
 
     @logstring(u"↺")
@@ -473,13 +473,13 @@ class MockNetwork(Logging):  # pragma: no cover
             # assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
 
             if random.random() <= self._packet_loss.get((src, dst), 0.0):
-                self.dbg("packet lost: %r  %s → %s" % (msg, src, dst))
+                dbg("packet lost: %r  %s → %s" % (msg, src, dst))
                 continue
 
             if dst not in self.listeners:
-                pass  # self.dbg(u"%r ⇝ ↴" % (_dumpmsg(msg),))
+                pass  # dbg(u"%r ⇝ ↴" % (_dumpmsg(msg),))
             else:
-                # self.dbg(u"%r → %s" % (_dumpmsg(msg), dst))
+                # dbg(u"%r → %s" % (_dumpmsg(msg), dst))
                 sock = self.listeners[dst]
                 deliverable.append((msg, src, sock))
 
@@ -496,7 +496,7 @@ class MockNetwork(Logging):  # pragma: no cover
                             "significant figures" % (MAX_PRECISION,))
         time_left = duration
         while True:
-            # self.dbg("@ %rs" % (duration - time_left,))
+            # dbg("@ %rs" % (duration - time_left,))
             self.transmit()
             self.clock.advance(step)
             if time_left <= 0:

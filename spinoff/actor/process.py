@@ -15,7 +15,7 @@ from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import ANY
-from spinoff.util.logging import Logging, logstring
+from spinoff.util.logging import logstring, dbg, panic
 
 
 class ProcessType(ActorType):
@@ -38,7 +38,7 @@ class ProcessType(ActorType):
 #     make sure nobody gets tempted to access that stuff.
 #  2) access private members of the Actor class because that's the most (memory) efficient way and Process really would
 #     be a friend class of Actor if Python had such thing.
-class Process(Actor, Logging):
+class Process(Actor):
     __metaclass__ = ProcessType
 
     hwm = 10000  # default high water mark
@@ -54,7 +54,7 @@ class Process(Actor, Logging):
         yield
 
     def pre_start(self):
-        # self.dbg()
+        # dbg()
         self.__pre_start_complete_d = Deferred()
         try:
             self._coroutine = self.run()
@@ -62,9 +62,9 @@ class Process(Actor, Logging):
             self._coroutine.addCallback(self.__handle_complete)
             if self._coroutine:
                 self._coroutine.addErrback(self.__handle_failure)
-            # self.dbg("...waiting for ready...")
+            # dbg("...waiting for ready...")
             yield self.__pre_start_complete_d
-            # self.dbg(u"✓")
+            # dbg(u"✓")
         finally:
             del self.__pre_start_complete_d
 
@@ -105,22 +105,22 @@ class Process(Actor, Logging):
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:  # pragma: no cover
-            self.panic(traceback.format_exc(file=sys.stderr))
+            panic(traceback.format_exc(file=sys.stderr))
 
     def __clear_get_d(self, result):
         self.__get_d = None
         return result
 
     def __handle_failure(self, f):
-        # self.dbg("deleting self._coroutine")
+        # dbg("deleting self._coroutine")
         del self._coroutine
         if isinstance(f.value, CancelledError):
             return
 
-        # self.fail()
+        # fail()
         try:
             if self.__pre_start_complete_d:
-                # self.fail("failure during start")
+                # fail("failure during start")
                 self.__pre_start_complete_d.errback(f)
             else:
                 try:
@@ -129,13 +129,13 @@ class Process(Actor, Logging):
                     # XXX: seems like a hack but should be safe;
                     # hard to do it better without convoluting `Actor`
                     self._Actor__cell.tainted = True
-                    # self.dbg("...reporting to parent")
+                    # dbg("...reporting to parent")
                     self._Actor__cell.report_to_parent()
         except Exception:  # pragma: no cover
-            self.panic("failure in handle_faiure:\n", traceback.format_exc())
+            panic("failure in handle_faiure:\n", traceback.format_exc())
 
     def __handle_complete(self, result):
-        # self.dbg()
+        # dbg()
         if result:
             warnings.warn("Process.run should not return anything--it's ignored")
         del self._coroutine
@@ -144,7 +144,7 @@ class Process(Actor, Logging):
         self.stop()
 
     def __shutdown(self):
-        # self.dbg()
+        # dbg()
         if self._coroutine:
             self._coroutine.cancel()
         if self.__get_d:
@@ -155,12 +155,12 @@ class Process(Actor, Logging):
             self._Actor__cell._unhandled(message)
 
     def escalate(self):
-        # self.fail(repr(sys.exc_info()[1]))
+        # fail(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
             raise InvalidEscalation("Process.escalate must be called in an exception context")
         if self.__pre_start_complete_d:
-            # self.fail("illegal escalation")
+            # fail("illegal escalation")
             # would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine
             raise CreateFailed("Actor failed to start", self)
         ret = Deferred()
@@ -185,7 +185,3 @@ class _PickyDeferred(Deferred):
     def callback(self, result):
         assert self.wants(result)
         Deferred.callback(self, result)
-
-
-def dbg(*args):  # pragma: no cover
-    print(file=sys.stderr, *args)
