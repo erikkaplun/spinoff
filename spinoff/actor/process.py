@@ -154,6 +154,7 @@ class Process(Actor):
         for message in self.__queue:
             self._Actor__cell._unhandled(message)
 
+    @logstring(u"escalate ↑")
     def escalate(self):
         # dbg(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
