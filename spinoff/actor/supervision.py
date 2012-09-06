@@ -49,7 +49,7 @@ class _Restart(Decision):
 
     __req__ = __eq__
 
-    def __ne__(self, other):
+    def __ne__(self, other):  # pragma: no cover
         return not (self == other)
 Restart = _Restart()
 
@@ -67,4 +67,3 @@ Escalate = Escalate()
 class Default(Decision):
     pass
 Default = Default()
-

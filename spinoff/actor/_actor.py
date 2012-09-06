@@ -365,7 +365,7 @@ class _BaseCell(_HubBound):
         when the actual spawning will take place.
 
         """
-        if name and '/' in name:
+        if name and '/' in name:  # pragma: no cover
             raise TypeError("Actor names cannot contain slashes")
         if not self._children:
             self._children = {}
@@ -651,7 +651,7 @@ class Actor(object):
         return self.__cell.root
 
     @property
-    def node(self):
+    def node(self):  # pragma: no cover
         """Returns a reference to the `Node` whose hierarchy this `Actor` is part of."""
         return self.root.node
 
@@ -1195,8 +1195,8 @@ def spawn(*args, **kwargs):
         return _NODE.spawn(*args, **kwargs)
 
 
-def lookup(uri):
-    if not _NODE:  # pragma: no cover
+def lookup(uri):  # pragma: no cover
+    if not _NODE:
         raise TypeError("No active node set")
     else:
         return _NODE.lookup(uri)
