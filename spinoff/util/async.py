@@ -127,7 +127,7 @@ def with_timeout(timeout, d, reactor=reactor):
     from being fired but doesn't cancel the underlying operation.
 
     """
-    if timeout is None:
+    if timeout is None or not isinstance(d, Deferred):
         return d
 
     ret = Deferred(canceller=lambda _: (

@@ -66,3 +66,10 @@ def test_with_no_timeout():
     d = with_timeout(None, Deferred(), clock)
     clock.advance(9999999999999999)
     assert not errback_called(d)
+
+
+@deferred
+@inlineCallbacks
+def test_with_no_deferred(clock):
+    foo = yield with_timeout(123, 'foo')
+    assert foo == 'foo'
