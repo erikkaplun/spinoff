@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import inspect
+import re
 import sys
 import traceback
 import types
@@ -78,23 +79,25 @@ def _write(level, *args, **kwargs):
         if level >= LEVEL:
             frame = sys._getframe(2)
             caller = frame.f_locals.get('self', None)
-            if caller:
-                caller_module = caller.__module__
-            else:
-                # TODO: find a faster way to get the module than inspect.getmodule
-                caller = inspect.getmodule(frame)
-                caller_module = caller.__name__
-
-            if ENABLE_ONLY and not any(caller_module.startswith(x) for x in ENABLE_ONLY):
-                return
 
             f_code = frame.f_code
             file, lineno, caller_name = f_code.co_filename, frame.f_lineno, f_code.co_name
             file = file.rsplit('/', 1)[-1]
 
-            caller_fn = getattr(caller, caller_name)
+            if caller:
+                caller_module = caller.__module__
+                caller_full_path = '%s.%s' % (caller_module, type(caller).__name__)
+            else:
+                # TODO: find a faster way to get the module than inspect.getmodule
+                caller = inspect.getmodule(frame)
+                caller_full_path = caller_module = caller.__name__
 
-            logstring = getattr(caller_fn, '_r_logstring', None)
+            if ENABLE_ONLY and not any(re.match(x, caller_full_path) for x in ENABLE_ONLY):
+                return
+
+            caller_fn = getattr(caller, caller_name, None)
+
+            logstring = getattr(caller_fn, '_r_logstring', None) if caller_fn else None
             if not logstring:
                 logstring = getattr(caller_fn, '_logstring', None)
                 if logstring:
@@ -108,7 +111,7 @@ def _write(level, *args, **kwargs):
                 # cache it
                 if isinstance(caller_fn, types.MethodType):
                     caller_fn.im_func._r_logstring = logstring
-                else:
+                elif caller_fn:
                     caller_fn._r_logstring = logstring
 
             logname = getattr(caller, '_r_logname', None)
@@ -136,7 +139,7 @@ def _write(level, *args, **kwargs):
 def get_logname(fn_or_module):
     return (repr(fn_or_module).strip('<>')
             if not isinstance(fn_or_module, types.ModuleType) else
-            '(module) ' + fn_or_module.__name__.rsplit('.', 1)[-1])
+            '(module) ' + fn_or_module.__name__)
 
 
 def get_logstate(obj):
