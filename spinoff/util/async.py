@@ -8,9 +8,6 @@ from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, De
 from twisted.internet import reactor, task
 
 
-dbg = lambda *args, **kwargs: print(file=sys.stderr, *args, **kwargs)
-
-
 __all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'cancel_all_idle_calls', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
