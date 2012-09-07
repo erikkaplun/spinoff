@@ -29,6 +29,22 @@ LEVEL = 0
 ENABLE_ONLY = False
 
 
+LEVELS = [
+    ('debug', GREEN),
+    ('log', GREEN),
+    ('log', GREEN),
+    ('log', GREEN),
+    ('log', GREEN),
+    ('fail', YELLOW),
+    ('flaw', YELLOW),
+    ('error', RED),
+    ('error', RED),
+    ('panic', BLINK + RED),
+    ('fatal', BLINK + RED),
+]
+LEVELS = [(name.ljust(5), style) for name, style in LEVELS]
+
+
 def dbg(*args, **kwargs):
     _write(0, *args, **kwargs)
 
@@ -67,6 +83,10 @@ def err(*args, **kwargs):
 
 def panic(*args, **kwargs):
     _write(9, *((RED,) + args + (RESET_COLOR,)), **kwargs)
+
+
+def fatal(*args, **kwargs):
+    _write(10, *((RED,) + args + (RESET_COLOR,)), **kwargs)
 
 _pending_end = defaultdict(bool)
 
@@ -127,9 +147,11 @@ def _write(level, *args, **kwargs):
             if level >= 9:  # blink for panics
                 loc = BLINK + loc + RESET_COLOR
 
+            levelname = LEVELS[level][1] + LEVELS[level][0] + RESET_COLOR
+
             # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
-            print("%s %s  %s  %s" %
-                  (loc, logname, statestr, logstring),
+            print("%s  %s %s  %s  %s" %
+                  (levelname, loc, logname, statestr, logstring),
                   file=OUTFILE, *(args + (comment,)), **kwargs)
     except Exception:
         # from nose.tools import set_trace; set_trace()
