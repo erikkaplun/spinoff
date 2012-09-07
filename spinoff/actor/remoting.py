@@ -330,7 +330,7 @@ class HubWithNoRemoting(object):
     guardian = None
     node = None
 
-    def send(self, ref, msg):  # pragma: no cover
+    def send(self, *args, **kwargs):  # pragma: no cover
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
 
     def stop(self):  # pragma: no cover
