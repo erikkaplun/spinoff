@@ -76,6 +76,17 @@ def IGNORE(x):
     return x
 
 
+class EQ(Matcher):
+    def __init__(self, pattern):
+        self.pattern = pattern
+
+    def __eq__(self, x):
+        return self.pattern == x
+
+    def __str__(self):
+        return 'EQ(%r)' % (self.pattern,)
+
+
 class IS_INSTANCE(Matcher):
     def __init__(self, t):
         self.t = t
@@ -144,3 +155,14 @@ class REGEXP(Matcher):
 
     def __str__(self):
         return str(self.regexp)
+
+
+class IN(Matcher):
+    def __init__(self, options):
+        self.options = options
+
+    def __eq__(self, other):
+        return other in self.options
+
+    def __str__(self):
+        return 'IN(%r)' % (self.options,)
