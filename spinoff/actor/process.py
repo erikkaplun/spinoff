@@ -90,6 +90,7 @@ class Process(Actor):
             if self.__pre_start_complete_d:
                 # dbg("PROCESS: first get")
                 self.__pre_start_complete_d.callback(None)
+                self.__pre_start_complete_d = None
 
             if self.__queue:
                 try:
