@@ -46,6 +46,9 @@ class ActorRunner(Service):
             self._wrapper.stop()
             return self._wrapper.join()
 
+    def __repr__(self):
+        return '<ActorRunner>'
+
 
 class Wrapper(Actor):
     def __init__(self, actor_factory):
