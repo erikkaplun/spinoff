@@ -323,6 +323,9 @@ class Ref(_BaseRef, _HubBound):
         return (isinstance(other, Ref) and self.uri == other.uri
                 or isinstance(other, Matcher) and other == self)
 
+    def __hash__(self):
+        return hash(self.uri)
+
     def __repr__(self):  # TODO: distinguish local and remote
         return '<%s>' % (str(self.uri),)
 
