@@ -92,7 +92,7 @@ class ConnectedNode(object):
         self.queue = None
 
     def __repr__(self):
-        return '<nodeinfo:%s>' % (self.addr,)
+        return '<connection:%s>' % (self.addr,)
 
 
 class Hub(object):
