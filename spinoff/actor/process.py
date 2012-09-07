@@ -152,8 +152,9 @@ class Process(Actor):
             del self.__get_d
 
     def flush(self):
-        for message in self.__queue:
-            self._Actor__cell._unhandled(message)
+        if self.__queue:  # XXX: added without testing
+            for message in self.__queue:
+                self._Actor__cell._unhandled(message)
 
     @logstring(u"escalate ↑")
     def escalate(self):
