@@ -1,15 +1,14 @@
 from twisted.python.failure import Failure
 
 
-_old_getstate = Failure.__getstate__
+_old_cleanFailure = Failure.cleanFailure
 
 
-def __getstate__(self):
+def cleanFailure(self):
     tb = self.tb
-    ret = _old_getstate(self)
-    ret['tb'] = tb
-    return ret
+    _old_cleanFailure(self)
+    self.tb = tb
 
 
 # TODO: only do this in DEBUG mode
-Failure.__getstate__ = __getstate__
+Failure.cleanFailure = cleanFailure
