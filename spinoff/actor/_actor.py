@@ -390,6 +390,10 @@ class _BaseCell(_HubBound):
 
         return child
 
+    @abc.abstractmethod
+    def receive(self, message, force_async=None):
+        pass
+
     def _generate_name(self):
         if not self._child_name_gen:
             self._child_name_gen = ('$%d' % i for i in count(1))
@@ -481,6 +485,8 @@ class Guardian(_BaseCell, _BaseRef):
             return self._do_stop()
         else:
             Events.log(UnhandledMessage(self, message))
+
+    receive = send
 
     @inlineCallbacks
     def _do_stop(self):
