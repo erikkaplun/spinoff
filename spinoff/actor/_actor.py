@@ -477,6 +477,7 @@ class Guardian(_BaseCell, _BaseRef):
         if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
             _, sender, exc, tb = message
             Events.log(UnhandledError(sender, exc, tb))
+            sender.stop()
         elif ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
