@@ -786,7 +786,7 @@ class Cell(_BaseCell):
     # TODO: change `force_async` to `async` and make it completely override the global setting, not just when it's `True`.
     @logstring(u'←')
     def receive(self, message, force_async=False):
-        dbg(message if isinstance(message, str) else repr(message),)
+        # dbg(message if isinstance(message, str) else repr(message),)
         assert not self.stopped, "should not reach here"
 
         if self.shutting_down:
@@ -827,48 +827,48 @@ class Cell(_BaseCell):
     @logstring(u'↻')
     def process_messages(self, force_async=False):
         next_message = self.peek_message()
-        dbg(next_message)
+        # dbg(next_message)
 
         is_startstop = next_message in ('_start', '_stop')
         is_untaint = next_message in ('_resume', '_restart')
 
         if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
             if Actor.SENDING_IS_ASYNC or force_async:
-                dbg(u'⇝')
+                # dbg(u'⇝')
                 # dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
                 call_when_idle_unless_already(self._process_messages)  # TODO: check if there's an already scheduled call to avoid redundant calls
             else:
-                dbg(u'↯')
+                # dbg(u'↯')
                 self._process_messages()
-        else:
-            dbg(u'  →X')
+        # else:
+        #     dbg(u'  →X')
 
     @logstring(u'↻ ↻')
     @inlineCallbacks
     def _process_messages(self):
         # XXX: this method can be called after the actor is stopped--add idle call cancelling
         # dbg(self.peek_message())
-        first = True
+        # first = True
         try:
             while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and ('_child_terminated', ANY) == self.peek_message()):
                 message = self.consume_message()
                 self.processing_messages = repr(message)
-                if not first:
-                    dbg(u"↪ %r" % (message,))
-                first = False
+                # if not first:
+                #     dbg(u"↪ %r" % (message,))
+                # first = False
                 try:
                     yield self._process_one_message(message)
                     # if isinstance(ret, Deferred) and not self.receive_is_coroutine:
                     #     warnings.warn(ConsistencyWarning("prefer yielding Deferreds from Actor.receive rather than returning them"))
                     # yield d
                 except Exception:
-                    dbg("☹")
+                    # dbg("☹")
                     self.report_to_parent()
-                else:
-                    dbg(message, u"✓")
+                # else:
+                #     dbg(message, u"✓")
                 finally:
                     self.processing_messages = False
-            dbg("☺")
+            # dbg("☺")
         except Exception:  # pragma: no cover
             panic(u"!!BUG!!\n", traceback.format_exc())
             self.report_to_parent()
@@ -876,7 +876,7 @@ class Cell(_BaseCell):
     @logstring(u"↻ ↻ ↻")
     @inlineCallbacks
     def _process_one_message(self, message):
-        dbg(message)
+        # dbg(message)
         if '_start' == message:
             yield self._do_start()
         elif ('_error', ANY, ANY, ANY) == message:
@@ -916,13 +916,13 @@ class Cell(_BaseCell):
     @logstring("ctor:")
     @inlineCallbacks
     def _construct(self):
-        dbg()
+        # dbg()
         factory = self.factory
 
         try:
             actor = factory()
         except Exception:
-            dbg(u"☹")
+            # dbg(u"☹")
             raise CreateFailed("Constructing actor failed", factory)
         else:
             self.actor = actor
@@ -937,11 +937,11 @@ class Cell(_BaseCell):
                 yield self._ongoing
                 del self._ongoing
             except Exception:
-                dbg(u"☹")
+                # dbg(u"☹")
                 raise CreateFailed("Actor failed to start", actor)
 
         self.constructed = True
-        dbg(u"✓")
+        # dbg(u"✓")
 
     @logstring(u"►►")
     @inlineCallbacks
@@ -954,7 +954,7 @@ class Cell(_BaseCell):
             raise
         else:
             self.started = True
-            dbg(u"✓")
+            # dbg(u"✓")
 
     @logstring("sup:")
     def _do_supervise(self, child, exc, tb):
@@ -988,7 +988,7 @@ class Cell(_BaseCell):
 
     @logstring(u"||")
     def _do_suspend(self):
-        dbg()
+        # dbg()
         self.suspended = True
         if self._ongoing:
             # dbg("ongoing.pause")
@@ -1002,9 +1002,9 @@ class Cell(_BaseCell):
 
     @logstring(u"||►")
     def _do_resume(self):
-        dbg()
+        # dbg()
         if self.tainted:
-            dbg("...tainted → restarting...")
+            # dbg("...tainted → restarting...")
             warnings.warn("Attempted to resume an actor that failed to start; falling back to restarting:\n%s" % (''.join(traceback.format_stack()),))
             self.tainted = False
             return self._do_restart()
@@ -1018,11 +1018,11 @@ class Cell(_BaseCell):
 
             for child in self.children:
                 child.send('_resume')
-        dbg(u"✓")
+        # dbg(u"✓")
 
     @logstring("stop:")
     def _do_stop(self):
-        dbg()
+        # dbg()
         if self._ongoing:
             del self._ongoing
         # del self.watchers
@@ -1030,7 +1030,7 @@ class Cell(_BaseCell):
 
     @logstring("finish-stop:")
     def _finish_stop(self, _):
-        dbg()
+        # dbg()
         try:
             ref = self.ref
 
@@ -1063,11 +1063,11 @@ class Cell(_BaseCell):
             panic(u"!!BUG!!\n", traceback.format_exc())
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
-        dbg(u"✓")
+        # dbg(u"✓")
 
     @logstring("watched:")
     def _do_watched(self, other):
-        dbg(other)
+        # dbg(other)
         assert not self.stopped
         if not self.watchers:
             self.watchers = []
@@ -1081,13 +1081,13 @@ class Cell(_BaseCell):
         yield self._shutdown()
         yield self._construct()
         self.suspended = False
-        dbg(u"✓")
+        # dbg(u"✓")
 
     @logstring("child-term:")
     def _do_child_terminated(self, child):
         # probably a child that we already stopped as part of a restart
         if child.uri.name not in self._children:
-            dbg("ignored child termination")
+            # dbg("ignored child termination")
             # Events.log(TerminationIgnored(self, child))
             return
         self._child_gone(child)
