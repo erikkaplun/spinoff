@@ -379,7 +379,7 @@ class _BaseCell(_HubBound):
             if name in self._children:
                 raise NameConflict("Unable to spawn actor at path %s; actor %r already sits there" % (uri.path, self._children[name]))
         if not uri:
-            name = self._generate_name()
+            name = self._generate_name(factory)
             uri = self.uri / name
 
         assert name not in self._children  # XXX: ordering??
@@ -394,9 +394,10 @@ class _BaseCell(_HubBound):
     def receive(self, message, force_async=None):
         pass
 
-    def _generate_name(self):
+    def _generate_name(self, factory):
         if not self._child_name_gen:
-            self._child_name_gen = ('$%d' % i for i in count(1))
+            basename = factory.__name__.lower() if isinstance(factory, type) else factory.cls.__name__
+            self._child_name_gen = ('%s$%d' % (basename, i) for i in count(1))
         return self._child_name_gen.next()
 
     @property
