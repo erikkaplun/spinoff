@@ -1168,11 +1168,6 @@ class Cell(_BaseCell):
             self._ref = weakref.ref(ref)
         return self._ref()
 
-    def _generate_name(self):
-        """Overrides ActorContext._generate_name"""
-        if not self._child_name_gen:
-            self._child_name_gen = ('$%d' % i for i in count(1))
-        return self._child_name_gen.next()
 
     def __repr__(self):
         return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__),
