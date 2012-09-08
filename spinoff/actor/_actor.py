@@ -201,6 +201,7 @@ class _HubBound(object):
     _hub = None
 
     def __init__(self, hub):
+        assert hub if TESTING else not hub
         if hub:
             self._hub = hub
 
@@ -212,7 +213,6 @@ class _HubBound(object):
         down to any new `_HubBound` objects created. Otherwise, `Node.hub` is used.
 
         """
-        assert self._hub if TESTING else not self._hub, (self, TESTING, self._hub)
         return self._hub or _NODE.hub
 
 
@@ -384,7 +384,7 @@ class _BaseCell(_HubBound):
 
         assert name not in self._children  # XXX: ordering??
         self._children[name] = None
-        child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub)
+        child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub if TESTING else None)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
 
