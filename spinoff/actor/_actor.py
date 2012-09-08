@@ -1027,7 +1027,7 @@ class Cell(_BaseCell):
         if self._ongoing:
             del self._ongoing
         # del self.watchers
-        self._shutdown().addCallback(self._finish_stop)
+        self._shutdown().addCallback(self._finish_stop).addErrback(panic)
 
     @logstring("finish-stop:")
     def _finish_stop(self, _):
