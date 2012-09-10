@@ -535,6 +535,11 @@ class Node(object):
             node.stop()
         del cls._all[:]
 
+    @classmethod
+    def make_local(cls):
+        from .remoting import HubWithNoRemoting
+        return cls(hub=HubWithNoRemoting())
+
     def __init__(self, hub):
         if not hub:  # pragma: no cover
             raise TypeError("Node instances must be bound to a Hub")
