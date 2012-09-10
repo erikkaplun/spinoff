@@ -439,8 +439,8 @@ class _BaseCell(_HubBound):
         return found
 
     def lookup_ref(self, uri):
-        if not (uri and isinstance(uri, (Uri, str))):
-            raise TypeError("_BaseCell.lookup expects a non-empty str or Uri")  # pragma: no cover
+        if not isinstance(uri, (Uri, str)):
+            raise TypeError("%s.lookup_ref expects a str or Uri" % type(self).__name__)  # pragma: no cover
 
         uri = uri if isinstance(uri, Uri) else Uri.parse(uri)
 
