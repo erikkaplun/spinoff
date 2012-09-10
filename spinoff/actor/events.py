@@ -31,7 +31,7 @@ class MessageReceived(Event, fields('actor', 'message')):
                 ', message=%r' % (self.message,))
 
 
-class UnhandledMessage(MessageReceived, fields('actor')):
+class UnhandledMessage(MessageReceived, fields('actor', 'message')):
     pass
 
 
