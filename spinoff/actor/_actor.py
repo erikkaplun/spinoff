@@ -401,10 +401,11 @@ class _BaseCell(_HubBound):
         pass
 
     def _generate_name(self, factory):
+        # TODO: the factory should provide that as a property
+        basename = factory.__name__.lower() if isinstance(factory, type) else factory.cls.__name__
         if not self._child_name_gen:
-            basename = factory.__name__.lower() if isinstance(factory, type) else factory.cls.__name__
-            self._child_name_gen = ('%s$%d' % (basename, i) for i in count(1))
-        return self._child_name_gen.next()
+            self._child_name_gen = ('$%d' % i for i in count(1))
+        return basename.lower() + self._child_name_gen.next()
 
     @property
     def children(self):
