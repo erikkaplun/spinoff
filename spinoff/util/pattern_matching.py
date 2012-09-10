@@ -56,6 +56,9 @@ class Matcher(_Marker):
     def __or__(self, other):
         return OR(self, other)
 
+    def __and__(self, other):
+        return AND(self, other)
+
     def __ne__(self, x):
         return not (self == x)
 
@@ -144,6 +147,17 @@ class OR(Matcher):
 
     def __str__(self):
         return '%s | %s' % (self.matcher1, self.matcher2)
+
+
+class AND(Matcher):
+    def __init__(self, matcher1, matcher2):
+        self.matcher1, self.matcher2 = matcher1, matcher2
+
+    def __eq__(self, x):
+        return self.matcher1 == x and self.matcher2 == x
+
+    def __str__(self):
+        return '%s & %s' % (self.matcher1, self.matcher2)
 
 
 class REGEXP(Matcher):
