@@ -570,7 +570,7 @@ class Node(object):
             self.hub = hub
 
     def lookup(self, uri_or_addr):
-        if not (uri_or_addr and isinstance(uri_or_addr, (Uri, str))):  # pragma: no cover
+        if not isinstance(uri_or_addr, (Uri, str)):  # pragma: no cover
             raise TypeError("Node.lookup expects a non-empty str or Uri")
 
         uri = uri_or_addr if isinstance(uri_or_addr, Uri) else Uri.parse(uri_or_addr)
