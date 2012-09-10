@@ -712,6 +712,11 @@ class Props(object):
     def __call__(self):
         return self.cls(*self.args, **self.kwargs)
 
+    def using(self, *args, **kwargs):
+        args += args
+        kwargs.update(self.kwargs)
+        return Props(self.cls, *args, **kwargs)
+
     def __repr__(self):
         args = ', '.join(repr(x) for x in self.args)
         kwargs = ', '.join('%s=%r' % x for x in self.kwargs.items())
