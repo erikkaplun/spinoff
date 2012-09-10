@@ -18,7 +18,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from txcoroutine import coroutine
 
 from spinoff.actor.events import (
-    UnhandledError, Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure)
+    Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure)
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
@@ -470,12 +470,15 @@ class Guardian(_BaseCell, _BaseRef):
     uri = None
     cell = None
 
-    def __init__(self, uri, node, hub):
+    def __init__(self, uri, node, hub, supervision=Stop):
         super(Guardian, self).__init__(hub=hub)
+        if supervision not in (Stop, Restart, Resume):
+            raise TypeError("Invalid supervision specified for Guardian")
         self.uri = uri
         self.node = node
         self.root = self
         self._cell = self  # for _BaseCell
+        self.supervision = supervision
 
     @property
     def ref(self):
@@ -484,8 +487,14 @@ class Guardian(_BaseCell, _BaseRef):
     def send(self, message, force_async=False):
         if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
             _, sender, exc, tb = message
-            Events.log(UnhandledError(sender, exc, tb))
-            sender.stop()
+            if self.supervision == Stop:
+                sender.stop()
+            elif self.supervision == Restart:
+                sender << '_restart'
+            elif self.supervision == Resume:
+                sender << '_resume'
+            else:
+                assert False
         elif ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
@@ -540,11 +549,11 @@ class Node(object):
         from .remoting import HubWithNoRemoting
         return cls(hub=HubWithNoRemoting())
 
-    def __init__(self, hub):
+    def __init__(self, hub, root_supervision=Stop):
         if not hub:  # pragma: no cover
             raise TypeError("Node instances must be bound to a Hub")
         self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
-        self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None)
+        self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None, supervision=root_supervision)
         self.set_hub(hub)
         Node._all.append(self)
 
