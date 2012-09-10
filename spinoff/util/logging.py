@@ -1,11 +1,12 @@
 # coding: utf8
-from __future__ import print_function
+from __future__ import print_function, absolute_import
 
 import inspect
 import re
 import sys
 import traceback
 import types
+import os
 from collections import defaultdict
 
 
@@ -94,15 +95,22 @@ _pending_end = defaultdict(bool)
 _logstrings = {}
 
 
+def get_calling_context(frame):
+    caller = frame.f_locals.get('self', frame.f_locals.get('cls', None))
+
+    f_code = frame.f_code
+    file, lineno, caller_name = f_code.co_filename, frame.f_lineno, f_code.co_name
+    file = file.rsplit('/', 1)[-1]
+
+    return file, lineno, caller_name, caller
+
+
 def _write(level, *args, **kwargs):
     try:
         if level >= LEVEL:
-            frame = sys._getframe(2)
-            caller = frame.f_locals.get('self', frame.f_locals.get('cls', None))
 
-            f_code = frame.f_code
-            file, lineno, caller_name = f_code.co_filename, frame.f_lineno, f_code.co_name
-            file = file.rsplit('/', 1)[-1]
+            frame = sys._getframe(2)
+            file, lineno, caller_name, caller = get_calling_context(frame)
 
             if caller:
                 caller_module = caller.__module__
@@ -120,6 +128,7 @@ def _write(level, *args, **kwargs):
 
             logstring = getattr(caller_fn, '_r_logstring', None) if caller_fn else None
             if not logstring:
+                # TODO: add logstring "inheritance"
                 logstring = getattr(caller_fn, '_logstring', None)
                 if logstring:
                     if isinstance(logstring, unicode):
@@ -149,10 +158,15 @@ def _write(level, *args, **kwargs):
 
             levelname = LEVELS[level][1] + LEVELS[level][0] + RESET_COLOR
 
+            dump_parent_caller = kwargs.pop('caller', False)
             # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
-            print("%s  %s %s  %s  %s" %
-                  (levelname, loc, logname, statestr, logstring),
-                  file=OUTFILE, *(args + (comment,)), **kwargs)
+            print("%s %s  %s %s  %s  %s" %
+                  (os.getpid(), levelname, loc, logname, statestr, logstring),
+                  file=OUTFILE, *(args + (comment,)))
+            if dump_parent_caller:
+                file, lineno, caller_name, caller = get_calling_context(frame.f_back)
+                loc = "%s:%s" % (file, lineno)
+                print("\t(invoked by) %s  %s  %s" % (get_logname(caller), caller_name, loc), file=OUTFILE)
     except Exception:
         # from nose.tools import set_trace; set_trace()
         print(RED, u"!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
@@ -176,9 +190,11 @@ def get_logstate(obj):
 
 def get_logcomment(obj):
     try:
-        return '     ' + obj.logcomment()
+        x = obj.logcomment
     except AttributeError:
         return ''
+    else:
+        return '     ' + x()
 
 
 def logstring(logstr):
