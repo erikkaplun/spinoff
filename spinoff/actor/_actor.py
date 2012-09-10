@@ -154,6 +154,9 @@ class Uri(object):
             other = Uri.parse(other)
         return str(self) == str(other) or isinstance(other, Matcher) and other == self
 
+    def __ne__(self, other):
+        return not (self == other)
+
 
 class _BaseRef(object):
     """Internal abstract class for all objects that behave like actor references."""
@@ -322,6 +325,9 @@ class Ref(_BaseRef, _HubBound):
         """
         return (isinstance(other, Ref) and self.uri == other.uri
                 or isinstance(other, Matcher) and other == self)
+
+    def __ne__(self, other):
+        return not (self == other)
 
     def __hash__(self):
         return hash(self.uri)
