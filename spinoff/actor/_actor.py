@@ -515,6 +515,9 @@ class Guardian(_BaseCell, _BaseRef):
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Guardian cannot be serialized")
 
+    def __repr__(self):
+        return "<guardian:%s>" % (self.uri,)
+
 
 class Node(object):
     """`Node` is both a singleton instance and a class lookalike, there is thus always available a default global
