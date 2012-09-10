@@ -8,3 +8,5 @@ _trial_temp
 *.log
 twisted/plugins/dropin.cache
 .noseids
+.coverage
+cover/

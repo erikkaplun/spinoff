@@ -1,0 +1,14 @@
+[run]
+branch = True
+omit = spinoff/util/_defer.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    assert False
+    raise AssertionError
+    raise NotImplementedError
+
+[paths]
+source = spinoff/
