@@ -316,7 +316,7 @@ class Hub(object):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
 
     def __repr__(self):
-        return '<%s <=>>' % (self.node,)
+        return '<remoting:%s>' % (self.node,)
 
 
 class HubWithNoRemoting(object):
