@@ -3,9 +3,10 @@ from _actor import *
 # from . import comm
 
 
-CurrentNode = None
+# CurrentNode = None
 
 
-def set_default_node(node):
-    global Node
-    CurrentNode = _actor._NODE = node
+def set_default_node(node=None):
+    global CurrentNode
+    CurrentNode = _actor._NODE = node or Node.make_local()
+    return CurrentNode
