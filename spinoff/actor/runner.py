@@ -15,6 +15,7 @@ from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic
 from spinoff.util.pattern_matching import ANY
 
+from spinoff.actor.events import Events, Message
 from spinoff.actor.supervision import Stop, Restart, Resume
 
 _EMPTY = object()
@@ -37,7 +38,7 @@ class ActorRunner(Service):
     def startService(self):
         actor_path = self._actor_path = '%s.%s' % (self._actor_cls.__module__, self._actor_cls.__name__)
 
-        log("Running: %s" % (actor_path,), "@ /%s" % (self._name,) if self._name else '')
+        Events.log(Message("Running: %s%s" % (actor_path, " @ /%s" % (self._name,) if self._name else '')))
 
         def start_actor():
             if self._nodeid:
@@ -47,14 +48,14 @@ class ActorRunner(Service):
                     reactor.stop()
                     return
 
-                log("Setting up remoting; node ID =", self._nodeid)
                 ip_addr = self._nodeid
+                Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
                 f1 = ZmqFactory()
                 insock = ZmqRouterConnection(f1, identity='tcp://%s' % (ip_addr,))
                 outsock = ZmqRouterConnection(f1, identity='tcp://%s' % (ip_addr,))
                 hub = Hub(insock, outsock, node=self._nodeid)
             else:
-                log("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting")
+                Events.log(Message("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting"))
                 hub = HubWithNoRemoting()
 
             supervision = {'stop': Stop, 'restart': Restart, 'resume': Resume}[self._supervise]
