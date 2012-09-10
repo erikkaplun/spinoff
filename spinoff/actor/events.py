@@ -20,6 +20,11 @@ class Event(object):
         return '%r' % (self.actor,)
 
 
+class Message(Event, fields('message')):
+    def __repr__(self):  # pragma: no cover
+        return self.message
+
+
 class MessageReceived(Event, fields('actor', 'message')):
     def repr_args(self):  # pragma: no cover
         return (super(MessageReceived, self).repr_args() +
@@ -33,6 +38,11 @@ class UnhandledMessage(MessageReceived, fields('actor')):
 class DeadLetter(Event, fields('actor', 'message')):
     def repr_args(self):
         return (super(DeadLetter, self).repr_args() + (', %r' % (self.message, )))
+
+
+class RemoteDeadLetter(Event, fields('actor', 'message', 'sender_addr')):
+    def repr_args(self):
+        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender_addr)))
 
 
 class LifecycleEvent(Event):
