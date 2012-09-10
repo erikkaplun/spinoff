@@ -5,6 +5,7 @@ import re
 from twisted.application.service import Service
 from twisted.internet import reactor
 from twisted.internet.error import ReactorNotRunning
+from twisted.internet.defer import inlineCallbacks
 from twisted.python.failure import Failure
 from txzmq import ZmqFactory, ZmqRouterConnection
 
@@ -72,10 +73,9 @@ class ActorRunner(Service):
 
         reactor.callLater(0.0, start_actor)
 
+    @inlineCallbacks
     def stopService(self):
-        if self._wrapper:
-            self._wrapper.stop()
-            return self._wrapper.join()
+        yield Node.stop_all()
 
     def __repr__(self):
         return '<ActorRunner>'
