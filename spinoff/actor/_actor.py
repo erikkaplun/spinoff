@@ -539,9 +539,10 @@ class Node(object):
     _all = []
 
     @classmethod
+    @inlineCallbacks
     def stop_all(cls):
         for node in cls._all:
-            node.stop()
+            yield node.stop()
         del cls._all[:]
 
     @classmethod
@@ -593,8 +594,11 @@ class Node(object):
 
     @inlineCallbacks
     def stop(self):
-        yield self.hub.stop()
         yield self.guardian.stop()
+        # TODO: just make the node send a special notification to other nodes, so as to avoid needless sending of many
+        # small termination messages:
+        yield sleep(.1)  # let actors send termination messages
+        yield self.hub.stop()
 
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Node cannot be serialized")
