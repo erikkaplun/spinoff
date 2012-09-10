@@ -102,7 +102,7 @@ class Process(Actor):
                     return self.__queue.pop(ix)
 
             # dbg("PROCESS: ready for message")
-            self.__get_d = _PickyDeferred(match)
+            self.__get_d = _PickyDeferred(match, canceller=self.__clear_get_d)
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:  # pragma: no cover
