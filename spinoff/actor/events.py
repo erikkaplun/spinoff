@@ -129,7 +129,7 @@ class Events(object):
                     except Exception:  # pragma: no cover
                         err("Error in event handler:\n", traceback.format_exc())
             else:
-                (fail if isinstance(event, Error) else log)("*** %r" % (event,))
+                (fail if isinstance(event, Error) else log)(event)
         except Exception:  # pragma: no cover
             print("Events.log failed:\n", traceback.format_exc(), file=sys.stderr)
 
