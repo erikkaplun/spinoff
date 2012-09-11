@@ -72,7 +72,7 @@ class Connection(object):
         del self.queue
 
     def close(self):
-        log("Lost connection to %r" % self.addr)
+        log()
         self._kill_queue()
         self._emit_termination_messages()
         self.sock.shutdown()
