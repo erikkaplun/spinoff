@@ -1214,10 +1214,11 @@ class Cell(_BaseCell):
             assert not other.is_local if other.uri.node and other.uri.node != node else True, (other.uri.node, node)
             if not self.watchees:
                 self.watchees = set()
-            self.watchees.add(other)
-            if not other.is_local:
-                self.hub.watch_node(other.uri.node, report_to=self.ref)
-            other << ('_watched', self.ref)
+            if other not in self.watchees:
+                self.watchees.add(other)
+                if not other.is_local:
+                    self.hub.watch_node(other.uri.node, report_to=self.ref)
+                other << ('_watched', self.ref)
         return other
 
     def unwatch(self, other):
