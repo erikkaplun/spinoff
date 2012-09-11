@@ -73,6 +73,7 @@ class Connection(object):
         del self.queue
 
     def close(self):
+        log("Lost connection to %r" % self.addr)
         self._kill_queue()
         self._emit_termination_messages()
         self.sock.shutdown()
@@ -201,7 +202,6 @@ class Hub(object):
             t_gone = self.reactor.seconds() - self.HEARTBEAT_MAX_SILENCE
             for addr, conn in self.connections.items():
                 if conn.seen < t_gone:
-                    log("Lost connectivity with %r" % conn)
                     conn.close()
                     del self.connections[addr]
                 else:
