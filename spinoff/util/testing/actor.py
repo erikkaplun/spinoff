@@ -82,17 +82,18 @@ class ErrorCollector(object):
 
         clean = not exc
 
+        def get_only_reports():
+            for report, _, _ in self.errors:
+                yield report
+
         if self.errors:
             # If there are at least 2 errors, or we are in the toplevel collector,
             # dump the errors and raise a general Unclean exception:
-            if not stack or not clean or len(self.errors) >= 2:
-                error_reports = []
-                for error, _, _ in self.errors:
-                    error_reports.append(error)
+            if not stack or not clean or len(self.errors) > 1:
                 if clean:
                     if len(self.errors) >= 2:
                         indented_error_reports = ('\n'.join('    ' + line for line in error_report.split('\n') if line)
-                                                  for error_report in error_reports)
+                                                  for error_report in get_only_reports())
                         indented_entire_error_report = '\n\n'.join(indented_error_reports)
                         raise Unclean("There were errors in top-level actors:\n%s" % (indented_entire_error_report,))
                     else:
@@ -102,11 +103,11 @@ class ErrorCollector(object):
                         # XXX: copy-paste
                         if isinstance(exc, WrappingException):
                             fmted = exc.formatted_original_tb()
-                            print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+                            print('\n'.join('    ' + line for line in fmted.split('\n') if line), file=sys.stderr)
 
                         raise exc
                 else:
-                    print('\n'.join(error_reports), file=sys.stderr)
+                    print('\n'.join(get_only_reports()), file=sys.stderr)
             # ...otherwise just re-raise the exception to support assert_raises
             else:
                 (_, exc, tb_formatted), = self.errors
@@ -116,14 +117,15 @@ class ErrorCollector(object):
                     # XXX: copy-paste
                     if isinstance(exc, WrappingException):
                         fmted = exc.formatted_original_tb()
-                        print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+                        print('\n'.join('    ' + line for line in fmted.split('\n') if line), file=sys.stderr)
 
                 raise exc
+
         if not clean:
             # XXX: copy-paset
             if isinstance(exc, WrappingException):
                 fmted = exc.formatted_original_tb()
-                print('\n'.join('    ' + line for line in fmted.split('\n') if line))
+                print('\n'.join('    ' + line for line in fmted.split('\n') if line), file=sys.stderr)
 
             raise exc_cls, exc, tb
 
