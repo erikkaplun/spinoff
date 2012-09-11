@@ -134,7 +134,7 @@ def _write(level, *args, **kwargs):
                     if isinstance(logstring, unicode):
                         logstring = logstring.encode('utf8')
                 else:
-                    logstring = caller_name + ':'
+                    logstring = caller_name + (':' if args else '')
 
                 logstring = YELLOW + logstring + RESET_COLOR
 
