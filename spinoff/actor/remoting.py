@@ -67,7 +67,7 @@ class Connection(object):
             self._do_send(dumps((ref.uri.path, msg), protocol=2))
 
     def established(self, remote_version):
-        log("Established connection to %s." % self.addr)
+        log()
         self.known_remote_version = remote_version
         self._flush_queue()
         del self.queue
@@ -76,7 +76,7 @@ class Connection(object):
         self._kill_queue()
         self._emit_termination_messages()
         self.sock.shutdown()
-        del self.sock
+        del self.sock, self.owner
 
     @logstring(u" ❤⇝")
     def heartbeat(self):
@@ -120,8 +120,6 @@ class Connection(object):
         if hasattr(self, 'sock') and self.sock:
             self.sock.shutdown()
             del self.sock
-            self.zmq_factory.shutdown()
-            del self.zmq_factory
 
     def __repr__(self):
         return '<connection:%s>' % (self.addr,)
@@ -270,7 +268,7 @@ class Hub(object):
         cell = self.guardian.lookup_cell(Uri.parse(path))
         if not cell:
             if ('_watched', ANY) == msg:
-                watched_ref = Ref(cell=None, is_local=False, uri=Uri.parse(self.nodeid + path))
+                watched_ref = Ref(cell=None, is_local=True, uri=Uri.parse(self.nodeid + path))
                 _, watcher = msg
                 watcher << ('terminated', watched_ref)
             else:
@@ -282,6 +280,8 @@ class Hub(object):
     def stop(self):
         self._heartbeater.stop()
         self.insock.shutdown()
+        for _, conn in self.connections.items():
+            conn.close()
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
@@ -410,10 +410,18 @@ class MockNetwork(object):  # pragma: no cover
         _assert_valid_nodeid(nodeid)
         addr = 'tcp://' + nodeid
         insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
-        outsock = MockOutSocket(addEndpoints=lambda endpoints: self.connect(addr, endpoints),
-                                sendMsg=lambda dst, msg: self.enqueue(addr, dst, msg))
+        outsock = lambda: MockOutSocket(addr, self)
 
         return Node(hub=Hub(insock, outsock, nodeid=nodeid, reactor=self.clock))
+
+    def outsock_addEndpoints(self, src, endpoints):
+        self.connect(src, endpoints)
+
+    def outsock_sendMultipart(self, src, dst, msgParts):
+        self.enqueue(src, dst, msgParts)
+
+    def outsock_shutdown(self, addr):
+        self.disconnect(addr)
 
     # def mapperdaemon(self, addr):
     #     pass
@@ -443,11 +451,16 @@ class MockNetwork(object):  # pragma: no cover
             dbg(u"%s → %s" % (addr, endpoint.address))
             self.connections.add((addr, endpoint.address))
 
+    def disconnect(self, addr):
+        found = [(src, dst) for src, dst in self.connections if addr == src]
+        assert found, "Outgoing sockets should only disconnect from addresses they have previously connected to"
+        self.connections.remove(found[0])
+
     @logstring(u"⇝")
     def enqueue(self, src, dst, msg):
         _assert_valid_addr(src)
         _assert_valid_addr(dst)
-        assert isinstance(msg, bytes), "Message payloads sent out by Hub should be bytes"
+        assert isinstance(msg, tuple) and all(isinstance(x, bytes) for x in msg), "Message payloads sent out by Hub should be tuples containing bytse"
         assert (src, dst) in self.connections, "Hubs should only send messages to addresses they have previously connected to"
 
         # dbg(u"%r → %s" % (_dumpmsg(msg), dst))
@@ -486,8 +499,9 @@ class MockNetwork(object):  # pragma: no cover
         del self.queue[:]
 
         for msg, src, sock in deliverable:
-            sock.gotMessage(src, msg)
+            sock.gotMultipart(msg)
 
+    # XXX: change `duration` into `iterations` so that changing `step` wouldn't affect tests, as far as non-packet-lossy tests are concerned
     def simulate(self, duration, step=0.1):
         MAX_PRECISION = 5
         step = round(Decimal(step), MAX_PRECISION)
@@ -520,8 +534,8 @@ class MockInSocket(object):  # pragma: no cover
     def __init__(self, addEndpoints):
         self.addEndpoints = addEndpoints
 
-    def gotMessage(self, msg):
-        assert False, "Hub should define gotMessage on the incoming transport"
+    def gotMultipart(self, msg):
+        assert False, "Hub should define gotMultipart on the incoming transport"
 
     def shutdown(self):
         pass
@@ -533,12 +547,26 @@ class MockOutSocket(object):  # pragma: no cover
     This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
 
     """
-    def __init__(self, sendMsg, addEndpoints):
-        self.sendMsg = sendMsg
-        self.addEndpoints = addEndpoints
+    def __init__(self, addr, owner):
+        self.addr, self.owner = addr, owner
+        self.endpoint_addr = None
+
+    def sendMultipart(self, msgParts):
+        assert self.endpoint_addr, "Outgoing sockets should not send before they connect"
+        self.owner.outsock_sendMultipart(src=self.addr, dst=self.endpoint_addr, msgParts=msgParts)
+
+    def addEndpoints(self, endpoints):
+        assert len(endpoints) == 1, "Outgoing sockets should not connect to more than 1 endpoint"
+        dbg(endpoints[0].address)
+        self.endpoint_addr = endpoints[0].address
+        self.owner.outsock_addEndpoints(self.addr, endpoints)
 
     def shutdown(self):
-        pass
+        dbg()
+        self.owner.outsock_shutdown(self.addr)
+
+    def __repr__(self):
+        return '<outsock:%s>' % (self.addr,)
 
 
 _dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover

@@ -23,9 +23,10 @@ from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
-    assert_raises, assert_one_warning, assert_no_warnings, swallow_one_warning, MockMessages, assert_one_event,
-    ErrorCollector, EvSeq, EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, Unclean, MockActor,
-    assert_event_not_emitted, Barrier,)
+    assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, ErrorCollector, EvSeq,
+    EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, Unclean, MockActor, assert_event_not_emitted,
+    Barrier,)
+from spinoff.actor.events import RemoteDeadLetter
 
 
 # ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
@@ -2541,7 +2542,7 @@ def test_watching_nonexistent_remote_actor_causes_termination_message(clock):
             received()
     node1.spawn(Watcher)
 
-    network.simulate(duration=1.0)
+    network.simulate(duration=2.0)
     assert received
 
 
@@ -2707,7 +2708,7 @@ def test_sending_remote_refs(clock):
             assert msg == ('send-msg-to', ANY)
             _, target = msg
             target << 'helo'
-    sender_node.spawn(SenderActor, name='sender')
+    sender_node.spawn(SenderActor, name='S')
 
     #
     middle_node = network.node('middle:123')
@@ -2715,7 +2716,9 @@ def test_sending_remote_refs(clock):
     ref_to_target = middle_node.lookup('target:123/T')
     ref_to_sender << ('send-msg-to', ref_to_target)
 
-    network.simulate(duration=5.0)
+    network.simulate(duration=1.0)
+
+    eq_(target_msgs, ['helo'])
 
 
 @simtime
@@ -2726,7 +2729,7 @@ def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
 
     noexist = sender_node.lookup('receivernode:123/non-existent-actor')
     noexist << 'straight-down-the-drain'
-    with assert_one_event(DeadLetter):
+    with assert_one_event(RemoteDeadLetter):
         network.simulate(0.2)
 
 
@@ -2776,28 +2779,25 @@ def test_sending_stops_if_visibility_is_lost(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
-    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
 
-    node2 = network.node('host2:123')
-    node2.hub.QUEUE_ITEM_LIFETIME = 5.0
+    network.node('host2:123')
 
     # set up a normal sending state first
 
     ref = node1.lookup('host2:123/actor2')
     ref << 'foo'  # causes host2 to also start the heartbeat
 
-    network.simulate(duration=3.0)
+    network.simulate(duration=1.0)
 
     # ok, now they both know/have seen each other; let's change that:
     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-    network.simulate(duration=node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS + 1.0)
+    network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
     # the next message should fail after 5 seconds
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(duration=node1.hub.QUEUE_ITEM_LIFETIME + 2.0)
+        network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
 
 @simtime
@@ -2805,93 +2805,26 @@ def test_sending_resumes_if_visibility_is_restored(clock):
     network = MockNetwork(clock)
 
     node1 = network.node('host1:123')
-    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
-    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
 
     network.node('host2:123')
 
     ref = node1.lookup('host2:123/actor2')
     ref << 'foo'
-    network.simulate(duration=3.0)
+    network.simulate(duration=1.0)
     # now both visible to the other
 
     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-    network.simulate(duration=node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS + 2.0)
+    network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
     # now host2 is not visible to host1
 
     ref << 'bar'
-    network.simulate(duration=node1.hub.QUEUE_ITEM_LIFETIME - 1.0)
+    network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE - 1.0)
     # host1 still hasn't lost faith
 
     network.packet_loss(percent=0, src='tcp://host2:123', dst='tcp://host1:123')
     # and it is rewarded for its patience
     with assert_event_not_emitted(DeadLetter):
-        network.simulate(duration=3.0)
-
-
-@simtime
-def test_sending_stops_if_visibility_exists_but_the_other_side_cant_see_us(clock):
-    network = MockNetwork(clock)
-
-    node1 = network.node('host1:123')
-    node1.hub.QUEUE_ITEM_LIFETIME = 5.0
-
-    node2 = network.node('host2:123')
-    node2.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
-
-    node1.lookup('host2:123/actor2') << 'foo'
-    network.simulate(duration=2.0)
-
-    network.packet_loss(percent=100.0, src='tcp://host1:123', dst='tcp://host2:123')
-    network.simulate(duration=6.0)
-    # now host2 can't see host1 so it keeps asking host1, so host1 should realise it's not visible to host2 and stop sending
-
-    ref = node1.lookup('host2:123/actor2')
-    ref << 'bar'
-
-    with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(node1.hub.QUEUE_ITEM_LIFETIME + 1.0)
-
-
-@simtime
-def test_if_radiosilence_lasts_too_long_all_further_messages_to_that_addr_are_dropped_immediately(clock):
-    network = MockNetwork(clock)
-
-    node1 = network.node('host1:123')
-    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
-    node1.hub.TIME_TO_KEEP_HOPE = 5.0
-
-    node1.lookup('host2:123/actor2') << 'foo'
-    network.simulate(duration=node1.hub.TIME_TO_KEEP_HOPE - 1.0)  # should keep hope
-
-    with assert_one_event(DeadLetter):
-        network.simulate(duration=2.0)  # should lose hope
-
-    with assert_one_event(DeadLetter):
-        node1.lookup('host2:123/actor2') << 'foo'
-
-
-@simtime
-def test_receiving_a_message_while_silentlyhoping_resumes_queueing(clock):
-    network = MockNetwork(clock)
-
-    node1 = network.node('host1:123')
-    node1.hub.MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
-    node1.hub.TIME_TO_KEEP_HOPE = 5.0
-
-    node1.lookup('host2:123/actor2') << 'foo'
-    Events.consume_one(DeadLetter)
-
-    network.simulate(duration=node1.hub.TIME_TO_KEEP_HOPE + 1.0)
-
-    node2 = network.node('host2:123')
-    actor2_msgs = []
-    node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
-    network.simulate(duration=2.0)
-
-    node1.lookup('host2:123/actor2') << 'bar'
-    network.simulate(duration=1.0)
-    assert actor2_msgs
+        network.simulate(duration=2.0)
 
 
 ## REMOTE NAME-TO-PORT MAPPING
@@ -2978,7 +2911,7 @@ def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(clock)
 
 def test_remoting_with_real_zeromq():
     from nose.twistedtools import reactor
-    from txzmq import ZmqFactory, ZmqRouterConnection
+    from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
     class MyActor(Actor):
         def __init__(self, msgs, triggers):
@@ -2990,14 +2923,14 @@ def test_remoting_with_real_zeromq():
             self.triggers.pop(0)()
 
     f1 = ZmqFactory()
-    insock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
-    outsock = ZmqRouterConnection(f1, identity='tcp://127.0.0.1:9501')
-    node1 = Node(hub=Hub(insock, outsock, '127.0.0.1:9501'))
+    insock = ZmqPullConnection(f1)
+    outsock_factory = lambda: ZmqPushConnection(f1, linger=0)
+    node1 = Node(hub=Hub(insock, outsock_factory, '127.0.0.1:19501'))
 
     f2 = ZmqFactory()
-    insock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
-    outsock = ZmqRouterConnection(f2, identity='tcp://127.0.0.1:9502')
-    node2 = Node(hub=Hub(insock, outsock, '127.0.0.1:9502'))
+    insock = ZmqPullConnection(f2, linger=0)
+    outsock_factory = lambda: ZmqPushConnection(f2, linger=0)
+    node2 = Node(hub=Hub(insock, outsock_factory, '127.0.0.1:19502'))
 
     yield sleep(0.001)
 
@@ -3008,7 +2941,7 @@ def test_remoting_with_real_zeromq():
     node2.spawn(Props(MyActor, actor2_msgs, actor2_triggers), 'actor2')
 
     # simple message: @node1 => actor2@node2
-    actor2_from_node1 = node1.lookup('127.0.0.1:9502/actor2')
+    actor2_from_node1 = node1.lookup('127.0.0.1:19502/actor2')
 
     actor2_from_node1 << 'helloo!'
     yield actor2_triggers[0]
@@ -3040,8 +2973,6 @@ def test_remoting_with_real_zeromq():
 
     self_ref << 'hello, stranger!'
     eq_(actor1_msgs.clear(), ['hello, stranger!'])
-
-    yield sleep(0.001)
 
 
 ##
