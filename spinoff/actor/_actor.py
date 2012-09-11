@@ -22,10 +22,10 @@ from spinoff.actor.events import (
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
-from spinoff.util.pattern_matching import IS_INSTANCE, ANY
+from spinoff.util.pattern_matching import IS_INSTANCE, ANY, IN
 from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
 from spinoff.util.pattern_matching import Matcher
-from spinoff.util.logging import logstring, dbg, fail, panic
+from spinoff.util.logging import logstring, dbg, fail, panic, err
 from spinoff.actor.events import Error
 from spinoff.util.python import clean_tb_twisted
 from spinoff.util.async import sleep
@@ -302,7 +302,7 @@ class Ref(_BaseRef, _HubBound):
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
-            elif message not in ('_stop', '_suspend', '_resume', '_restart', ('terminated', ANY)):
+            elif message not in ('_stop', '_suspend', '_resume', '_restart', (IN(['terminated', '_watched', '_unwatched']), ANY)):
                 Events.log(DeadLetter(self, message))
 
     @property
@@ -546,7 +546,10 @@ class Node(object):
     @inlineCallbacks
     def stop_all(cls):
         for node in cls._all:
-            yield node.stop()
+            try:
+                yield node.stop()
+            except Exception:
+                err("Failed to stop %s:\n%s" % (node, traceback.format_exc()))
         del cls._all[:]
 
     @classmethod

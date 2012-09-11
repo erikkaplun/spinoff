@@ -279,11 +279,9 @@ class Hub(object):
         else:
             cell.receive(msg)  # XXX: force_async=True perhaps?
 
-    @inlineCallbacks
     def stop(self):
         self._heartbeater.stop()
-        self.incoming.shutdown()
-        self.outgoing.shutdown()
+        self.insock.shutdown()
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
@@ -415,7 +413,7 @@ class MockNetwork(object):  # pragma: no cover
         outsock = MockOutSocket(addEndpoints=lambda endpoints: self.connect(addr, endpoints),
                                 sendMsg=lambda dst, msg: self.enqueue(addr, dst, msg))
 
-        return Node(hub=Hub(insock, outsock, node=nodeid, reactor=self.clock))
+        return Node(hub=Hub(insock, outsock, nodeid=nodeid, reactor=self.clock))
 
     # def mapperdaemon(self, addr):
     #     pass

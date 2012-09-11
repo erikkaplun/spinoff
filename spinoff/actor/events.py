@@ -121,14 +121,13 @@ class HighWaterMarkReached(Event, fields('actor', 'count')):
 class Events(object):
     # TODO: add {event type} + {actor / actor path} based subscriptions.
 
-    LOGFILE = sys.stdout
-    ERRFILE = LOGFILE
-
     subscriptions = {}
     consumers = {}
 
     def log(self, event):
         try:
+            (fail if isinstance(event, Error) else log)(event)
+
             consumers = self.consumers.get(type(event))
             if consumers:
                 consumer_d = consumers.pop(0)
@@ -142,8 +141,6 @@ class Events(object):
                         fn(event)
                     except Exception:  # pragma: no cover
                         err("Error in event handler:\n", traceback.format_exc())
-            else:
-                (fail if isinstance(event, Error) else log)(event)
         except Exception:  # pragma: no cover
             print("Events.log failed:\n", traceback.format_exc(), file=sys.stderr)
 

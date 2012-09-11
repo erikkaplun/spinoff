@@ -2341,41 +2341,22 @@ def _do_test_watching_actor(async=False):
     assert (yield message_receieved) == ('terminated', watchee)
 
 
-def test_watching_self_is_noop_or_warning():
+def test_watching_self_is_noop_or_warning_and_returns_self():
     """Watching self warns by default and does nothing if explicitly told it's safe"""
     spawn = TestNode().spawn
 
-    self_ok = False
-
     class MyActor(Actor):
         def pre_start(self):
-            self.watch(self.ref, self_ok=self_ok)
+            assert self.watch(self.ref) == self.ref
 
         def receive(self, message):
             assert False, message
 
-    with assert_one_warning():
-        spawn(MyActor).stop()
-
-    self_ok = True
-    with assert_no_warnings():
-        a = spawn(MyActor)
+    a = spawn(MyActor)
 
     dead_letter_emitted_d = Events.consume_one(DeadLetter)
     a.stop()
-    assert not dead_letter_emitted_d.called, dead_letter_emitted_d.result
-
-
-def test_watching_self_still_returns_the_ref():
-    """Calling self.watch(self.ref, self_ok=True) returns self.ref for consistency"""
-    spawn = TestNode().spawn
-
-    class MyActor(Actor):
-        def pre_start(self):
-            ref = self.watch(self.ref, self_ok=True)
-            assert ref == self.ref
-
-    spawn(MyActor)
+    assert not dead_letter_emitted_d.called
 
 
 def test_termination_message_contains_ref_that_forwards_to_deadletters():
@@ -2462,20 +2443,6 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
         spawn(Watcher)
 
 
-def test_termination_message_to_dead_actor_is_discarded():
-    spawn = TestNode().spawn
-
-    class Parent(Actor):
-        def pre_start(self):
-            child = self.watch(self.spawn(Actor))
-            child.stop()
-            self.ref.stop()
-
-    d = Events.consume_one(DeadLetter)
-    spawn(Parent)
-    assert not d.called
-
-
 def test_system_messages_to_dead_actorrefs_are_discarded():
     spawn = TestNode().spawn
 
@@ -2489,23 +2456,16 @@ def test_system_messages_to_dead_actorrefs_are_discarded():
         d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
-def test_termination_message_to_dead_actorref_is_discarded():
+def test_termination_message_to_dead_actor_is_discarded():
     spawn = TestNode().spawn
-
-    release_child = Trigger()
-
-    class Child(Actor):
-        def post_stop(self):
-            return release_child
 
     class Parent(Actor):
         def pre_start(self):
-            self.watch(self.spawn(Child))
+            self.watch(self.spawn(Actor)).stop()
             self.ref.stop()
 
     d = Events.consume_one(DeadLetter)
     spawn(Parent)
-    release_child()
     assert not d.called, d.result
 
     d.addErrback(lambda f: f.trap(CancelledError)).cancel()  # just to be nice
