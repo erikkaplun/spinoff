@@ -704,6 +704,12 @@ class Actor(object):
     def stop(self):
         self.ref.stop()
 
+    def __eq__(self, other):
+        return other is self or self.ref == other
+
+    def __ne__(self, other):
+        return not (self == other)
+
     def __repr__(self):
         return "<actor-impl:%s@%s>" % (type(self).__name__, self.ref.uri)
 
