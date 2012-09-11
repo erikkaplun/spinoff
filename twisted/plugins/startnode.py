@@ -3,14 +3,8 @@ from __future__ import print_function
 import sys
 
 from twisted.application.service import IServiceMaker, MultiService
-from twisted.application.internet import TCPServer
-from twisted.cred.portal import Portal
-from twisted.cred.checkers import InMemoryUsernamePasswordDatabaseDontUse
 from twisted.plugin import IPlugin
 from twisted.python import usage
-from twisted.conch.manhole import ColoredManhole
-from twisted.conch.manhole_ssh import ConchFactory, TerminalRealm
-from twisted.conch.insults.insults import ServerProtocol
 from zope.interface import implements
 
 
@@ -153,6 +147,13 @@ class ActorRunnerMaker(object):
         return m
 
     def make_manhole_server(self, port, username, password):
+        from twisted.application.internet import TCPServer
+        from twisted.cred.portal import Portal
+        from twisted.cred.checkers import InMemoryUsernamePasswordDatabaseDontUse
+        from twisted.conch.manhole import ColoredManhole
+        from twisted.conch.manhole_ssh import ConchFactory, TerminalRealm
+        from twisted.conch.insults.insults import ServerProtocol
+
         rlm = TerminalRealm()
         rlm.chainedProtocolFactory = lambda: ServerProtocol(ColoredManhole, None)
 
