@@ -314,6 +314,7 @@ class Ref(_BaseRef, _HubBound):
         return self.is_local and not self._cell
 
     def join(self):
+        # XXX: will break if somebody tries to do lookups on the future or inspect its `Uri`, which it doesn't have:
         future = Future()
         self << ('_watched', future)
         return future
@@ -1111,8 +1112,6 @@ class Cell(_BaseCell):
 
             if self.watchers:
                 for watcher in self.watchers:
-                    if watcher.uri.node != ref.uri.node and watcher.uri.path == '/server':
-                        dbg("sending TERM to", watcher)
                     watcher.send(('terminated', ref))
         except Exception:  # pragma: no cover
             panic(u"!!BUG!!\n", traceback.format_exc())

@@ -319,7 +319,7 @@ class HubWithNoRemoting(object):
     """
     # to be compatible with Hub:
     guardian = None
-    node = None
+    nodeid = None
 
     def send(self, *args, **kwargs):  # pragma: no cover
         raise RuntimeError("Attempt to send a message to a remote ref but remoting is not available")
