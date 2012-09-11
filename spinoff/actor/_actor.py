@@ -29,6 +29,7 @@ from spinoff.util.logging import logstring, dbg, fail, panic
 from spinoff.actor.events import Error
 from spinoff.util.python import clean_tb_twisted
 from spinoff.util.async import sleep
+from spinoff.actor.events import UnhandledError
 
 
 TESTING = False
@@ -489,6 +490,7 @@ class Guardian(_BaseCell, _BaseRef):
     def send(self, message, force_async=False):
         if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
             _, sender, exc, tb = message
+            Events.log(UnhandledError(sender, exc, tb))
             if self.supervision == Stop:
                 sender.stop()
             elif self.supervision == Restart:

@@ -68,7 +68,11 @@ class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
 
 
 class UnhandledError(Error, fields('actor', 'exc', 'tb')):
-    """Logged by the System actor in the case of errors coming from top-level actors."""
+    """Logged by the System actor in the case of errors coming from top-level actors.
+
+    Logged in addition to a regular `Error` event.
+
+    """
 
 
 class ErrorIgnored(Error, fields('actor', 'exc', 'tb')):
