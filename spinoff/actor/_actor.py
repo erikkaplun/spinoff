@@ -28,9 +28,10 @@ from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import logstring, dbg, fail, panic
 from spinoff.actor.events import Error
 from spinoff.util.python import clean_tb_twisted
+from spinoff.util.async import sleep
 
 
-TESTING = True
+TESTING = False
 _NODE = None  # set in __init__.py
 
 
@@ -553,7 +554,7 @@ class Node(object):
     def __init__(self, hub, root_supervision=Stop):
         if not hub:  # pragma: no cover
             raise TypeError("Node instances must be bound to a Hub")
-        self._uri = Uri(name=None, parent=None, node=hub.node if hub else None)
+        self._uri = Uri(name=None, parent=None, node=hub.nodeid if hub else None)
         self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None, supervision=root_supervision)
         self.set_hub(hub)
         Node._all.append(self)
@@ -660,16 +661,11 @@ class Actor(object):
     def children(self):
         return self.__cell.children
 
-    def watch(self, other, self_ok=False):
-        if other == self.ref:
-            if not self_ok:  # pragma: no cover
-                warnings.warn("Portential problem: actor %s started watching itself; pass self_ok=True to mark as safe")
-        else:
-            assert not other.is_local if other.uri.node != self.__cell.uri.node else True
-            if not other.is_local:
-                self.__cell.hub.watch_node_death(ref=other, report_to=self.ref)
-            other << ('_watched', self.ref)
-        return other
+    def watch(self, other):
+        return self.__cell.watch(other)
+
+    def unwatch(self, other):
+        self.__cell.unwatch(other)
 
     @property
     def ref(self):
@@ -705,6 +701,7 @@ class Actor(object):
         return "<actor-impl:%s@%s>" % (type(self).__name__, self.ref.uri)
 
 
+# TODO: rename to _UnspawnedActor
 class Props(object):
     def __init__(self, cls, *args, **kwargs):
         self.cls, self.args, self.kwargs = cls, args, kwargs
@@ -763,7 +760,8 @@ class Cell(_BaseCell):
     _child_name_gen = None
     uri = None
 
-    watchers = []
+    watchers = None
+    watchees = None
 
     def __init__(self, parent, factory, uri, hub):
         super(Cell, self).__init__(hub=hub)
@@ -849,6 +847,12 @@ class Cell(_BaseCell):
         # NB: DO NOT do the same with '_suspend', '_resume' or any other message that changes the visible state of the actor!
         if message == ('_watched', ANY):
             self._do_watched(message[1])
+        elif message == ('_unwatched', ANY):
+            self._do_unwatched(message[1])
+        elif ('terminated', ANY) == message and not (self.watchees and message[1] in self.watchees):
+            pass  # ignore unwanted termination message
+        elif message == ('_node_down', ANY):
+            self._do_node_down(message[1])
         # ...except in case of an ongoing receive in which case the suspend-resume event will be seem atomic to the actor
         elif self._ongoing and message in ('_suspend', '_resume'):
             if message == '_suspend':
@@ -932,6 +936,16 @@ class Cell(_BaseCell):
             _, child = message
             self._do_child_terminated(child)
         else:
+            if ('terminated', ANY) == message:
+                _, watchee = message
+                # XXX: it's possible to have two termination messages in the queue; this will be solved when actors of
+                # nodes going down do not send individual messages but instead the node sends a single 'going-down'
+                # message:
+                if watchee not in self.watchees:
+                    return
+                self.watchees.remove(watchee)
+                self._unwatch(watchee, silent=True)
+
             receive = self.actor.receive
             try:
                 self._ongoing = receive(message)
@@ -1095,21 +1109,16 @@ class Cell(_BaseCell):
 
             self.parent.send(('_child_terminated', ref))
 
-            for watcher in self.watchers:
-                watcher.send(('terminated', ref))
+            if self.watchers:
+                for watcher in self.watchers:
+                    if watcher.uri.node != ref.uri.node and watcher.uri.path == '/server':
+                        dbg("sending TERM to", watcher)
+                    watcher.send(('terminated', ref))
         except Exception:  # pragma: no cover
             panic(u"!!BUG!!\n", traceback.format_exc())
             _, exc, tb = sys.exc_info()
             Events.log(ErrorIgnored(ref, exc, tb))
         # dbg(u"✓")
-
-    @logstring("watched:")
-    def _do_watched(self, other):
-        # dbg(other)
-        assert not self.stopped
-        if not self.watchers:
-            self.watchers = []
-        self.watchers.append(other)
 
     @logstring(u"► ↻")
     @inlineCallbacks
@@ -1150,6 +1159,8 @@ class Cell(_BaseCell):
             # dbg("SHUTDOWN: waiting for all children to stop", self)
             yield self._all_children_stopped
             # dbg("SHUTDOWN: ...children stopped", self)
+
+        self._unwatch_all()
 
         if self.constructed and hasattr(self.actor, 'post_stop'):
             try:
@@ -1194,6 +1205,67 @@ class Cell(_BaseCell):
                 Events.log(ErrorReportingFailure(self.ref, sys_exc, sys_tb))
             except Exception:
                 panic("failed to log:\n", traceback.format_exc())
+
+    def watch(self, other):
+        if isinstance(other, (type, Props)):
+            other = self.spawn(other)
+        node = self.uri.node
+        if other != self.ref:
+            assert not other.is_local if other.uri.node and other.uri.node != node else True, (other.uri.node, node)
+            if not self.watchees:
+                self.watchees = set()
+            self.watchees.add(other)
+            if not other.is_local:
+                self.hub.watch_node(other.uri.node, report_to=self.ref)
+            other << ('_watched', self.ref)
+        return other
+
+    def unwatch(self, other):
+        if self.watchees:
+            try:
+                self.watchees.remove(other)
+            except KeyError:
+                pass
+            else:
+                self._unwatch(other)
+
+    def _unwatch(self, other, silent=False):
+        # we're intentionally not purging 'terminated' messages in self.inbox
+        # --we'll do it as they are processed because it performs more smoothly
+        if not silent:
+            other << ('_unwatched', self.ref)
+        if not other.is_local:
+            self.hub.unwatch_node(other.uri.node, report_to=self.ref)
+
+    def _unwatch_all(self):
+        # called by shutdown
+        if self.watchees:
+            w = self.watchees
+            while w:
+                other = self.watchees.pop()
+                self._unwatch(other)
+
+    @logstring("watched:")
+    def _do_watched(self, other):
+        assert not self.stopped
+        if not self.watchers:
+            self.watchers = set()
+        self.watchers.add(other)
+
+    @logstring("unwatched")
+    def _do_unwatched(self, other):
+        if self.watchers:
+            self.watchers.discard(other)
+
+    @logstring("node-down")
+    def _do_node_down(self, node):
+        if self.watchees:
+            terminated_watchees = [x for x in self.watchees if x.uri.node == node]
+            for x in terminated_watchees:
+                self.receive(('terminated', x))
+                # if the message was unhandled
+                if self.stopped:
+                    break
 
     @property
     def ref(self):

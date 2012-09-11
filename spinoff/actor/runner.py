@@ -7,14 +7,13 @@ from twisted.internet import reactor
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.defer import inlineCallbacks
 from twisted.python.failure import Failure
-from txzmq import ZmqFactory, ZmqRouterConnection
+from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
 from spinoff.actor import spawn, Actor, set_default_node, Node
 from spinoff.actor._actor import _validate_nodeid, _VALID_IP_RE
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic
 from spinoff.util.pattern_matching import ANY
-
 from spinoff.actor.events import Events, Message
 from spinoff.actor.supervision import Stop, Restart, Resume
 
@@ -48,12 +47,16 @@ class ActorRunner(Service):
                     reactor.stop()
                     return
 
-                ip_addr = self._nodeid
                 Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
-                f1 = ZmqFactory()
-                insock = ZmqRouterConnection(f1, identity='tcp://%s' % (ip_addr,))
-                outsock = ZmqRouterConnection(f1, identity='tcp://%s' % (ip_addr,))
-                hub = Hub(insock, outsock, node=self._nodeid)
+                try:
+                    f1 = ZmqFactory()
+                    insock = ZmqPullConnection(f1)
+                    outsock = lambda: ZmqPushConnection(f1, linger=0)
+                    hub = Hub(insock, outsock, nodeid=self._nodeid)
+                except Exception:
+                    err("Could not set up remoting")
+                    reactor.stop()
+                    return
             else:
                 Events.log(Message("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting"))
                 hub = HubWithNoRemoting()
@@ -106,7 +109,7 @@ class Wrapper(Actor):
             else:
                 self.stop()
         else:
-            log("Actor sent message to parent: %r" % (message,))
+            Events.log(Message("Contained actor sent a message to parent: %r" % (message,)))
 
     def post_stop(self):
         try:

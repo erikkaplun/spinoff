@@ -4,6 +4,7 @@ from __future__ import print_function, absolute_import
 import inspect
 import random
 import re
+import struct
 import traceback
 from cStringIO import StringIO
 from collections import deque
@@ -14,82 +15,113 @@ from cPickle import dumps
 from twisted import internet
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
-from txzmq import ZmqEndpoint
+from twisted.internet.defer import inlineCallbacks
+from txzmq import ZmqEndpoint, ZmqFactory
 
 from spinoff.actor import _actor
 from spinoff.actor import Ref, Uri, Node
 from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
-from spinoff.actor.events import Events, DeadLetter
+from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
 from spinoff.util.logging import logstring, dbg, log, panic
-from spinoff.util.pattern_matching import ANY
+from spinoff.util.pattern_matching import ANY, IN
 
 
 # TODO: use shorter messages outside of testing
-PING = 'ping'  # this means "can you hear me?"
-PONG = 'pong'  # this means "yes, I can hear you!"
+# MUST be a single char
+PING = b'0'
 
+PING_VERSION_FORMAT = '!I'
 
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
 
 
-class ConnectedNode(object):
-    def __init__(self, addr, outsock, state, last_seen):
-        assert outsock
+class Connection(object):
+    watching_actors = None
+    queue = None
+
+    def __init__(self, owner, addr, sock, our_addr, time, known_remote_version):
+        self.owner = owner
         self.addr = addr
-        self.outsock = outsock
-        self._state = state
-        self.last_seen = last_seen
+        self.sock = sock = sock
+        self.our_addr = our_addr
+        # even if this is a fresh connection, there's no need to set seen to None--in fact it would be illogical, as by
+        # connecting, we're making an assumption that it exists; and pragmatically speaking, the heartbeat algorithm
+        # also wouldn't be able to deal with seen=None without adding an extra attribute.
+        self.seen = time
+
+        self.watched_actors = set()
         self.queue = deque()
-        self.watched_actors = []
 
-        dbg("not-known => %s" % (self._state,))
+        self.known_remote_version = known_remote_version
 
-    def _set_state(self, new_state):
-        if new_state != self._state:
-            dbg("%s => %s" % (self._state, new_state))
-            if new_state == 'visible':
-                self._flush_queue()
-            elif self._state == 'visible':
-                # XXX: not sure if both radiosilence and reverse-radiosilence should trigger this...?
-                self._emit_termination_messages()
-            elif new_state == 'silentlyhoping':
-                self._drain_queue()
-            self._state = new_state
+        sock.addEndpoints([ZmqEndpoint('connect', addr)])
 
-    def _get_state(self):
-        return self._state
+    @property
+    def is_active(self):
+        return self.queue is None
 
-    state = property(_get_state, _set_state)
+    def send(self, ref, msg):
+        if self.queue is not None:
+            self.queue.append((ref, msg))
+        else:
+            self._do_send(dumps((ref.uri.path, msg), protocol=2))
+
+    def established(self, remote_version):
+        log("Established connection to %s." % self.addr)
+        self.known_remote_version = remote_version
+        self._flush_queue()
+        del self.queue
+
+    def close(self):
+        self._kill_queue()
+        self._emit_termination_messages()
+        self.sock.shutdown()
+        del self.sock
+
+    @logstring(u" ❤⇝")
+    def heartbeat(self):
+        self._do_send(PING + struct.pack(PING_VERSION_FORMAT, self.owner.version))
+        self.owner.version += 1
+
+    @logstring(u"⇝")
+    def _do_send(self, msg):
+        self.sock.sendMultipart((self.our_addr, msg))
 
     def _flush_queue(self):
-        q = self.queue
+        q, self.queue = self.queue, None
         while q:
-            (ref, queued_msg), _ = q.popleft()
+            ref, msg = q.popleft()
             assert ref.uri.root.url == self.addr
-            self.outsock.sendMsg(self.addr, dumps((ref.uri.path, queued_msg), protocol=2))
+            self._do_send(dumps((ref.uri.path, msg), protocol=2))
 
-    def _emit_termination_messages(self):
-        log()
-        for report_to, ref in self.watched_actors:
-            assert report_to.is_local and not ref.is_local
-            report_to << ('terminated', ref)
-        self.watched_actors = []
-
-    def _purge_old_items_in_queue(self, keep_until):
-        q = self.queue
+    def _kill_queue(self):
+        q, self.queue = self.queue, None
         while q:
-            (ref, msg), timestamp = q[0]
-            if timestamp >= keep_until:
-                break
-            else:
-                q.popleft()
+            ref, msg = q.popleft()
+            if (IN(['_watched', '_unwatched', 'terminated']), ANY) != msg:
                 Events.log(DeadLetter(ref, msg))
 
-    def _drain_queue(self):
-        for (ref, msg), _ in self.queue:
-            # dbg("dropping %r" % (msg,))
-            Events.log(DeadLetter(ref, msg))
-        self.queue = None
+    def watch(self, report_to):
+        if not self.watching_actors:
+            self.watching_actors = set()
+        self.watching_actors.add(report_to)
+
+    def unwatch(self, report_to):
+        if self.watching_actors:
+            self.watching_actors.discard(report_to)
+
+    def _emit_termination_messages(self):
+        if self.watching_actors:
+            w, self.watching_actors = self.watching_actors, None
+            for report_to in w:
+                report_to << ('_node_down', self.addr[len('tcp://'):])
+
+    def __del__(self):
+        if hasattr(self, 'sock') and self.sock:
+            self.sock.shutdown()
+            del self.sock
+            self.zmq_factory.shutdown()
+            del self.zmq_factory
 
     def __repr__(self):
         return '<connection:%s>' % (self.addr,)
@@ -106,66 +138,93 @@ class Hub(object):
         "subsituted by the framework for heartbeats to save network bandwidth.")
     HEARTBEAT_INTERVAL = 1.0
 
-    __doc_MAX_SILENCE_BETWEEN_HEARTBEATS__ = (
-        "Maximum length of silence in seconds between two consecutive heartbeat signals from a node after which to "
-        "consider the node as temporarily not available, put it in the 'radio-silence' state, and start queueing all "
-        "messages posted to it by actors.")
-    MAX_SILENCE_BETWEEN_HEARTBEATS = 5.0
+    HEARTBEAT_MAX_SILENCE = 4.0
 
-    __doc_TIME_TO_KEEP_HOPE__ = (
-        "Time in seconds after which the 'radio-silence' state transforms into a 'silently-hoping' state wherein the "
-        "is considered to have gone offline for an extended duration. All currently queued and any future messages to"
-        "that node will immediately be turned into `DeadLetter` events.")
-    TIME_TO_KEEP_HOPE = 55.0
+    nodeid = None
 
-    __doc_QUEUE_ITEM_LIFETIME__ = (
-        "Time in seconds for which to keep a queued message alive, after which the message is turned into a "
-        "`DeadLetter` event. The default value is chosen such that exactly when the target node goes into the "
-        "'silently-hoping' visibility state, all messages to it are discarded.")
-    QUEUE_ITEM_LIFETIME = MAX_SILENCE_BETWEEN_HEARTBEATS + TIME_TO_KEEP_HOPE
-
-    node = None
-
-    def __init__(self, incoming, outgoing, node, reactor=reactor):
-        if not node or not isinstance(node, str):  # pragma: no cover
-            raise TypeError("The 'node' argument to Hub must be a str")
-        _validate_nodeid(node)
-        self.node = node
-        self.addr = 'tcp://' + node if node else None
+    def __init__(self, insock, outsock_factory, nodeid, reactor=reactor):
+        if not nodeid or not isinstance(nodeid, str):  # pragma: no cover
+            raise TypeError("The 'nodeid' argument to Hub must be a str")
+        _validate_nodeid(nodeid)
 
         self.reactor = reactor
 
-        self.incoming = incoming
-        self.outgoing = outgoing
-        incoming.gotMessage = self._got_message
-        incoming.addEndpoints([ZmqEndpoint('bind', self.addr)])
+        self.nodeid = nodeid
+        self.addr = 'tcp://' + nodeid if nodeid else None
 
+        # guarantees that terminations will not go unnoticed and that termination messages won't arrive out of order
+        self.version = 0
+
+        self.insock = insock
+        insock.gotMultipart = self._got_message
+        insock.addEndpoints([ZmqEndpoint('bind', self.addr)])
+
+        self.outsock_factory = outsock_factory
         self.connections = {}
 
-        l1 = LoopingCall(self._manage_heartbeat_and_visibility)
+        l1 = self._heartbeater = LoopingCall(self._manage_heartbeat_and_visibility)
         l1.clock = reactor
         l1.start(self.HEARTBEAT_INTERVAL)
 
-        l2 = LoopingCall(self._purge_old_items_in_queue)
-        l2.clock = reactor
-        l2.start(1.0)
+    @logstring(u"⇜")
+    def _got_message(self, (sender_addr, msg)):
+        conn = self.connections.get(sender_addr)
 
-        self._looping_calls = [l1, l2]
+        if msg[0] == PING:
+            remote_version, = struct.unpack(PING_VERSION_FORMAT, msg[1:])  # not sure this is even necessary
 
-    _guardian = None
+            if not conn:
+                self._connect(sender_addr)
+            else:
+                # first ping arrived:
+                if not conn.is_active:
+                    # mark connection as established (flushes the queue and starts sending):
+                    conn.established(remote_version)
+                # version mismatch:
+                elif not (remote_version > conn.known_remote_version):
+                    # he has restarted. notify our actors of it:
+                    conn._emit_termination_messages()
 
-    def logstate(self):  # pragma: no cover
-        return {str(self.reactor.seconds()): True}
+                conn.known_remote_version = remote_version
+                conn.seen = self.reactor.seconds()
 
-    def _get_guardian(self):
-        return self._guardian
+        else:
+            path, msg = self._loads(msg)
+            if conn:
+                conn.seen = self.reactor.seconds()
+                self._deliver_local(path, msg, sender_addr)
+            else:
+                self._connect(sender_addr)
+                self._remote_dead_letter(path, msg, sender_addr)
 
-    def _set_guardian(self, guardian):
-        if self._guardian:  # pragma: no cover
-            raise RuntimeError("Hub already bound to a Guardian")
-        self._guardian = guardian
+    @logstring(u"❤")
+    def _manage_heartbeat_and_visibility(self):
+        try:
+            t_gone = self.reactor.seconds() - self.HEARTBEAT_MAX_SILENCE
+            for addr, conn in self.connections.items():
+                if conn.seen < t_gone:
+                    log("Lost connectivity with %r" % conn)
+                    conn.close()
+                    del self.connections[addr]
+                else:
+                    conn.heartbeat()
+        except Exception:  # pragma: no cover
+            panic("heartbeat logic failed:\n", traceback.format_exc())
 
-    guardian = property(_get_guardian, _set_guardian)
+    def _connect(self, addr):
+        assert _valid_addr(addr)
+        conn = self.connections[addr] = Connection(
+            owner=self,
+            addr=addr,
+            sock=self.outsock_factory(),
+            our_addr=self.addr,
+            time=self.reactor.seconds(),
+            known_remote_version=None,
+        )
+
+        # dbg(u"►► ❤ →", addr)
+        conn.heartbeat()
+        return conn
 
     @logstring(u"⇝")
     def send(self, msg, to_remote_actor_pointed_to_by):
@@ -174,149 +233,81 @@ class Hub(object):
 
         nodeid = ref.uri.node
 
-        # assert addr and addr != self.node, "TODO: remote-ref pointing to the local node detected"
-        # TODO: if it's determined that it makes sense to allow the existence of such refs, enable the following block
-        if not nodeid or nodeid == self.node:
-            cell = self.guardian.lookup_cell(ref.uri)
-            if cell:
-                ref._cell = cell
-                ref.is_local = True
-                ref << msg
-            else:
-                ref.is_local = True  # next time, just put it straight to DeadLetters
-                Events.log(DeadLetter(ref, msg))
-            return
-
-        addr = ref.uri.root.url
-
-        conn = self.connections.get(addr)
-        if not conn:
-            dbg("%s set from not-known => %s" % (addr, 'radiosilence',))
-            conn = self._make_conn(addr)
-
-        if conn.state == 'visible':
-            self.outgoing.sendMsg(addr, dumps((ref.uri.path, msg), protocol=2))
+        if nodeid and nodeid != self.nodeid:
+            addr = ref.uri.root.url
+            conn = self.connections.get(addr)
+            if not conn:
+                conn = self._connect(addr)
+            conn.send(ref, msg)
         else:
-            if conn.queue is None:
+            self._send_local(msg, ref)
+
+    def watch_node(self, nodeid, report_to):
+        node_addr = 'tcp://' + nodeid
+        conn = self.connections.get(node_addr)
+        if not conn:
+            conn = self._connect(node_addr)
+        conn.watch(report_to)
+
+    def unwatch_node(self, nodeid, report_to):
+        node_addr = 'tcp://' + nodeid
+        conn = self.connections.get(node_addr)
+        if conn:
+            conn.unwatch(report_to)
+
+    def _send_local(self, msg, ref):
+        cell = self.guardian.lookup_cell(ref.uri)
+        if cell:
+            ref._cell = cell
+            ref.is_local = True
+            ref << msg
+        else:
+            ref.is_local = True  # next time, just put it straight to DeadLetters
+            if msg not in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
                 Events.log(DeadLetter(ref, msg))
+
+    def _deliver_local(self, path, msg, sender_addr):
+        cell = self.guardian.lookup_cell(Uri.parse(path))
+        if not cell:
+            if ('_watched', ANY) == msg:
+                watched_ref = Ref(cell=None, is_local=False, uri=Uri.parse(self.nodeid + path))
+                _, watcher = msg
+                watcher << ('terminated', watched_ref)
             else:
-                conn.queue.append(((ref, msg), self.reactor.seconds()))
+                if msg not in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
+                    self._remote_dead_letter(path, msg, sender_addr)
+        else:
+            cell.receive(msg)  # XXX: force_async=True perhaps?
 
-    def watch_node_death(self, ref, report_to):
-        node_addr = 'tcp://' + ref.uri.node
-        if node_addr not in self.connections:
-            self._make_conn(node_addr)
-        assert node_addr in self.connections
-        self.connections[node_addr].watched_actors.append((report_to, ref))
-
+    @inlineCallbacks
     def stop(self):
-        for x in self._looping_calls:
-            x.stop()
+        self._heartbeater.stop()
         self.incoming.shutdown()
         self.outgoing.shutdown()
-
-    @logstring(u"⇜")
-    def _got_message(self, sender_addr, msg):
-        if msg in (PING, PONG):
-            dbg(u"❤ %s ← %s" % (msg, sender_addr,))
-        else:
-            path, msg_ = self._loads(msg)
-            dbg(u"%r ← %s   → %s" % (msg_, sender_addr, path))
-            cell = self.guardian.lookup_cell(Uri.parse(path))
-            if not cell:
-                if ('_watched', ANY) == msg_:
-                    watched_ref = Ref(cell=None, is_local=False, uri=Uri.parse(self.node + path))
-                    _, watcher = msg_
-                    dbg("%r which does not exist watched by %r" % (watched_ref, watcher))
-                    watcher << ('terminated', watched_ref)
-                else:
-                    Events.log(DeadLetter(Ref(None, Uri.parse(path)), msg_))
-            else:
-                cell.receive(msg_)  # XXX: force_async=True perhaps?
-
-        if sender_addr not in self.connections:
-            assert msg == PING, "initial message sent to another node should be PING"
-            conn = self.connections[sender_addr] = ConnectedNode(
-                addr=sender_addr,
-                outsock=self.outgoing,
-                state='reverse-radiosilence',
-                last_seen=self.reactor.seconds())
-            self._connect(sender_addr, conn)
-        else:
-            conn = self.connections[sender_addr]
-            conn.last_seen = self.reactor.seconds()
-            conn.state = 'reverse-radiosilence' if msg == PING else 'visible'
-
-    def _make_conn(self, addr):
-        conn = self.connections[addr] = ConnectedNode(
-            addr=addr,
-            outsock=self.outgoing,
-            state='radiosilence',
-            # so last_seen checks would mark the node as `silentlyhoping` in `TIME_TO_KEEP_HOPE` seconds from now;
-            # conceptually speaking, this means the node seems to have always existed but went out of view exactly
-            # now, and before sending can start "again", it needs to come back:
-            last_seen=self.reactor.seconds() - self.MAX_SILENCE_BETWEEN_HEARTBEATS
-        )
-        self._connect(addr, conn)
-        return conn
-
-    def _connect(self, addr, conn):
-        assert _valid_addr(addr)
-        # dbg("...connecting to %s" % (addr,))
-        self.outgoing.addEndpoints([ZmqEndpoint('connect', addr)])
-        # send one heartbeat immediately for better latency
-        dbg(u"►► ❤ → %s" % (addr,))
-        self._heartbeat_once(addr, PING if conn.state == 'radiosilence' else PONG)
-
-    @logstring(u"❤")
-    def _manage_heartbeat_and_visibility(self):
-        try:
-            # dbg("→ %r" % (list(self.connections),))
-            t = self.reactor.seconds()
-            consider_dead_from = t - self.MAX_SILENCE_BETWEEN_HEARTBEATS
-            consider_lost_from = consider_dead_from - self.TIME_TO_KEEP_HOPE
-            # dbg("consider_dead_from", consider_dead_from, "consider_lost_from", consider_lost_from)
-
-            for addr, conn in self.connections.items():
-                # dbg("%s last seen at %ss" % (addr, conn.last_seen))
-                if conn.state == 'silentlyhoping':
-                    # dbg("silently hoping...")
-                    self._heartbeat_once(addr, PING)
-                elif conn.last_seen < consider_lost_from:
-                    conn.state = 'silentlyhoping'
-                    self._heartbeat_once(addr, PING)
-                elif conn.last_seen < consider_dead_from:
-                    if conn.state != 'radiosilence':
-                        conn.state = 'radiosilence'
-                    self._heartbeat_once(addr, PING)
-                else:
-                    # dbg("%s still %s; not seen for %s" % (addr, conn.state, '%ds' % (t - conn.last_seen) if conn.last_seen is not None else 'eternity',))
-                    self._heartbeat_once(addr, PONG)
-            # dbg(u"%s ✓" % (self.reactor.seconds(),))
-        except Exception:  # pragma: no cover
-            panic("heartbeat logic failed:\n", traceback.format_exc())
-
-    @logstring(u"⇝ ❤")
-    def _heartbeat_once(self, addr, signal):
-        assert _valid_addr(addr)
-        log(u"%s →" % (signal,), addr)
-        self.outgoing.sendMsg(addr, signal)
-
-    @logstring("PURGE")
-    def _purge_old_items_in_queue(self):
-        for conn in self.connections.values():
-            try:
-                keep_until = self.reactor.seconds() - self.QUEUE_ITEM_LIFETIME
-                # dbg(conn.queue, "keep_until = %r, QUEUE_ITEM_LIFETIME = %r" % (keep_until, self.QUEUE_ITEM_LIFETIME,))
-                conn._purge_old_items_in_queue(keep_until)
-            except Exception:  # pragma: no cover
-                panic("failed to clean queue:\n", traceback.format_exc())
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
 
+    def logstate(self):  # pragma: no cover
+        return {str(self.reactor.seconds()): True}
+
+    def _remote_dead_letter(self, path, msg, from_):
+        uri = Uri.parse(self.nodeid + path)
+        ref = Ref(cell=self.guardian.lookup_cell(uri), uri=uri, is_local=True)
+        Events.log(RemoteDeadLetter(ref, msg, from_))
+
+    def _get_guardian(self):
+        return self._guardian
+
+    def _set_guardian(self, guardian):
+        if self._guardian:  # pragma: no cover
+            raise RuntimeError("Hub already bound to a Guardian")
+        self._guardian = guardian
+    _guardian = None
+    guardian = property(_get_guardian, _set_guardian)
+
     def __repr__(self):
-        return '<remoting:%s>' % (self.node,)
+        return '<remoting:%s>' % (self.nodeid,)
 
 
 class HubWithNoRemoting(object):
@@ -357,7 +348,7 @@ class IncomingMessageUnpickler(Unpickler):
 
             # detect our own refs sent back to us
             ref = self.stack[-1]
-            if ref.uri.node == self.hub.node:
+            if ref.uri.node == self.hub.nodeid:
                 ref.is_local = True
                 ref._cell = self.hub.guardian.lookup_cell(ref.uri)
                 # dbg(("dead " if not ref._cell else "") + "local ref detected")
