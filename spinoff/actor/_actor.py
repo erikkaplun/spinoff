@@ -1175,11 +1175,11 @@ class Cell(_BaseCell):
         try:
             exc_fmt = traceback.format_exception(type(exc), exc, tb)
             exc_fmt = list(clean_tb_twisted(exc_fmt))
-            exc_fmt = '\n'.join(exc_fmt)
+            exc_fmt = ''.join(exc_fmt)
             if isinstance(exc, WrappingException):
                 inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
                 inner_exc_fm = list(clean_tb_twisted(inner_exc_fm))
-                inner_exc_fm = '\n'.join('      ' + line for line in inner_exc_fm)
+                inner_exc_fm = ''.join('      ' + line for line in inner_exc_fm)
                 exc_fmt += "\n-------\nCAUSE:\n\n" + inner_exc_fm
             fail('\n\n', exc_fmt)
             Events.log(Error(self.ref, exc, tb)),
