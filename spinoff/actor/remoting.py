@@ -15,8 +15,7 @@ from cPickle import dumps
 from twisted import internet
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
-from twisted.internet.defer import inlineCallbacks
-from txzmq import ZmqEndpoint, ZmqFactory
+from txzmq import ZmqEndpoint
 
 from spinoff.actor import _actor
 from spinoff.actor import Ref, Uri, Node

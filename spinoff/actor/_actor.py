@@ -18,18 +18,15 @@ from twisted.internet.defer import inlineCallbacks, Deferred
 from txcoroutine import coroutine
 
 from spinoff.actor.events import (
-    Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure)
+    Events, UnhandledMessage, DeadLetter, ErrorIgnored, TopLevelActorTerminated, ErrorReportingFailure, Error, UnhandledError)
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY, IN
-from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout
+from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout, sleep
 from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import logstring, dbg, fail, panic, err
-from spinoff.actor.events import Error
 from spinoff.util.python import clean_tb_twisted
-from spinoff.util.async import sleep
-from spinoff.actor.events import UnhandledError
 
 
 TESTING = False
