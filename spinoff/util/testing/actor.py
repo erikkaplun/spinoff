@@ -37,38 +37,48 @@ class ErrorCollector(object):
     def __init__(self):
         self.errors = []
 
-    def collect(self, event):
+    @classmethod
+    def collect(cls, event):
+        cls.stack[-1].on_event(event)
+
+    @classmethod
+    def subscribe(cls):
+        for event_type in _ERROR_EVENTS:
+            Events.subscribe(event_type, ErrorCollector.collect)
+
+    @classmethod
+    def unsubscribe(cls):
+        for event_type in _ERROR_EVENTS:
+            Events.unsubscribe(event_type, ErrorCollector.collect)
+
+    def on_event(self, event):
         sender, exc, tb = event
         tb_formatted = ''.join(traceback.format_exception(exc, None, tb))
-        error_report = 'ACTOR %s, EVENT %s:\n%s' % (sender, type(event).__name__, tb_formatted + '\n' + type(exc).__name__ + (': ' + str(exc.args[0]) if exc.args else ''))
+        error_report = 'ACTOR %s, EVENT %s:\n' % (sender, type(event).__name__)
+        error_report += self.format_exc(exc, tb)
+        self.errors.append((error_report, exc, tb_formatted))
+
+    def format_exc(self, exc, tb):
+        tb_formatted = ''.join(traceback.format_exception(exc, None, tb))
+        error_report = tb_formatted + '\n' + type(exc).__name__ + (': ' + str(exc.args[0]) if exc.args else '')
         if isinstance(exc, WrappingException):
             fmted = exc.formatted_original_tb()
             indented = '\n'.join('    ' + line for line in fmted.split('\n') if line)
             error_report += '\n' + indented
-        self.errors.append((error_report, exc, tb_formatted))
+        return error_report
 
     def __enter__(self):
         stack = ErrorCollector.stack
-
-        if stack:
-            for event_type in _ERROR_EVENTS:
-                Events.unsubscribe(event_type, stack[-1].collect)
-
+        if not stack:
+            ErrorCollector.subscribe()
         stack.append(self)
-        for event_type in _ERROR_EVENTS:
-            Events.subscribe(event_type, self.collect)
 
     def __exit__(self, exc_cls, exc, tb):
         stack = ErrorCollector.stack
-
         assert stack[-1] == self
-        for event_type in _ERROR_EVENTS:
-            Events.unsubscribe(event_type, self.collect)
         stack.pop()
-
-        if stack:
-            for event_type in _ERROR_EVENTS:
-                Events.subscribe(event_type, stack[-1].collect)
+        if not stack:
+            ErrorCollector.unsubscribe()
 
         clean = not exc
 
