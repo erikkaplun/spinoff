@@ -122,7 +122,7 @@ class Connection(object):
             del self.sock
 
     def __repr__(self):
-        return '<connection:%s>' % (self.addr,)
+        return '<connection:%s->%s>' % (self.owner.nodeid, self.addr[len('tcp://'):])
 
 
 class Hub(object):
@@ -522,7 +522,7 @@ class MockNetwork(object):  # pragma: no cover
         return {str(internet.reactor.seconds()): True}
 
     def __repr__(self):
-        return 'network'
+        return 'mock-network'
 
 
 class MockInSocket(object):  # pragma: no cover
