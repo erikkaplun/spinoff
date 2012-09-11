@@ -204,8 +204,8 @@ class _HubBound(object):
     """Internal abstract class for objects that depend on {being bound to/having available} a `Hub` instance."""
     _hub = None
 
-    def __init__(self, hub):
-        assert hub if TESTING else not hub
+    def __init__(self, hub, is_local=True):
+        assert hub or is_local if TESTING else not hub
         if hub:
             self._hub = hub
 
@@ -272,8 +272,8 @@ class Ref(_BaseRef, _HubBound):
     is_local = True
 
     def __init__(self, cell, uri, is_local=True, hub=None):
+        super(Ref, self).__init__(hub=hub, is_local=is_local)
         assert uri is None or isinstance(uri, Uri)
-        super(Ref, self).__init__(hub=hub)
         if cell:
             assert not hub
             assert isinstance(cell, Cell)
