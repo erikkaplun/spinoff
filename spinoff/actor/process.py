@@ -155,6 +155,7 @@ class Process(Actor):
         if self.__queue:  # XXX: added without testing
             for message in self.__queue:
                 self._Actor__cell._unhandled(message)
+            del self.__queue[:]
 
     @logstring(u"escalate ↑")
     def escalate(self):
