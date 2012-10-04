@@ -668,11 +668,11 @@ class Actor(object):
     def children(self):
         return self.__cell.children
 
-    def watch(self, other):
-        return self.__cell.watch(other)
+    def watch(self, actor, *actors):
+        return self.__cell.watch(actor, *actors)
 
-    def unwatch(self, other):
-        self.__cell.unwatch(other)
+    def unwatch(self, actor, *actors):
+        self.__cell.unwatch(actor, *actors)
 
     @property
     def ref(self):
@@ -1225,29 +1225,32 @@ class Cell(_BaseCell):
             except Exception:
                 panic("failed to log:\n", traceback.format_exc())
 
-    def watch(self, other):
-        if isinstance(other, (type, Props)):
-            other = self.spawn(other)
-        node = self.uri.node
-        if other != self.ref:
-            assert not other.is_local if other.uri.node and other.uri.node != node else True, (other.uri.node, node)
-            if not self.watchees:
-                self.watchees = set()
-            if other not in self.watchees:
-                self.watchees.add(other)
-                if not other.is_local:
-                    self.hub.watch_node(other.uri.node, report_to=self.ref)
-                other << ('_watched', self.ref)
-        return other
+    def watch(self, actor, *actors):
+        actors = (actor,) + actors
+        actors = [self.spawn(x) if isinstance(x, (type, Props)) else x for x in actors]
+        for other in actors:
+            node = self.uri.node
+            if other != self.ref:
+                assert not other.is_local if other.uri.node and other.uri.node != node else True, (other.uri.node, node)
+                if not self.watchees:
+                    self.watchees = set()
+                if other not in self.watchees:
+                    self.watchees.add(other)
+                    if not other.is_local:
+                        self.hub.watch_node(other.uri.node, report_to=self.ref)
+                    other << ('_watched', self.ref)
+        return actors[0] if len(actors) == 1 else actors
 
-    def unwatch(self, other):
+    def unwatch(self, actor, *actors):
+        actors = (actor,) + actors
         if self.watchees:
-            try:
-                self.watchees.remove(other)
-            except KeyError:
-                pass
-            else:
-                self._unwatch(other)
+            for actor in actors:
+                try:
+                    self.watchees.remove(actor)
+                except KeyError:
+                    pass
+                else:
+                    self._unwatch(actor)
 
     def _unwatch(self, other, silent=False):
         # we're intentionally not purging 'terminated' messages in self.inbox
