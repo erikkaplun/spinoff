@@ -240,9 +240,12 @@ def _do_write(level, *args, **kwargs):
                   (os.getpid(), levelname, loc, logname, statestr, logstring)),
                   file=OUTFILE, *(args + (comment,)))
             if dump_parent_caller:
-                file, lineno, caller_name, caller = get_calling_context(frame.f_back)
-                loc = "%s:%s" % (file, lineno)
-                print("\t(invoked by) %s  %s  %s" % (get_logname(caller), caller_name, loc), file=OUTFILE)
+                parent_frame = frame
+                for i in range(dump_parent_caller):
+                    parent_frame = parent_frame.f_back
+                    file_, lineno, caller_name, caller = get_calling_context(parent_frame)
+                    loc = "%s:%s" % (file_, lineno)
+                    print(" " * (i + 1) + "(invoked by) %s  %s  %s" % (get_logname(caller), caller_name, loc), file=OUTFILE)
     except Exception:
         # from nose.tools import set_trace; set_trace()
         print(RED, u"!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
