@@ -213,8 +213,8 @@ def _write(level, *args, **kwargs):
 
             dump_parent_caller = kwargs.pop('caller', False)
             # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
-            print("%s %s  %s %s  %s  %s" %
-                  (os.getpid(), levelname, loc, logname, statestr, logstring),
+            print(("%s %s  %s %s  %s  in %s" %
+                  (os.getpid(), levelname, loc, logname, statestr, logstring)),
                   file=OUTFILE, *(args + (comment,)))
             if dump_parent_caller:
                 file, lineno, caller_name, caller = get_calling_context(frame.f_back)
