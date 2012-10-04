@@ -205,6 +205,7 @@ def _write(level, *args, **kwargs):
 
             comment = get_logcomment(caller)
 
+            file = os.path.split(file)[-1]
             loc = "%s:%s" % (file, lineno)
             if level >= 9:  # blink for panics
                 loc = BLINK + loc + RESET_COLOR
