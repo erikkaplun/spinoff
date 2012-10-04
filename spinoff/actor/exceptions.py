@@ -31,6 +31,7 @@ class CreateFailed(WrappingException):
         _, self.cause, self.tb = sys.exc_info()
         self.actor = actor
         self.message = message
+        self.args = (message, actor)
 
     def __repr__(self):
         return 'CreateFailed(%r, %s, %s)' % (self.message, self.actor, repr(self.cause))
