@@ -102,6 +102,9 @@ class _AfterWrap(object):
     def then(self, fn, *args, **kwargs):
         return _AfterWrap(self.d.addCallback(lambda result: fn(result, *args, **kwargs)))
 
+    def cancel(self):
+        self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+
 
 exec_async = lambda f: inlineCallbacks(f)()
 
