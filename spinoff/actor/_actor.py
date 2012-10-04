@@ -971,7 +971,7 @@ class Cell(_BaseCell):
 
     def _unhandled(self, message):
         if ('terminated', ANY) == message:
-            raise UnhandledTermination
+            raise UnhandledTermination(watcher=self.ref, watchee=message[1])
         else:
             Events.log(UnhandledMessage(self.ref, message))
 

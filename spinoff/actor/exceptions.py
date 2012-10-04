@@ -11,7 +11,9 @@ class Unhandled(Exception):
 
 
 class UnhandledTermination(Exception):
-    pass
+    def __init__(self, watcher, watchee):
+        self.watcher = watcher
+        self.watchee = watchee
 
 
 class WrappingException(Exception):
