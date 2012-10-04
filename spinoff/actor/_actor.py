@@ -601,8 +601,7 @@ class Node(object):
         yield self.guardian.stop()
         # TODO: just make the node send a special notification to other nodes, so as to avoid needless sending of many
         # small termination messages:
-        if not TESTING:
-            yield sleep(.1)  # let actors send termination messages
+        yield sleep(.1)  # let actors send termination messages
         yield self.hub.stop()
 
     def __getstate__(self):  # pragma: no cover
