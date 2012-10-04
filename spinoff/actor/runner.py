@@ -14,6 +14,7 @@ from spinoff.actor import spawn, Actor, set_default_node, Node
 from spinoff.actor._actor import _validate_nodeid, _VALID_IP_RE
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic
+from spinoff.util.async import after
 from spinoff.util.pattern_matching import ANY
 from spinoff.actor.events import Events, Message
 from spinoff.actor.supervision import Stop, Restart, Resume
@@ -107,7 +108,7 @@ class Wrapper(Actor):
         elif message == ('terminated', self.actor):
             _, actor = message
             if self.keep_running:
-                self._do_spawn()
+                after(1.0).do(self._do_spawn)
             else:
                 self.stop()
         else:
