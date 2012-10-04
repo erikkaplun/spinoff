@@ -248,7 +248,8 @@ def _do_write(level, *args, **kwargs):
                     print(" " * (i + 1) + "(invoked by) %s  %s  %s" % (get_logname(caller), caller_name, loc), file=OUTFILE)
     except Exception:
         # from nose.tools import set_trace; set_trace()
-        print(RED, u"!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
+        print(RED, "!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
+        print(RED, "...while trying to log", repr(args), repr(comment) if 'comment' in locals() else '')
         print(traceback.format_exc(), RESET_COLOR, file=sys.stderr)
 
 
