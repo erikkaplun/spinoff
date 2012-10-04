@@ -324,6 +324,12 @@ class HubWithNoRemoting(object):
     def stop(self):  # pragma: no cover
         pass
 
+    def watch_node(self, *args, **kwargs):
+        raise RuntimeError("Attempt to watch a remote node but remoting is not available")
+
+    def unwatch_node(self, *args, **kwargs):
+        raise RuntimeError("Attempt to unwatch a remote node but remoting is not available")
+
 
 class IncomingMessageUnpickler(Unpickler):
     """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
