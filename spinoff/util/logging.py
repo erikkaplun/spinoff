@@ -228,11 +228,11 @@ def _write(level, *args, **kwargs):
 
 
 def get_logname(obj):
-    return (repr(obj).strip('<>')
-            if not isinstance(obj, type) else
-            obj.__name__
+    return (obj.__name__
+            if isinstance(obj, type) else
+            repr(obj).strip('<>')
             if not isinstance(obj, types.ModuleType) else
-            '(module) ' + obj.__name__)
+            'module ' + obj.__name__)
 
 
 def get_logstate(obj):
