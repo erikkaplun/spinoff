@@ -1,13 +1,11 @@
 from __future__ import print_function
 
-import sys
 import warnings
 from contextlib import contextmanager
 from functools import wraps
 
-from nose.twistedtools import deferred as nose_deferred
+from twisted.internet.defer import Deferred
 from twisted.internet.task import Clock
-from twisted.internet.defer import Deferred, maybeDeferred
 
 from spinoff.util.async import CancelledError
 
