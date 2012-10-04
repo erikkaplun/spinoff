@@ -14,7 +14,7 @@ from spinoff.actor import Actor, ActorType, CreateFailed
 from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
-from spinoff.util.pattern_matching import ANY
+from spinoff.util.pattern_matching import OR
 from spinoff.util.logging import logstring, flaw, panic
 
 
@@ -84,8 +84,9 @@ class Process(Actor):
                 Events.log(HighWaterMarkReached(self.ref, l))
 
     @logstring("get")
-    def get(self, match=ANY):
+    def get(self, *patterns):
         # dbg("PROCESS: get")
+        pattern = OR(*patterns)
         try:
             if self.__pre_start_complete_d:
                 # dbg("PROCESS: first get")
@@ -94,7 +95,7 @@ class Process(Actor):
 
             if self.__queue:
                 try:
-                    ix = self.__queue.index(match)
+                    ix = self.__queue.index(pattern)
                 except ValueError:
                     pass
                 else:
@@ -102,7 +103,7 @@ class Process(Actor):
                     return self.__queue.pop(ix)
 
             # dbg("PROCESS: ready for message")
-            self.__get_d = _PickyDeferred(match, canceller=self.__clear_get_d)
+            self.__get_d = _PickyDeferred(pattern, canceller=self.__clear_get_d)
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:  # pragma: no cover
