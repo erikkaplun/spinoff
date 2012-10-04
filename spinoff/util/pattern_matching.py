@@ -139,14 +139,14 @@ class IF(Matcher):
 
 
 class OR(Matcher):
-    def __init__(self, matcher1, matcher2):
-        self.matcher1, self.matcher2 = matcher1, matcher2
+    def __init__(self, *matchers):
+        self.matchers = matchers
 
     def __eq__(self, x):
-        return self.matcher1 == x or self.matcher2 == x
+        return any(matcher == x for matcher in self.matchers)
 
     def __str__(self):
-        return '%s | %s' % (self.matcher1, self.matcher2)
+        return ' | '.join(repr(x) for x in self.matchers)
 
 
 class AND(Matcher):
