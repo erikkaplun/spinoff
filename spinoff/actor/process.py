@@ -49,21 +49,15 @@ class Process(Actor):
 
     _coroutine = None
 
-    __args = None
-    __kwargs = None
-
-    def __init__(self, *args, **kwargs):
-        self.__args, self.__kwargs = args, kwargs
-
     @abc.abstractmethod
     def run(self, *args, **kwargs):  # pragma: no cover
         yield
 
-    def pre_start(self):
+    def pre_start(self, *args, **kwargs):
         # dbg()
         self.__pre_start_complete_d = Deferred()
         try:
-            self._coroutine = self.run(*(self.__args or ()), **(self.__kwargs or {}))
+            self._coroutine = self.run(*args, **kwargs)
             # dbg("PROCESS: coroutine created")
             self._coroutine.addCallback(self.__handle_complete)
             if self._coroutine:
