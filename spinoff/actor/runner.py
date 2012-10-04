@@ -110,6 +110,7 @@ class Wrapper(Actor):
             if self.keep_running:
                 after(1.0).do(self._do_spawn)
             else:
+                log("actor terminated but not re-spawning actor; pass --keepruning/-k to change this behaviour")
                 self.stop()
         else:
             Events.log(Message("Contained actor sent a message to parent: %r" % (message,)))
