@@ -654,6 +654,10 @@ class Actor(object):
         cls.SENDING_IS_ASYNC = cls._DEFAULT_SENDING_IS_ASYNC
 
     __cell = None  # make it really private so it's hard and unpleasant to access the cell
+    __startargs = ((), {})
+
+    def __init__(self, *args, **kwargs):
+        self.__startargs = args, kwargs
 
     def receive(self, message):
         raise Unhandled
@@ -994,8 +998,9 @@ class Cell(_BaseCell):
 
         if hasattr(actor, 'pre_start'):
             pre_start = actor.pre_start
+            args, kwargs = actor._Actor__startargs
             try:
-                self._ongoing = pre_start()
+                self._ongoing = pre_start(*args, **kwargs)
                 yield self._ongoing
                 del self._ongoing
             except Exception:
