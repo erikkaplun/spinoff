@@ -1198,15 +1198,21 @@ class Cell(_BaseCell):
         else:
             exc, tb = exc_and_tb
         try:
-            exc_fmt = traceback.format_exception(type(exc), exc, tb)
-            exc_fmt = list(clean_tb_twisted(exc_fmt))
-            exc_fmt = ''.join(exc_fmt)
-            if isinstance(exc, WrappingException):
-                inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
-                inner_exc_fm = list(clean_tb_twisted(inner_exc_fm))
-                inner_exc_fm = ''.join('      ' + line for line in inner_exc_fm)
-                exc_fmt += "\n-------\nCAUSE:\n\n" + inner_exc_fm
-            fail('\n\n', exc_fmt)
+            if not isinstance(exc, UnhandledTermination):
+                if isinstance(tb, str):
+                    exc_fmt = tb
+                else:
+                    exc_fmt = traceback.format_exception(type(exc), exc, tb)
+                    exc_fmt = list(clean_tb_twisted(exc_fmt))
+                    exc_fmt = ''.join(exc_fmt)
+                    if isinstance(exc, WrappingException):
+                        inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
+                        inner_exc_fm = list(clean_tb_twisted(inner_exc_fm))
+                        inner_exc_fm = ''.join('      ' + line for line in inner_exc_fm)
+                        exc_fmt += "\n-------\nCAUSE:\n\n" + inner_exc_fm
+                fail('\n\n', exc_fmt)
+            else:
+                fail("Died because a watched actor (%r) died" % (exc.watchee,))
             Events.log(Error(self.ref, exc, tb)),
             self._do_suspend()
             # XXX: might make sense to make it async by default for better latency
