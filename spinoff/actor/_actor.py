@@ -1038,7 +1038,7 @@ class Cell(_BaseCell):
             # dbg("...fallback to default...")
             decision = default_supervise(exc)
 
-        dbg(u"            ... →", decision)
+        dbg(u"→ %r → %r" % (decision, child))
 
         if not isinstance(decision, Decision):
             raise BadSupervision("Bad supervisor decision: %s" % (decision,), exc, tb)
