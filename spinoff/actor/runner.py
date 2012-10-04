@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import re
+import traceback
 
 from twisted.application.service import Service
 from twisted.internet import reactor
@@ -55,6 +56,7 @@ class ActorRunner(Service):
                     hub = Hub(insock, outsock, nodeid=self._nodeid)
                 except Exception:
                     err("Could not set up remoting")
+                    traceback.print_exc()
                     reactor.stop()
                     return
             else:
