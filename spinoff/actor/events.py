@@ -124,9 +124,9 @@ class Events(object):
     subscriptions = {}
     consumers = {}
 
-    def log(self, event):
+    def log(self, event, log_caller=False):
         try:
-            (fail if isinstance(event, Error) else log)(event)
+            (fail if isinstance(event, Error) else log)(event, caller=log_caller)
 
             consumers = self.consumers.get(type(event))
             if consumers:
