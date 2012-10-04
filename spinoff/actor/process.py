@@ -58,7 +58,7 @@ class Process(Actor):
         self.__pre_start_complete_d = Deferred()
         try:
             self._coroutine = self.run(*args, **kwargs)
-            # dbg("PROCESS: coroutine created")
+            # dbg("coroutine created")
             self._coroutine.addCallback(self.__handle_complete)
             if self._coroutine:
                 self._coroutine.addErrback(self.__handle_failure)
@@ -69,13 +69,13 @@ class Process(Actor):
             del self.__pre_start_complete_d
 
     def receive(self, msg):
-        # dbg("PROCESS: recv %r" % (msg,))
+        # dbg("recv %r" % (msg,))
         if self.__get_d and self.__get_d.wants(msg):
-            # dbg("PROCESS: injecting %r" % (msg,))
+            # dbg("injecting %r" % (msg,))
             self.__get_d.callback(msg)
-            # dbg("PROCESS: ...injectng %r OK" % (msg,))
+            # dbg("...injectng %r OK" % (msg,))
         else:
-            # dbg("PROCESS: queueing")
+            # dbg("queueing")
             if not self.__queue:
                 self.__queue = []
             self.__queue.append(msg)
@@ -85,11 +85,11 @@ class Process(Actor):
 
     @logstring("get")
     def get(self, *patterns):
-        # dbg("PROCESS: get")
+        # dbg("get")
         pattern = OR(*patterns)
         try:
             if self.__pre_start_complete_d:
-                # dbg("PROCESS: first get")
+                # dbg("first get")
                 self.__pre_start_complete_d.callback(None)
                 self.__pre_start_complete_d = None
 
@@ -99,10 +99,10 @@ class Process(Actor):
                 except ValueError:
                     pass
                 else:
-                    # dbg("PROCESS: next message from queue")
+                    # dbg("next message from queue")
                     return self.__queue.pop(ix)
 
-            # dbg("PROCESS: ready for message")
+            # dbg("ready for message")
             self.__get_d = _PickyDeferred(pattern, canceller=self.__clear_get_d)
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
