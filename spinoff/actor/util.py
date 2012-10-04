@@ -43,6 +43,9 @@ class Container(object):
                 if self.factory else
                 self._spawn(owner, *args, **kwargs))
 
+    def watch(self, owner, *args, **kwargs):
+        return owner.watch(self.spawn(owner, *args, **kwargs))
+
     def track(self, owner):
         while True:
             msg = owner.get(('terminated', IN(self._items)))
