@@ -107,7 +107,7 @@ class Process(Actor):
             self.__get_d.addCallback(self.__clear_get_d)
             return self.__get_d
         except Exception:  # pragma: no cover
-            panic(traceback.format_exc(file=sys.stderr))
+            panic(traceback.format_exc())
 
     def __clear_get_d(self, result):
         self.__get_d = None
