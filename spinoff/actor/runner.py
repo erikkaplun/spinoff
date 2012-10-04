@@ -119,3 +119,6 @@ class Wrapper(Actor):
             reactor.stop()
         except ReactorNotRunning:
             pass
+
+    def __repr__(self):
+        return '#runner#'
