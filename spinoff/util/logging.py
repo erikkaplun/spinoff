@@ -9,20 +9,73 @@ import types
 import os
 from collections import defaultdict
 
+try:
+    import colorama
+except ImportError:
+    colorama = None
 
-BLUE = '\x1b[1;34m'
-CYAN = '\x1b[1;36m'
-GREEN = '\x1b[1;32m'
-RED = '\x1b[1;31m'
 
-DARK_RED = '\x1b[0;31m'
+WIN32 = sys.platform == 'win32'
 
-RESET_COLOR = '\x1b[0m'
 
-YELLOW = '\x1b[1;33m'
+if WIN32:
+    import msvcrt
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
-BLINK = '\x1b[5;31m'
+    from encodings.aliases import aliases
+    aliases['cp65001'] = 'utf_8'
 
+    class UniStream(object):
+        __slots__ = 'fileno', 'softspace',
+
+        def __init__(self, fileobject):
+            self.fileno = fileobject.fileno()
+            self.softspace = False
+
+        def write(self, text):
+            os.write(self.fileno, text.encode('utf_8') if isinstance(text, unicode) else text)
+
+        def flush(self):
+            pass  # XXX: ?
+
+        def isatty(self):
+            return True  # XXX: hack so that colorama would wrap us
+
+    sys.stdout = UniStream(sys.stdout)
+    sys.stderr = UniStream(sys.stderr)
+
+    if colorama:
+        colorama.init()
+    else:
+        print("Colored log output disabled on WIN32; easy_install colorama to enable")
+
+
+if not WIN32 or colorama:
+    BLUE = '\x1b[1;34m'
+    CYAN = '\x1b[1;36m'
+    GREEN = '\x1b[1;32m'
+    RED = '\x1b[1;31m'
+
+    DARK_RED = '\x1b[0;31m'
+
+    RESET_COLOR = '\x1b[0m'
+
+    YELLOW = '\x1b[1;33m'
+
+    BLINK = '\x1b[5;31m'
+else:
+    BLUE = ''
+    CYAN = ''
+    GREEN = ''
+    RED = ''
+
+    DARK_RED = ''
+
+    RESET_COLOR = ''
+
+    YELLOW = ''
+
+    BLINK = ''
 
 OUTFILE = sys.stderr
 LEVEL = 0
