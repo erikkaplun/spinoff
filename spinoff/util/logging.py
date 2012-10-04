@@ -7,7 +7,9 @@ import sys
 import traceback
 import types
 import os
+import multiprocessing
 from collections import defaultdict
+from Queue import Queue, Empty
 
 try:
     import colorama
@@ -16,6 +18,10 @@ except ImportError:
 
 
 WIN32 = sys.platform == 'win32'
+
+
+_lock = multiprocessing.Lock()
+_queue = Queue()
 
 
 if WIN32:
@@ -159,10 +165,26 @@ def get_calling_context(frame):
 
 
 def _write(level, *args, **kwargs):
+    _queue.put_nowait((level, args, kwargs))
+
+    if _lock.acquire(False):
+        try:
+            while True:
+                try:
+                    pending = _queue.get_nowait()
+                except Empty:
+                    break
+                else:
+                    _do_write(pending[0], *pending[1], **pending[2])
+        finally:
+            _lock.release()
+
+
+def _do_write(level, *args, **kwargs):
     try:
         if level >= LEVEL:
 
-            frame = sys._getframe(2)
+            frame = sys._getframe(3)
             file, lineno, caller_name, caller = get_calling_context(frame)
 
             if caller:
