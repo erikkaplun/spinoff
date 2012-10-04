@@ -1109,11 +1109,12 @@ class Cell(_BaseCell):
                 elif ('_watched', ANY) == message:
                     _, watcher = message
                     watcher.send(('terminated', ref))
-                elif ('terminated', ANY) != message:
+                elif (IN(['terminated', '_unwatched']), ANY) != message:
                     Events.log(DeadLetter(ref, message))
 
             assert not self.actor
             del self.inbox
+            # dbg("self.priority_inbox:", self.priority_inbox)
             del self.priority_inbox  # don't want no more, just release the memory
 
             # dbg("unlinking reference")
