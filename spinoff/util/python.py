@@ -112,3 +112,7 @@ def dump_method_call(name, args, kwargs):
         ", ".join(map(repr, args)),
         "" if not kwargs else ", ".join("%s=%r" % kv for kv in kwargs.items())
     )
+
+
+def dump_dict(d):
+    return '{' + ', '.join('%r: %r' % (k, v) for k, v in d.items()) + '}'
