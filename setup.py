@@ -5,7 +5,7 @@ setup(
     version="0.3dev",
     packages=find_packages(),
 
-    data_files=[('twisted', ['plugins/startnode.py'])],
+    data_files=[('twisted/plugins', ['twisted/plugins/startnode.py'])],
 
     install_requires=[
         'twisted>=12.0',
