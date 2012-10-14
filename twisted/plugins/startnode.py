@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import sys
+import traceback
 
 from twisted.application.service import IServiceMaker, MultiService
 from twisted.plugin import IPlugin
@@ -66,7 +67,7 @@ class ActorRunnerMaker(object):
         try:
             mod = __import__(module_path, globals(), locals(), [actor_cls_name], -1)
         except ImportError:
-            fatal("error: could not import %s" % actor)
+            fatal("error: could not import %s:\n%s" % (actor, traceback.format_exc()))
             sys.exit(1)
 
         try:
