@@ -143,7 +143,7 @@ class OR(Matcher):
         self.matchers = matchers
 
     def __eq__(self, x):
-        return any(matcher == x for matcher in self.matchers)
+        return not self.matchers or any(matcher == x for matcher in self.matchers)
 
     def __str__(self):
         return ' | '.join(repr(x) for x in self.matchers)
