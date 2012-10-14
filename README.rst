@@ -17,26 +17,27 @@ The following is only a very small "peek preview" style example of what the fram
 
 ::
 
-    # example.py
+    # spinoff/examples/example1.py
 
     from spinoff.actor import Actor
+    from spinoff.actor.process import Process
     from spinoff.util.logging import dbg
     from spinoff.util.async import sleep, with_timeout
 
 
-     class ExampleProcess(Process):
-         def run(self):
-             child = self.spawn(ExampleActor)
+    class ExampleProcess(Process):
+        def run(self):
+            child = self.spawn(ExampleActor)
 
-             while True:
-                 dbg("sending greeting to %r" % (child,))
-                 child << ('hello!', self.ref)
+            while True:
+                dbg("sending greeting to %r" % (child,))
+                child << ('hello!', self.ref)
 
-                 dbg("waiting for ack from %r" % (child,))
-                 yield with_timeout(5.0, self.get('ack'))
+                dbg("waiting for ack from %r" % (child,))
+                yield with_timeout(5.0, self.get('ack'))
 
-                 dbg("got 'ack' from %r; now sleeping a bit..." % (child,))
-                 yield sleep(1.0)
+                dbg("got 'ack' from %r; now sleeping a bit..." % (child,))
+                yield sleep(1.0)
 
 
     class ExampleActor(Actor):
@@ -56,4 +57,4 @@ The example can be run using the following command:
 
 ::
 
-    twistd -n startnode --actor example.ExampleProcess
+    twistd --nodaemon startnode --actor spinoff.examples.example1.ExampleProcess
