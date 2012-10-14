@@ -215,7 +215,9 @@ class _HubBound(object):
         down to any new `_HubBound` objects created. Otherwise, `Node.hub` is used.
 
         """
-        return self._hub or _NODE.hub
+        ret = self._hub or (_NODE.hub if _NODE else None)
+        assert ret or self.is_local
+        return ret
 
 
 class Ref(_BaseRef, _HubBound):
