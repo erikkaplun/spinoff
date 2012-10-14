@@ -11,7 +11,7 @@ setup(
         'twisted>=12.0',
         'txcoroutine',
         'txzmq',
-        ],
+    ],
 
     author="Erik Allik",
     author_email="erik.allik@skype.net",
