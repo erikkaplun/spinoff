@@ -1,0 +1,4 @@
+include README.rst
+include README
+include LICENSE
+graft twisted/plugins

@@ -1,11 +1,14 @@
 from setuptools import setup, find_packages
 
+with open('README.rst') as file:
+    long_description = file.read()
+
 setup(
     name="spinoff",
+    description="Framework for writing distributed, fault tolerant and scalable applications",
+    long_description=long_description,
     version="0.3dev",
     packages=find_packages(),
-
-    data_files=[('twisted/plugins', ['twisted/plugins/startnode.py'])],
 
     install_requires=[
         'twisted>=12.0',
@@ -19,4 +22,6 @@ setup(
 
     author="Erik Allik",
     author_email="erik.allik@skype.net",
+    license="BSD",
+    url="http://github.com/eallik/spinoff/"
 )
