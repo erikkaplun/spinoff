@@ -3590,6 +3590,9 @@ def wrap_globals():
         def ret():
             # dbg("\n============================================\n")
 
+            import spinoff.actor._actor
+            spinoff.actor._actor.TESTING = True
+
             Actor.reset_flags(debug=True)
 
             # TODO: once the above TODO (fresh Node for each test fn) is complete, consider making Events non-global by
