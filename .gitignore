@@ -10,3 +10,4 @@ twisted/plugins/dropin.cache
 .noseids
 .coverage
 cover/
+MANIFEST
