@@ -10,7 +10,11 @@ setup(
     install_requires=[
         'twisted>=12.0',
         'txcoroutine',
-        'txzmq',
+        'txzmq==0.5.1',
+    ],
+
+    dependency_links=[
+        'https://github.com/eallik/txZMQ/tarball/master#egg=txzmq-0.5.1'
     ],
 
     author="Erik Allik",
