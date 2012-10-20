@@ -1,7 +1,12 @@
+import os
+
 from setuptools import setup, find_packages
 
-with open('README.rst') as file:
-    long_description = file.read()
+if os.path.exists('README.rst'):
+    with open('README.rst') as file:
+        long_description = file.read()
+else:
+    long_description = ''
 
 setup(
     name="spinoff",
