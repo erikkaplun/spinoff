@@ -22,7 +22,7 @@ setup(
     ],
 
     dependency_links=[
-        'https://github.com/eallik/txZMQ/tarball/master#egg=txzmq-0.5.1'
+        'https://github.com/eallik/txZMQ/tarball/newapi#egg=txzmq-0.5.1'
     ],
 
     author="Erik Allik",
