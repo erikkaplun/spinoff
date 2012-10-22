@@ -102,6 +102,9 @@ class _AfterWrap(object):
     def then(self, fn, *args, **kwargs):
         return _AfterWrap(self.d.addCallback(lambda result: fn(result, *args, **kwargs)))
 
+    def onerror(self, fn, *args, **kwargs):
+        return _AfterWrap(self.d.addErrback(lambda f: fn(f, *args, **kwargs)))
+
     def cancel(self):
         self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
