@@ -671,8 +671,8 @@ class Actor(object):
     def children(self):
         return self.__cell.children
 
-    def watch(self, actor, *actors):
-        return self.__cell.watch(actor, *actors)
+    def watch(self, actor, *actors, **kwargs):
+        return self.__cell.watch(actor, *actors, **kwargs)
 
     def unwatch(self, actor, *actors):
         self.__cell.unwatch(actor, *actors)
@@ -1228,9 +1228,9 @@ class Cell(_BaseCell):
             except Exception:
                 panic("failed to log:\n", traceback.format_exc())
 
-    def watch(self, actor, *actors):
+    def watch(self, actor, *actors, **kwargs):
         actors = (actor,) + actors
-        actors = [self.spawn(x) if isinstance(x, (type, Props)) else x for x in actors]
+        actors = [self.spawn(x, **kwargs) if isinstance(x, (type, Props)) else x for x in actors]
         for other in actors:
             node = self.uri.node
             if other != self.ref:
