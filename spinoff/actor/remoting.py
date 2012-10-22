@@ -194,7 +194,7 @@ class Hub(object):
         else:
             path, msg = self._loads(msg)
             if conn:
-                conn.seen = self.reactor.seconds()
+                conn.seen = t
                 self._deliver_local(path, msg, sender_addr)
             else:
                 self._connect(sender_addr)
