@@ -63,7 +63,10 @@ class Connection(object):
         if self.queue is not None:
             self.queue.append((ref, msg))
         else:
-            self._do_send(dumps((ref.uri.path, msg), protocol=2))
+            if self.sock:
+                self._do_send(dumps((ref.uri.path, msg), protocol=2))
+            else:
+                Events.log(DeadLetter(ref, msg))
 
     def established(self, remote_version):
         log()
@@ -76,7 +79,7 @@ class Connection(object):
         self._kill_queue()
         self._emit_termination_messages()
         self.sock.shutdown()
-        del self.sock, self.owner
+        self.sock = self.owner = None
 
     @logstring(u" ❤⇝")
     def heartbeat(self):
@@ -122,7 +125,9 @@ class Connection(object):
             del self.sock
 
     def __repr__(self):
-        return '<connection:%s->%s>' % (self.owner.nodeid, self.addr[len('tcp://'):])
+        return (('<connection:%s->%s>' % (self.owner.nodeid, self.addr[len('tcp://'):]))
+                if self.owner else
+                '<connection:dead>')
 
 
 class Hub(object):
