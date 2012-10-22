@@ -14,7 +14,6 @@ from cPickle import dumps
 
 from twisted import internet
 from twisted.internet import reactor
-from twisted.internet.task import LoopingCall
 from txzmq import ZmqEndpoint
 
 from spinoff.actor import _actor
@@ -140,8 +139,9 @@ class Hub(object):
         "Time on seconds after which to send out a heartbeat signal to all known nodes. Regular messages can be "
         "subsituted by the framework for heartbeats to save network bandwidth.")
     HEARTBEAT_INTERVAL = 1.0
+    ALLOWED_HEARTBEAT_DELAY = HEARTBEAT_INTERVAL * 0.2
 
-    HEARTBEAT_MAX_SILENCE = 4.0
+    HEARTBEAT_MAX_SILENCE = 15.0
 
     nodeid = None
 
@@ -165,13 +165,16 @@ class Hub(object):
         self.outsock_factory = outsock_factory
         self.connections = {}
 
-        l1 = self._heartbeater = LoopingCall(self._manage_heartbeat_and_visibility)
-        l1.clock = reactor
-        l1.start(self.HEARTBEAT_INTERVAL)
+        self._next_heartbeat = reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
+        self._next_heartbeat_t = reactor.seconds() + self.HEARTBEAT_INTERVAL
 
     @logstring(u"⇜")
     def _got_message(self, (sender_addr, msg)):
         conn = self.connections.get(sender_addr)
+        t = self.reactor.seconds()
+        if t > self._next_heartbeat_t + self.ALLOWED_HEARTBEAT_DELAY / 2.0:
+            self._next_heartbeat.cancel()
+            self._manage_heartbeat_and_visibility()
 
         if msg[0] == PING:
             remote_version, = struct.unpack(PING_VERSION_FORMAT, msg[1:])  # not sure this is even necessary
@@ -202,8 +205,10 @@ class Hub(object):
 
     @logstring(u"❤")
     def _manage_heartbeat_and_visibility(self):
+        t = reactor.seconds()
+        self._next_heartbeat_t = t + self.HEARTBEAT_INTERVAL
         try:
-            t_gone = self.reactor.seconds() - self.HEARTBEAT_MAX_SILENCE
+            t_gone = t - self.HEARTBEAT_MAX_SILENCE
             for addr, conn in self.connections.items():
                 if conn.seen < t_gone:
                     conn.close()
@@ -212,6 +217,8 @@ class Hub(object):
                     conn.heartbeat()
         except Exception:  # pragma: no cover
             panic("heartbeat logic failed:\n", traceback.format_exc())
+        finally:
+            self._next_heartbeat = reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
 
     def _connect(self, addr):
         assert _valid_addr(addr)
@@ -232,6 +239,12 @@ class Hub(object):
     def send(self, msg, to_remote_actor_pointed_to_by):
         ref = to_remote_actor_pointed_to_by
         # dbg(u"%r → %r" % (msg, ref))
+
+        t = self.reactor.seconds()
+        if t > self._next_heartbeat_t + self.ALLOWED_HEARTBEAT_DELAY / 2.0:
+            if self._next_heartbeat:
+                self._next_heartbeat.cancel()
+                self._manage_heartbeat_and_visibility()
 
         nodeid = ref.uri.node
 
@@ -282,7 +295,8 @@ class Hub(object):
             cell.receive(msg)  # XXX: force_async=True perhaps?
 
     def stop(self):
-        self._heartbeater.stop()
+        self._next_heartbeat.cancel()
+        self._next_heartbeat = None
         self.insock.shutdown()
         for _, conn in self.connections.items():
             conn.close()
