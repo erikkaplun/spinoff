@@ -1303,7 +1303,6 @@ class Cell(_BaseCell):
             self._ref = weakref.ref(ref)
         return self._ref()
 
-
     def __repr__(self):
         return "<cell:%s@%s>" % (type(self.actor).__name__ if self.actor else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__),
                                  self.uri.path,)
