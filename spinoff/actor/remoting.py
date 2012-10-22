@@ -290,9 +290,6 @@ class Hub(object):
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
 
-    def logstate(self):  # pragma: no cover
-        return {str(self.reactor.seconds()): True}
-
     def _remote_dead_letter(self, path, msg, from_):
         uri = Uri.parse(self.nodeid + path)
         ref = Ref(cell=self.guardian.lookup_cell(uri), uri=uri, is_local=True)
