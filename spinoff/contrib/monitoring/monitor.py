@@ -139,18 +139,23 @@ class MonitorClient(Actor):
 
     def receive(self, msg):
         if 'ack' == msg:
-            self.watch(self.monitor)
             if not self.connected:
                 self.connected = True
                 self.connecting.cancel()
                 self.connecting = None
+
         elif ('terminated', self.monitor) == msg:
             self.connected = False
             self.connect(delayed=True)
+
         elif self.connected:
             self.monitor << msg
+
         elif not self.connecting:
             self.connect()
+
+        else:
+            pass
 
     def connect(self, delayed=False):
         if self.connecting and not self.connecting.called:
