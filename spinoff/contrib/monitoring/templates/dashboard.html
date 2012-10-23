@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:py="http://genshi.edgewall.org/">
+  <head>
+    <title>Up</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css"></link>
+
+    <script>
+      setInterval(function() {
+         location.reload();
+      }, 2500);
+    </script>
+  </head>
+
+  <body id="up">
+
+    <div id="results">
+      <div class="headers">
+        <div class="nr">&nbsp;</div>
+        <div class="addr">Address</div>
+        <div class="status">Status</div>
+        <div class="seen">Seen</div>
+        <div class="state">State</div>
+      </div>
+
+      <div class="body">
+        <div class="row" py:for="i, row in enumerate(reversed(result))">
+          <div class="nr">$i</div>
+          <div class="addr">${row[0]}</div>
+          <div class="status ${row[1]}">${row[1]}</div>
+          <div class="seen">${row[2].strftime('%a %b %d %Y')}, <strong>${row[2].strftime('%X %Z')}</strong></div>
+          <div class="state">${row[3] if row[3] and row[1] == 'up' else '&nbsp;'}</div>
+        </div>
+
+      </div>
+    </div>
+
+  </body>
+</html>

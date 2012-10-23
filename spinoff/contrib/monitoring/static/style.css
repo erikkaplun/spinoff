@@ -1,0 +1,41 @@
+* {
+  font-family: Tahoma;
+  font-size: 12px; }
+
+body#up #results .headers div, body#up #results .row div {
+  display: inline-block;
+  padding: 5px; }
+body#up #results .headers .nr, body#up #results .row .nr {
+  width: 30px; }
+body#up #results .headers .addr, body#up #results .row .addr {
+  width: 500px; }
+body#up #results .headers .status, body#up #results .row .status {
+  width: 50px; }
+body#up #results .headers .seen, body#up #results .row .seen {
+  width: 160px; }
+body#up #results .headers .state, body#up #results .row .state {
+  width: 140px; }
+body#up #results .headers {
+  margin-bottom: 5px;
+  color: #fff;
+  font-weight: bold; }
+  body#up #results .headers div {
+    background-color: #99a; }
+body#up #results .row {
+  margin-bottom: 5px; }
+  body#up #results .row div {
+    background-color: #66c;
+    color: #fcfcff; }
+  body#up #results .row .nr {
+    text-align: right; }
+  body#up #results .row .addr {
+    font-family: Monaco, Lucida Console; }
+  body#up #results .row .status {
+    text-align: center;
+    text-transform: uppercase; }
+    body#up #results .row .status.up {
+      background-color: #6c6;
+      color: #fff; }
+    body#up #results .row .status.down {
+      background-color: #d44;
+      color: #fff; }

@@ -1,0 +1,60 @@
+* {
+    font-family: Tahoma;
+    font-size: 12px;
+}
+
+body#up {
+    #results {
+        .headers, .row {
+            div {
+                display: inline-block;
+                padding: 5px;
+            }
+
+            .nr { width: 30px; }
+            .addr { width: 500px; }
+            .status { width: 50px; }
+            .seen { width: 160px; }
+            .state { width: 140px; }
+        }
+
+        .headers {
+            margin-bottom: 5px;
+            color: #fff;
+            font-weight: bold;
+            div {
+                background-color: #99a;
+            }
+        }
+
+        .row {
+            div {
+                background-color: #66c;
+                color: #fcfcff;
+            }
+            margin-bottom: 5px;
+
+            .nr {
+                text-align: right;
+            }
+
+            .addr {
+                font-family: Monaco, Lucida Console;
+            }
+
+            .status {
+                text-align: center;
+                text-transform: uppercase;
+
+                &.up {
+                    background-color: #6c6;
+                    color: #fff;
+                }
+                &.down {
+                    background-color: #d44;
+                    color: #fff;
+                }
+            }
+        }
+    }
+}
