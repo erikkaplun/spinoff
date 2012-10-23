@@ -14,6 +14,7 @@ from cPickle import dumps
 
 from twisted import internet
 from twisted.internet import reactor
+from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqEndpoint
 
 from spinoff.actor import _actor
@@ -22,11 +23,13 @@ from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
 from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
 from spinoff.util.logging import logstring, dbg, log, panic
 from spinoff.util.pattern_matching import ANY, IN
+from spinoff.util.async import sleep
 
 
 # TODO: use shorter messages outside of testing
 # MUST be a single char
 PING = b'0'
+DISCONNECT = b'1'
 
 PING_VERSION_FORMAT = '!I'
 
@@ -73,8 +76,13 @@ class Connection(object):
         self._flush_queue()
         del self.queue
 
+    @inlineCallbacks
     def close(self):
         log()
+
+        self.sock.sendMultipart((self.our_addr, DISCONNECT))
+        yield sleep(0)
+
         self._kill_queue()
         self._emit_termination_messages()
         self.sock.shutdown()
@@ -194,6 +202,10 @@ class Hub(object):
                 conn.known_remote_version = remote_version
                 conn.seen = self.reactor.seconds()
 
+        elif msg == DISCONNECT:
+            conn.close()
+            del self.connections[sender_addr]
+
         else:
             path, msg = self._loads(msg)
             if conn:
@@ -294,12 +306,13 @@ class Hub(object):
         else:
             cell.receive(msg)  # XXX: force_async=True perhaps?
 
+    @inlineCallbacks
     def stop(self):
         self._next_heartbeat.cancel()
         self._next_heartbeat = None
         self.insock.shutdown()
         for _, conn in self.connections.items():
-            conn.close()
+            yield conn.close()
 
     def _loads(self, data):
         return IncomingMessageUnpickler(self, StringIO(data)).load()
