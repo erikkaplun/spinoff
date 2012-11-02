@@ -910,7 +910,7 @@ class Cell(_BaseCell):
         try:
             while not self.stopped and (not self.shutting_down) and self.has_message() and (not self.suspended or self.peek_message() in ('_stop', '_restart', '_resume', '_suspend')) or (self.shutting_down and ('_child_terminated', ANY) == self.peek_message()):
                 message = self.consume_message()
-                self.processing_messages = repr(message)
+                self.processing_messages = True
                 # if not first:
                 #     dbg(u"↪ %r" % (message,))
                 # first = False
