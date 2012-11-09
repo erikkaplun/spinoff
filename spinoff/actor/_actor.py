@@ -890,7 +890,7 @@ class Cell(_BaseCell):
         is_startstop = next_message in ('_start', '_stop')
         is_untaint = next_message in ('_resume', '_restart')
 
-        if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
+        if (self.started or is_startstop or self.tainted and is_untaint):
             if Actor.SENDING_IS_ASYNC or force_async:
                 # dbg(u'⇝')
                 # dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
