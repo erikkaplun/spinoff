@@ -180,3 +180,22 @@ class IN(Matcher):
 
     def __str__(self):
         return 'IN(%r)' % (self.options,)
+
+
+class CONTAINS(Matcher):
+    def __init__(self, subset_or_elem):
+        self.subset_or_elem = subset_or_elem
+
+    def __eq__(self, other):
+        w = self.subset_or_elem
+        if isinstance(w, (list, tuple)):
+            return set(w) <= set(other)
+        elif isinstance(w, dict):
+            return set(w.items()) <= set(other.items())
+        elif hasattr(other, '__contains__'):
+            return w in other
+        else:
+            return False
+
+    def __str__(self):
+        return 'CONTAINS(%r)' % self.subset_or_elem
