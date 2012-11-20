@@ -61,9 +61,9 @@ class FilePublisher(Actor):
     _instance = None
 
     @classmethod
-    def get(cls):
+    def get(cls, node=None):
         if not cls._instance:
-            cls._instance = spawn(cls)
+            cls._instance = (node.spawn if node else spawn)(cls)
         return cls._instance
 
     def pre_start(self):
@@ -164,9 +164,9 @@ class FileRef(object):
         self.file_service = file_service
 
     @classmethod
-    def publish(cls, path):
+    def publish(cls, path, node=None):
         pub_id = str(uuid.uuid4())
-        file_service = FilePublisher.get()
+        file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
         return cls(pub_id, file_service)
 
