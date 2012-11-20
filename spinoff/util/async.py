@@ -11,7 +11,7 @@ from twisted.internet import reactor, task
 __all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'cancel_all_idle_calls', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
-def sleep(seconds, reactor=reactor):
+def sleep(seconds=0, reactor=reactor):
     """A simple helper for asynchronously sleeping a certain amount of time.
 
     Standard usage:
