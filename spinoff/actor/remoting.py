@@ -612,6 +612,7 @@ class MockOutSocket(object):  # pragma: no cover
 
 _dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover
 
+
 def _resolve_addr(addr):
     m = _PROTO_ADDR_RE.match(addr)
     proto, nodeid = m.groups()[0:2]
