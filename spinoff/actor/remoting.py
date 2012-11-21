@@ -595,7 +595,7 @@ class MockOutSocket(object):  # pragma: no cover
 
     def addEndpoints(self, endpoints):
         assert len(endpoints) == 1, "Outgoing sockets should not connect to more than 1 endpoint"
-        dbg(endpoints[0].address)
+        # dbg(endpoints[0].address)
         self.endpoint_addr = endpoints[0].address
         self.owner.outsock_addEndpoints(self.addr, endpoints)
 
