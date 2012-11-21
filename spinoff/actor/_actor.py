@@ -23,7 +23,7 @@ from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate,
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY, IN
-from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout, sleep
+from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout, sleep, call_when_idle
 from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import logstring, dbg, fail, panic, err
 from spinoff.util.python import clean_tb_twisted
@@ -501,7 +501,10 @@ class Guardian(_BaseCell, _BaseRef):
         elif ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
-            Events.log(TopLevelActorTerminated(sender))
+            # XXX: find a better way to avoid TopLevelActorTerminated messages for TempActors,
+            # possibly by using a /tmp container for them
+            if not str(sender.uri).startswith('/tempactor'):
+                Events.log(TopLevelActorTerminated(sender))
         elif '_stop' == message:
             return self._do_stop()
         else:
@@ -1308,10 +1311,29 @@ class Cell(_BaseCell):
                                  self.uri.path,)
 
 
-# TODO: replace with serializable temporary actors
-class Future(Deferred):  # TODO: inherit from _BaseRef or similar
-    def send(self, message):
-        self.callback(message)
+class TempActor(Actor):
+    pool = set()
+
+    @classmethod
+    def make(cls, node=None):
+        # if not cls.pool:
+        _spawn = node.spawn if node else spawn
+        d = Deferred()
+        ret = _spawn(cls.using(d, cls.pool))
+        return ret, d
+        # TODO:this doesn't work reliably for some reason, otherwise it could be a major performance enhancer,
+        # at least for as long as actors are as heavy as they currently are
+        # else:
+        #     return cls.pool.pop()
+
+    def pre_start(self, d, pool):
+        self.d = d
+        self.pool = pool
+
+    def receive(self, msg):
+        d, self.d = self.d, Deferred()
+        self.pool.add((self.ref, self.d))
+        call_when_idle(d.errback if isinstance(msg, BaseException) else d.callback, msg)
 
 
 @wraps(_BaseCell.spawn)
