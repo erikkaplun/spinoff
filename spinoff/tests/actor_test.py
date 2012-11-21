@@ -3139,35 +3139,6 @@ def test_sending_to_a_process_that_is_processing_a_message_queues_it():
     assert second_message_received
 
 
-def test_errors_in_process_run_before_the_first_get_are_reported_as_startup_errors():
-    spawn = TestNode().spawn
-
-    class MyProc(Process):
-        def run(self):
-            raise MockException
-            yield
-
-    with expect_failure(CreateFailed):
-        spawn(MyProc)
-
-    #
-
-    release = Trigger()
-
-    class MyProcWithSlowStartup(Process):
-        def run(self):
-            yield release
-            raise MockException
-
-    spawn(MyProcWithSlowStartup)
-
-    with expect_failure(CreateFailed) as basket:
-        release()
-
-    with assert_raises(MockException):
-        basket[0].raise_original()
-
-
 def test_errors_in_process_while_processing_a_message_are_reported_as_normal_failures():
     spawn = TestNode().spawn
 
@@ -3445,34 +3416,6 @@ def test_calling_escalate_outside_of_error_context_causes_runtime_error():
 
     spawn(FalseAlarmParent)
     assert exc_raised
-
-
-def test_attempt_to_delegate_an_exception_during_startup_instead_fails_the_actor_immediately():
-    spawn = TestNode().spawn
-
-    started = Counter()
-
-    class Parent(Actor):
-        def supervise(self, exc):
-            assert isinstance(exc, CreateFailed)
-            return Resume  # should cause a restart instead
-
-        def pre_start(self):
-            self.spawn(Child)
-
-    class Child(Process):
-        def run(self):
-            started()
-            if started == 1:
-                try:
-                    raise MockException()
-                except MockException:
-                    yield self.escalate()
-
-    with swallow_one_warning():
-        spawn(Parent)
-
-    assert started == 2
 
 
 def test_optional_process_high_water_mark_emits_an_event_for_every_multiple_of_that_nr_of_msgs_in_the_queue():

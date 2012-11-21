@@ -10,7 +10,7 @@ import warnings
 from twisted.internet.defer import Deferred, CancelledError
 from txcoroutine import coroutine
 
-from spinoff.actor import Actor, ActorType, CreateFailed
+from spinoff.actor import Actor, ActorType
 from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
@@ -45,7 +45,6 @@ class Process(Actor):
 
     __get_d = None
     __queue = None
-    __pre_start_complete_d = None
 
     _coroutine = None
 
@@ -55,18 +54,12 @@ class Process(Actor):
 
     def pre_start(self, *args, **kwargs):
         # dbg()
-        self.__pre_start_complete_d = Deferred()
-        try:
-            self._coroutine = self.run(*args, **kwargs)
-            # dbg("coroutine created")
-            self._coroutine.addCallback(self.__handle_complete)
-            if self._coroutine:
-                self._coroutine.addErrback(self.__handle_failure)
-            # dbg("...waiting for ready...")
-            yield self.__pre_start_complete_d
-            # dbg(u"✓")
-        finally:
-            del self.__pre_start_complete_d
+        self._coroutine = self.run(*args, **kwargs)
+        # dbg("coroutine created")
+        self._coroutine.addCallback(self.__handle_complete)
+        if self._coroutine:
+            self._coroutine.addErrback(self.__handle_failure)
+        # dbg(u"✓")
 
     def receive(self, msg):
         # dbg("recv %r" % (msg,))
@@ -88,11 +81,6 @@ class Process(Actor):
         # dbg("get")
         pattern = OR(*patterns)
         try:
-            if self.__pre_start_complete_d:
-                # dbg("first get")
-                self.__pre_start_complete_d.callback(None)
-                self.__pre_start_complete_d = None
-
             if self.__queue:
                 try:
                     ix = self.__queue.index(pattern)
@@ -119,30 +107,23 @@ class Process(Actor):
         if isinstance(f.value, CancelledError):
             return
 
-        # dbg()
         try:
-            if self.__pre_start_complete_d:
-                # dbg("failure during start")
-                self.__pre_start_complete_d.errback(f)
-            else:
-                try:
-                    f.raiseException()
-                except Exception:
-                    # XXX: seems like a hack but should be safe;
-                    # hard to do it better without convoluting `Actor`
-                    self._Actor__cell.tainted = True
-                    # dbg("...reporting to parent")
-                    self._Actor__cell.report_to_parent()
-        except Exception:  # pragma: no cover
-            panic("failure in handle_faiure:\n", traceback.format_exc())
+            f.raiseException()
+        except Exception:
+            try:
+                # XXX: seems like a hack but should be safe;
+                # hard to do it better without convoluting `Actor`
+                self._Actor__cell.tainted = True
+                # dbg("...reporting to parent")
+                self._Actor__cell.report_to_parent()
+            except Exception:  # pragma: no cover
+                panic("failure in handle_faiure:\n", traceback.format_exc())
 
     def __handle_complete(self, result):
         # dbg()
         if result:
             warnings.warn("Process.run should not return anything--it's ignored")
         del self._coroutine
-        if self.__pre_start_complete_d:
-            self.__pre_start_complete_d.callback(None)
         self.stop()
 
     def __shutdown(self):
@@ -165,12 +146,6 @@ class Process(Actor):
         if not (exc and tb):
             flaw("programming flaw: escalate called outside of exception context")
             raise InvalidEscalation("Process.escalate must be called in an exception context")
-        if self.__pre_start_complete_d:
-            # if the Process tried to .escalate() before it went into receive-mode, i.e. pre_start was still
-            # incomplete, simply turn the escalation into a regular exception reported as CreateFailed; CreateFailed
-            # will get the exc and tb from context.
-            # (would be nice to say "process" here, but it would be inconsistent with other startup errors in the coroutine)
-            raise CreateFailed("Actor failed to start", self)
         ret = Deferred()
         call_when_idle(lambda: (
             self._Actor__cell.report_to_parent((exc, tb)),
