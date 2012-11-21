@@ -31,7 +31,7 @@ class Options(usage.Options):
                                  u"Parsed as `dict(<params>)` and passed as **kwargs.\n\n"
                                  u"\b")],  # so that Twisted wouldn't strip off the line endings before [default: <empty>]
         ['message', 'm', _EMPTY, "[m]essage to send to the actor"],
-        ['remoting', 'r', None, "Set up [r]emoting with"],
+        ['remoting', 'r', None, "Set up [r]emoting with the specified hostname/IP:port pair; hostname/IP is optional and defaults to localhost"],
         ['name', 'n', None, "Set the [n]ame of the actor"],
         ['supervise', 's', 'stop', "Set how the spawned actor is [s]upervised in case of failures"],
 
