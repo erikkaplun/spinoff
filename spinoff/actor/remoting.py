@@ -4,7 +4,6 @@ from __future__ import print_function, absolute_import
 import inspect
 import random
 import re
-import socket
 import struct
 import traceback
 from cStringIO import StringIO
@@ -25,6 +24,7 @@ from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
 from spinoff.util.logging import logstring, dbg, log, panic
 from spinoff.util.pattern_matching import ANY, IN
 from spinoff.util.async import sleep
+from spinoff.actor.resolv import resolve
 
 
 # TODO: use shorter messages outside of testing
@@ -618,5 +618,5 @@ def _resolve_addr(addr):
 
     if nodeid:
         host, port = nodeid.split(':')
-        return '%s%s:%s' % (proto, socket.gethostbyname(host), port)
+        return '%s%s:%s' % (proto, resolve(host), port)
     return addr
