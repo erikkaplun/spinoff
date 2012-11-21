@@ -5,6 +5,7 @@ from pickle import PicklingError
 
 from twisted.internet.defer import Deferred
 from spinoff.util.async import sleep
+from spinoff.util.async import after
 
 
 class Holder(object):
@@ -246,3 +247,33 @@ class Barrier(Trigger):
         Trigger.__init__(self, *args, **kwargs)
         # the final callback will be invoked "a bit" later, thus allowing the invoker of `.callback(...)` to proceed.
         self.addCallback(lambda _: sleep(0))
+
+
+class Buffer(object):
+    def __init__(self):
+        self.queue = []
+        self.d = None
+
+    def __call__(self, arg=None):
+        if self.d:
+            self.d.callback(arg)
+        else:
+            self.queue.append(arg)
+
+    def wait(self):
+        if self.queue:
+            return self.queue.pop(0)
+        else:
+            self.d = Deferred()
+            return self.d
+
+    @property
+    def is_empty(self):
+        """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
+        result is True or False depending on whether the queue is still empty when the Deferred fires or not.
+
+        The Deferred mechanism is needed to allow other coroutines to perform tasks which can potentially affect the
+        state of the queue.
+
+        """
+        return after(0.001).do(lambda: not self.queue) if not self.queue else False
