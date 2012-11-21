@@ -183,19 +183,35 @@ class IN(Matcher):
 
 
 class CONTAINS(Matcher):
-    def __init__(self, subset_or_elem):
-        self.subset_or_elem = subset_or_elem
+    def __init__(self, elem):
+        self.elem = elem
 
     def __eq__(self, other):
-        w = self.subset_or_elem
-        if isinstance(w, (list, tuple)):
-            return set(w) <= set(other)
-        elif isinstance(w, dict):
-            return set(w.items()) <= set(other.items())
-        elif hasattr(other, '__contains__'):
+        w = self.elem
+        if hasattr(other, '__contains__'):
             return w in other
         else:
             return False
 
     def __str__(self):
         return 'CONTAINS(%r)' % self.subset_or_elem
+
+
+class HASITEMS(Matcher):
+    def __init__(self, items):
+        self.items = items
+
+    def __eq__(self, other):
+        w = self.items
+        if isinstance(w, (list, tuple)):
+            for i in w:
+                if i not in other:
+                    return False
+            return True
+        elif isinstance(w, dict):
+            for key, value in w.items():
+                if other.get(key, object()) != value:
+                    return False
+            return True
+        else:
+            raise TypeError("a dict or a list is required")
