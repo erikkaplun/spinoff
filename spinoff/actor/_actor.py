@@ -894,11 +894,12 @@ class Cell(_BaseCell):
         is_startstop = next_message in ('_start', '_stop')
         is_untaint = next_message in ('_resume', '_restart')
 
-        if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint):
+        if not self.processing_messages and (self.started or is_startstop or self.tainted and is_untaint) and not self.process_messages_pending:
             if Actor.SENDING_IS_ASYNC or force_async:
                 # dbg(u'⇝')
                 # dbg("PROCESS-MSGS: async (Actor.SENDING_IS_ASYNC? %s  force_async? %s" % (Actor.SENDING_IS_ASYNC, force_async))
-                call_when_idle_unless_already(self._process_messages)  # TODO: check if there's an already scheduled call to avoid redundant calls
+                call_when_idle(self._process_messages)
+                self.process_messages_pending = True
             else:
                 # dbg(u'↯')
                 self._process_messages()
@@ -908,6 +909,8 @@ class Cell(_BaseCell):
     @logstring(u'↻ ↻')
     @inlineCallbacks
     def _process_messages(self):
+        self.process_messages_pending = False
+
         # XXX: this method can be called after the actor is stopped--add idle call cancelling
         # dbg(self.peek_message())
         # first = True

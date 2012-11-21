@@ -81,7 +81,12 @@ class Connection(object):
         log()
 
         self.sock.sendMultipart((self.our_addr, DISCONNECT))
-        yield sleep(0)
+        if not _actor.TESTING:
+            # have to avoid this during testing, and it's not needed anyway;
+            # during testing, since everything is running in the same thread with no remoting (by default)
+            # this will unnecessarily give control back to the test which means stuff will happen in the middle
+            # of closing.
+            yield sleep(0)
 
         self._kill_queue()
         self._emit_termination_messages()
@@ -217,7 +222,7 @@ class Hub(object):
 
     @logstring(u"❤")
     def _manage_heartbeat_and_visibility(self):
-        t = reactor.seconds()
+        t = self.reactor.seconds()
         self._next_heartbeat_t = t + self.HEARTBEAT_INTERVAL
         try:
             t_gone = t - self.HEARTBEAT_MAX_SILENCE
@@ -230,7 +235,7 @@ class Hub(object):
         except Exception:  # pragma: no cover
             panic("heartbeat logic failed:\n", traceback.format_exc())
         finally:
-            self._next_heartbeat = reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
+            self._next_heartbeat = self.reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
 
     def _connect(self, addr):
         assert _valid_addr(addr)
@@ -454,8 +459,8 @@ class MockNetwork(object):  # pragma: no cover
     def outsock_sendMultipart(self, src, dst, msgParts):
         self.enqueue(src, dst, msgParts)
 
-    def outsock_shutdown(self, addr):
-        self.disconnect(addr)
+    def outsock_shutdown(self, addr, target_addr):
+        self.disconnect(addr, target_addr)
 
     # def mapperdaemon(self, addr):
     #     pass
@@ -485,10 +490,9 @@ class MockNetwork(object):  # pragma: no cover
             dbg(u"%s → %s" % (addr, endpoint.address))
             self.connections.add((addr, endpoint.address))
 
-    def disconnect(self, addr):
-        found = [(src, dst) for src, dst in self.connections if addr == src]
-        assert found, "Outgoing sockets should only disconnect from addresses they have previously connected to"
-        self.connections.remove(found[0])
+    def disconnect(self, src, dst):
+        assert (src, dst) in self.connections, "Outgoing sockets should only disconnect from addresses they have previously connected to"
+        self.connections.remove((src, dst))
 
     @logstring(u"⇝")
     def enqueue(self, src, dst, msg):
@@ -597,7 +601,7 @@ class MockOutSocket(object):  # pragma: no cover
 
     def shutdown(self):
         dbg()
-        self.owner.outsock_shutdown(self.addr)
+        self.owner.outsock_shutdown(self.addr, self.endpoint_addr)
 
     def __repr__(self):
         return '<outsock:%s>' % (self.addr,)

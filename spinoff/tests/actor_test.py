@@ -2565,13 +2565,13 @@ def test_watching_an_actor_on_a_node_with_whom_connectivity_is_lost_or_limited(c
 
         node2.spawn(Actor, name='remote-watchee')
 
-        network.simulate(duration=2.0)
+        network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE / 2.0)
         assert not received
 
         network.packet_loss(100.0,
                             src='tcp://' + packet_loss_src + '-host:123',
                             dst='tcp://' + packet_loss_dst + '-host:123')
-        network.simulate(duration=10.0)
+        network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
         assert received
 
     test_it(packet_loss_src='watchee', packet_loss_dst='watcher')
@@ -2740,7 +2740,6 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
     network = MockNetwork(clock)
 
     sender_node = network.node('sender:123')
-    sender_node.hub.QUEUE_ITEM_LIFETIME = 10.0
 
     # recipient host not reachable within time limit--message dropped after `QUEUE_ITEM_LIFETIME`
 
@@ -2748,7 +2747,7 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
     ref << 'bar'
 
     with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(sender_node.hub.QUEUE_ITEM_LIFETIME + 1.0)
+        network.simulate(sender_node.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
 
 @simtime
