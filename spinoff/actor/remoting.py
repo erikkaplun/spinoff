@@ -557,7 +557,7 @@ class MockNetwork(object):  # pragma: no cover
                 time_left -= step
 
     def logstate(self):
-        return {str(internet.reactor.seconds()): True}
+        return {str(self.clock.seconds()): True}
 
     def __repr__(self):
         return 'mock-network'
