@@ -58,3 +58,93 @@ The example can be run using the following command:
 ::
 
     twistd --nodaemon startnode --actor spinoff.examples.example1.ExampleProcess
+
+
+Distributed Example (with Remoting)
+===================================
+
+::
+
+    # spinoff/examples/example2.py
+
+    class ExampleProcess(Process):
+        def run(self, other_actor):
+            other_actor = lookup(other_actor) if isinstance(other_actor, str) else other_actor
+            while True:
+                dbg("sending greeting to %r" % (other_actor,))
+                other_actor << ('hello!', self.ref)
+
+                dbg("waiting for ack from %r" % (other_actor,))
+                yield with_timeout(5.0, self.get('ack'))
+
+                dbg("got 'ack' from %r; now sleeping a bit..." % (other_actor,))
+                yield sleep(1.0)
+
+
+    class ExampleActor(Actor):
+        def pre_start(self):
+            dbg("starting")
+
+        def receive(self, msg):
+            content, sender = msg
+            dbg("%r from %r" % (content, sender))
+            sender << 'ack'
+
+        def post_stop(self):
+            dbg("stopping")
+
+
+The example can be run using the following commands:
+
+::
+
+    twistd --pidfile node1.pid --nodaemon startnode --remoting 127.0.0.1:9700 --actor spinoff.examples.example2.ExampleActor --name other
+    twistd --pidfile node2.pid --nodaemon startnode --remoting 127.0.0.1:9701 --actor spinoff.examples.example2.ExampleProcess --params "other_actor='127.0.0.1:9700/other'"
+
+
+Same Distributed Code without Remoting
+======================================
+
+The following example demonstrates how it's possible to run the same
+code, unmodified, in a single thread with no network/remoting involved
+whatsoever.  It's an illustration of how actors (components) written
+using Spinoff are agnostic of how they are wired to work with other
+actors and can thus be viewed as abstract components containing only
+pure domain logic and no low level transportation and topology
+details.
+
+::
+
+    # spinoff/examples/example2_local.py
+
+    from spinoff.actor.process import Process
+    from spinoff.util.logging import dbg
+
+    from .example2 import ExampleProcess, ExampleActor
+
+
+    class LocalApp(Process):
+        def run(self):
+            dbg("spawning ExampleActor")
+            actor1 = self.spawn(ExampleActor)
+
+            dbg("spawning ExampleProcess")
+            self.spawn(ExampleProcess.using(other_actor=actor1))
+
+            yield self.get()  # so that the entire app wouldn't exit immediately
+
+The example can be run using the following commands:
+
+::
+
+    twistd --nodaemon startnode --actor spinoff.examples.example2_local.LocalApp
+
+
+One might be tempted to ask, then, what is the difference between
+remoting frameworks such as CORBA.  The difference is that actors
+define clear boundaries where remoting could ever be used, as opposed
+to splitting a flow of tightly coupled logic into two nodes on the
+network, which, still providing valid output, can degrade in
+performance significantly.  This is not to say that actors with
+location transparency suffer none of such issues but the extent to
+which the problem exists is, arguably, an order of magnitude lower.
