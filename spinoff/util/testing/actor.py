@@ -138,6 +138,10 @@ def test_errorcollector_can_be_used_with_assert_raises():
     from spinoff.actor import Node
     from spinoff.actor.remoting import HubWithNoRemoting
 
+    from spinoff.actor import _actor
+    tmp = _actor.Actor.SPAWNING_IS_ASYNC
+    _actor.Actor.SPAWNING_IS_ASYNC = False
+
     spawn = Node(hub=HubWithNoRemoting()).spawn
 
     class MockException(Exception):
@@ -150,11 +154,15 @@ def test_errorcollector_can_be_used_with_assert_raises():
             message_received[0] = True
             raise MockException
 
-    with ErrorCollector():  # emulate a real actor test case
-        with assert_raises(MockException):
-            with ErrorCollector():
-                spawn(MyActor) << None
-                assert message_received[0]
+    try:
+        a = spawn(MyActor)
+        with ErrorCollector():  # emulate a real actor test case
+            with assert_raises(MockException):
+                with ErrorCollector():
+                    a << None
+                    assert message_received[0]
+    finally:
+        _actor.Actor.SPAWNING_IS_ASYNC = tmp
 
 
 @contextmanager
