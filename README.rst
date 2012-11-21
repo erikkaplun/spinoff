@@ -98,8 +98,8 @@ The example can be run using the following commands:
 
 ::
 
-    twistd --pidfile node1.pid --nodaemon startnode --remoting 127.0.0.1:9700 --actor spinoff.examples.example2.ExampleActor --name other
-    twistd --pidfile node2.pid --nodaemon startnode --remoting 127.0.0.1:9701 --actor spinoff.examples.example2.ExampleProcess --params "other_actor='127.0.0.1:9700/other'"
+    twistd --pidfile node1.pid --nodaemon startnode --remoting localhost:9700 --actor spinoff.examples.example2.ExampleActor --name other
+    twistd --pidfile node2.pid --nodaemon startnode --remoting localhost:9701 --actor spinoff.examples.example2.ExampleProcess --params "other_actor='localhost:9700/other'"
 
 
 Same Distributed Code without Remoting
@@ -141,10 +141,10 @@ The example can be run using the following commands:
 
 
 One might be tempted to ask, then, what is the difference between
-remoting frameworks such as CORBA.  The difference is that actors
-define clear boundaries where remoting could ever be used, as opposed
-to splitting a flow of tightly coupled logic into two nodes on the
-network, which, still providing valid output, can degrade in
+remoting frameworks such as CORBA and Spinoff.  The difference is that
+actors define clear boundaries where remoting could ever be used, as
+opposed to splitting a flow of tightly coupled logic into two nodes on
+the network, which, still providing valid output, can degrade in
 performance significantly.  This is not to say that actors with
 location transparency suffer none of such issues but the extent to
 which the problem exists is, arguably, an order of magnitude lower.
