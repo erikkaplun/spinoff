@@ -4,6 +4,7 @@ from __future__ import print_function, absolute_import
 import inspect
 import random
 import re
+import socket
 import struct
 import traceback
 from cStringIO import StringIO
@@ -34,6 +35,7 @@ DISCONNECT = b'1'
 PING_VERSION_FORMAT = '!I'
 
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))
+_PROTO_ADDR_RE = re.compile('(tcp://)(%s)' % (_VALID_NODEID_RE.pattern,))
 
 
 class Connection(object):
@@ -55,7 +57,7 @@ class Connection(object):
 
         self.known_remote_version = known_remote_version
 
-        sock.addEndpoints([ZmqEndpoint('connect', addr)])
+        sock.addEndpoints([ZmqEndpoint('connect', _resolve_addr(addr))])
 
     @property
     def is_active(self):
@@ -161,6 +163,7 @@ class Hub(object):
         self.reactor = reactor
 
         self.nodeid = nodeid
+
         self.addr = 'tcp://' + nodeid if nodeid else None
 
         # guarantees that terminations will not go unnoticed and that termination messages won't arrive out of order
@@ -168,7 +171,7 @@ class Hub(object):
 
         self.insock = insock
         insock.gotMultipart = self._got_message
-        insock.addEndpoints([ZmqEndpoint('bind', self.addr)])
+        insock.addEndpoints([ZmqEndpoint('bind', _resolve_addr(self.addr))])
 
         self.outsock_factory = outsock_factory
         self.connections = {}
@@ -604,3 +607,12 @@ class MockOutSocket(object):  # pragma: no cover
 
 
 _dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover
+
+def _resolve_addr(addr):
+    m = _PROTO_ADDR_RE.match(addr)
+    proto, nodeid = m.groups()[0:2]
+
+    if nodeid:
+        host, port = nodeid.split(':')
+        return '%s%s:%s' % (proto, socket.gethostbyname(host), port)
+    return addr

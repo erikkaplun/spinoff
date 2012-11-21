@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import re
 import traceback
 
 from twisted.application.service import Service
@@ -11,7 +10,7 @@ from twisted.python.failure import Failure
 from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
 from spinoff.actor import spawn, Actor, set_default_node, Node
-from spinoff.actor._actor import _validate_nodeid, _VALID_IP_RE
+from spinoff.actor._actor import _validate_nodeid
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic
 from spinoff.util.async import after
@@ -43,12 +42,6 @@ class ActorRunner(Service):
 
         def start_actor():
             if self._nodeid:
-                if not re.match(_VALID_IP_RE, self._nodeid):
-                    err("Node ID to IP resolution not supported yet; "
-                        "provide an <ip-addr:port> parameter to set up remoting")
-                    reactor.stop()
-                    return
-
                 Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
                 try:
                     f1 = ZmqFactory()
