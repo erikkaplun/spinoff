@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import re
 import traceback
 
 from twisted.application.service import Service
@@ -24,6 +25,7 @@ _EMPTY = object()
 class ActorRunner(Service):
 
     def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, supervise='stop', keep_running=False):
+        nodeid = 'localhost' + nodeid if re.match(r'^:\d+$', nodeid) else nodeid
         if nodeid:
             _validate_nodeid(nodeid)
         self._init_params = init_params
