@@ -1315,6 +1315,11 @@ class Cell(_BaseCell):
                                  self.uri.path,)
 
 
+class Future(Deferred):
+    def send(self, message):
+        (self.callback if not isinstance(message, BaseException) else self.errback)(message)
+
+
 class TempActor(Actor):
     pool = set()
 
