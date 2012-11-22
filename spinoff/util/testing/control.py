@@ -4,8 +4,7 @@ import abc
 from pickle import PicklingError
 
 from twisted.internet.defer import Deferred
-from spinoff.util.async import sleep
-from spinoff.util.async import after
+from spinoff.util.async import sleep, after
 
 
 class Holder(object):

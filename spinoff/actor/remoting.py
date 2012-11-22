@@ -12,7 +12,6 @@ from decimal import Decimal
 from pickle import Unpickler, BUILD
 from cPickle import dumps
 
-from twisted import internet
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqEndpoint

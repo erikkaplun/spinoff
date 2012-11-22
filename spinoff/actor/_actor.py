@@ -23,7 +23,7 @@ from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Escalate,
 from spinoff.actor.exceptions import (
     NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException)
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY, IN
-from spinoff.util.async import call_when_idle_unless_already, with_timeout, Timeout, sleep, call_when_idle
+from spinoff.util.async import with_timeout, Timeout, sleep, call_when_idle
 from spinoff.util.pattern_matching import Matcher
 from spinoff.util.logging import logstring, dbg, fail, panic, err
 from spinoff.util.python import clean_tb_twisted

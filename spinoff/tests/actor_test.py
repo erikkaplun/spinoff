@@ -8,7 +8,7 @@ import re
 import sys
 import weakref
 
-from nose.tools import eq_, ok_, set_trace
+from nose.tools import eq_, ok_
 from nose.twistedtools import deferred
 from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo, returnValue
 from twisted.internet.task import Clock
