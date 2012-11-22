@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Spinoff by eallik</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Spinoff</h1>
+        <p>Spinoff is a framework for writing distributed, fault tolerant and scalable applications in Python. Spinoff is based on the Actor Model and borrows from Akka (location transparency, actor references, etc) and Erlang (processes, nodename@hosthost style node references (not implemented yet)).  </p>
+
+        <p class="view"><a href="https://github.com/eallik/spinoff">View the Project on GitHub <small>eallik/spinoff</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/eallik/spinoff/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/eallik/spinoff/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/eallik/spinoff">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>Overview</h1>
+
+<p>Spinoff is a framework for writing distributed, fault tolerant and scalable applications in Python.  Spinoff is based on the <a href="http://en.wikipedia.org/wiki/Actor_model">Actor Model</a> and borrows from <a href="http://akka.io">Akka</a> (location transparency, actor references, etc) and <a href="http://en.wikipedia.org/wiki/Erlang_(programming_language">Erlang</a>) (processes, <code>nodename@hosthost</code> style node references (not implemented yet)).</p>
+
+<p>Spinoff has been built using <a href="http://twistedmatrix.com/">Twisted</a> as the underlying framework and <a href="http://www.zeromq.org/">ZeroMQ</a> (via <code>pyzmq</code> and a fork of <code>txzmq</code>) for remoting.</p>
+
+<p>Spinoff is currently under continuous development but is nevertheless usable for writing real applications—its fault tolerance features also protect it against bugs in its own code.</p>
+
+<h1>Example</h1>
+
+<p>The following is only a very small "peek preview" style example of what the framework can do. More examples and full documentation will follow soon.</p>
+
+<div class="highlight"><pre><span class="c"># spinoff/examples/example1.py</span>
+<span class="kn">from</span> <span class="nn">spinoff.actor</span> <span class="kn">import</span> <span class="n">Actor</span>
+<span class="kn">from</span> <span class="nn">spinoff.actor.process</span> <span class="kn">import</span> <span class="n">Process</span>
+<span class="kn">from</span> <span class="nn">spinoff.util.logging</span> <span class="kn">import</span> <span class="n">dbg</span>
+<span class="kn">from</span> <span class="nn">spinoff.util.async</span> <span class="kn">import</span> <span class="n">sleep</span><span class="p">,</span> <span class="n">with_timeout</span>
+
+
+<span class="k">class</span> <span class="nc">ExampleProcess</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">child</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span><span class="n">ExampleActor</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"sending greeting to </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">child</span><span class="p">,))</span>
+            <span class="n">child</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="s">'hello!'</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="p">)</span>
+
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"waiting for ack from </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">child</span><span class="p">,))</span>
+            <span class="k">yield</span> <span class="n">with_timeout</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">'ack'</span><span class="p">))</span>
+
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"got 'ack' from </span><span class="si">%r</span><span class="s">; now sleeping a bit..."</span> <span class="o">%</span> <span class="p">(</span><span class="n">child</span><span class="p">,))</span>
+            <span class="k">yield</span> <span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ExampleActor</span><span class="p">(</span><span class="n">Actor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">pre_start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"starting"</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">receive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">):</span>
+        <span class="n">content</span><span class="p">,</span> <span class="n">sender</span> <span class="o">=</span> <span class="n">msg</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"</span><span class="si">%r</span><span class="s"> from </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">sender</span><span class="p">))</span>
+        <span class="n">sender</span> <span class="o">&lt;&lt;</span> <span class="s">'ack'</span>
+
+    <span class="k">def</span> <span class="nf">post_stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"stopping"</span><span class="p">)</span>
+</pre></div>
+
+<p>The example can be run using the following command:</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd --nodaemon startnode --actor spinoff.examples.example1.ExampleProcess
+</pre></div>
+
+<p>or</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd -n startnode -a spinoff.examples.example1.ExampleProcess
+</pre></div>
+
+<h1>Distributed Example (with Remoting)</h1>
+
+<div class="highlight"><pre><span class="c"># spinoff/examples/example2.py</span>
+<span class="kn">from</span> <span class="nn">spinoff.actor</span> <span class="kn">import</span> <span class="n">Actor</span>
+<span class="kn">from</span> <span class="nn">spinoff.actor.process</span> <span class="kn">import</span> <span class="n">Process</span>
+<span class="kn">from</span> <span class="nn">spinoff.util.logging</span> <span class="kn">import</span> <span class="n">dbg</span>
+<span class="kn">from</span> <span class="nn">spinoff.util.async</span> <span class="kn">import</span> <span class="n">sleep</span><span class="p">,</span> <span class="n">with_timeout</span>
+
+
+<span class="k">class</span> <span class="nc">ExampleProcess</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other_actor</span><span class="p">):</span>
+        <span class="n">other_actor</span> <span class="o">=</span> <span class="n">lookup</span><span class="p">(</span><span class="n">other_actor</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other_actor</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">other_actor</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"sending greeting to </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">other_actor</span><span class="p">,))</span>
+            <span class="n">other_actor</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="s">'hello!'</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ref</span><span class="p">)</span>
+
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"waiting for ack from </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">other_actor</span><span class="p">,))</span>
+            <span class="k">yield</span> <span class="n">with_timeout</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">'ack'</span><span class="p">))</span>
+
+            <span class="n">dbg</span><span class="p">(</span><span class="s">"got 'ack' from </span><span class="si">%r</span><span class="s">; now sleeping a bit..."</span> <span class="o">%</span> <span class="p">(</span><span class="n">other_actor</span><span class="p">,))</span>
+            <span class="k">yield</span> <span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ExampleActor</span><span class="p">(</span><span class="n">Actor</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">pre_start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"starting"</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">receive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">):</span>
+        <span class="n">content</span><span class="p">,</span> <span class="n">sender</span> <span class="o">=</span> <span class="n">msg</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"</span><span class="si">%r</span><span class="s"> from </span><span class="si">%r</span><span class="s">"</span> <span class="o">%</span> <span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">sender</span><span class="p">))</span>
+        <span class="n">sender</span> <span class="o">&lt;&lt;</span> <span class="s">'ack'</span>
+
+    <span class="k">def</span> <span class="nf">post_stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"stopping"</span><span class="p">)</span>
+</pre></div>
+
+<p>The example can be run using the following commands:</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd --pidfile node1.pid --nodaemon startnode --remoting localhost:9700 --actor spinoff.examples.example2.ExampleActor --name other
+<span class="nv">$ </span>twistd --pidfile node2.pid --nodaemon startnode --remoting localhost:9701 --actor spinoff.examples.example2.ExampleProcess --params <span class="s2">"other_actor='localhost:9700/other'"</span>
+</pre></div>
+
+<p>or</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd --pidfile node1.pid -n startnode -r :9700 -a spinoff.examples.example2.ExampleActor -n other
+<span class="nv">$ </span>twistd --pidfile node2.pid -n startnode -r :9701 -a spinoff.examples.example2.ExampleProcess -i <span class="s2">"other_actor='localhost:9700/other'"</span>
+</pre></div>
+
+<h1>Same Distributed Code without Remoting</h1>
+
+<p>The following example demonstrates how it's possible to run the same code, unmodified, in a single thread with no network/remoting involved whatsoever.  It's an illustration of how actors (components) written using Spinoff are xagnostic of how they are wired to work with other actors and can thus be viewed as abstract components containing only pure domain logic and no low level transportation and topology details.</p>
+
+<div class="highlight"><pre><span class="c"># spinoff/examples/example2_local.py</span>
+<span class="kn">from</span> <span class="nn">spinoff.actor.process</span> <span class="kn">import</span> <span class="n">Process</span>
+<span class="kn">from</span> <span class="nn">spinoff.util.logging</span> <span class="kn">import</span> <span class="n">dbg</span>
+
+<span class="kn">from</span> <span class="nn">.example2</span> <span class="kn">import</span> <span class="n">ExampleProcess</span><span class="p">,</span> <span class="n">ExampleActor</span>
+
+
+<span class="k">class</span> <span class="nc">LocalApp</span><span class="p">(</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"spawning ExampleActor"</span><span class="p">)</span>
+        <span class="n">actor1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span><span class="n">ExampleActor</span><span class="p">)</span>
+
+        <span class="n">dbg</span><span class="p">(</span><span class="s">"spawning ExampleProcess"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span><span class="n">ExampleProcess</span><span class="o">.</span><span class="n">using</span><span class="p">(</span><span class="n">other_actor</span><span class="o">=</span><span class="n">actor1</span><span class="p">))</span>
+
+        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>  <span class="c"># so that the entire app wouldn't exit immediately</span>
+</pre></div>
+
+<p>The example can be run using the following commands:</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd --nodaemon startnode --actor spinoff.examples.example2_local.LocalApp
+</pre></div>
+
+<p>or</p>
+
+<div class="highlight"><pre><span class="nv">$ </span>twistd -n startnode -a spinoff.examples.example2_local.LocalApp
+</pre></div>
+
+<p>One might be tempted to ask, then, what is the difference between remoting frameworks such as CORBA and Spinoff.  The difference is that actors define clear boundaries where remoting could ever be used, as opposed to splitting a flow of tightly coupled logic into two nodes on the network, which, still providing valid output, can degrade in performance significantly.  This is not to say that actors with location transparency suffer none of such issues but the extent to which the problem exists is, arguably, an order of magnitude lower.</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/eallik">eallik</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
