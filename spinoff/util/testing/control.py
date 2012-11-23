@@ -259,12 +259,15 @@ class Buffer(object):
         else:
             self.queue.append(arg)
 
-    def wait(self):
+    def expect(self, times=1):
+        """If times > 1, returns `None`."""
         if self.queue:
             return self.queue.pop(0)
         else:
             self.d = Deferred()
             return self.d
+        if times > 1:
+            self.expect(times - 1)
 
     @property
     def is_empty(self):
