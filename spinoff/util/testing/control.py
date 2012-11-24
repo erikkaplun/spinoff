@@ -274,10 +274,10 @@ class Buffer(object):
                 self.d = Deferred()
                 ret.append((yield self.d))
         if exactly:
-            yield self.expect_not()
+            yield self.expect_none()
         returnValue(ret if upto > 1 else ret[0])
 
-    def expect_not(self):
+    def expect_none(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
         result is True or False depending on whether the queue is still empty when the Deferred fires or not.
 
