@@ -1,7 +1,7 @@
 class DoubleDict(dict):
     def __init__(self, *args, **kwargs):
         dict.__init__(self, *args, **kwargs)
-        self._rev = {v: k for k, v in self.items()}
+        self._rev = dict((v, k) for k, v in self.items())
 
     def values(self):
         return self._rev.keys()
