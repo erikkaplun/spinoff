@@ -92,21 +92,50 @@ def cancel_all_idle_calls():
     _idle_calls.clear()
 
 
-class _AfterWrap(object):
+class _AfterWrap(Deferred):
     def __init__(self, d):
         self.d = d
 
     def do(self, fn, *args, **kwargs):
-        return _AfterWrap(self.d.addCallback(lambda _: fn(*args, **kwargs)))
+        self.d.addCallback(lambda _: fn(*args, **kwargs))
+        return self
 
     def then(self, fn, *args, **kwargs):
-        return _AfterWrap(self.d.addCallback(lambda result: fn(result, *args, **kwargs)))
+        self.d.addCallback(lambda result: fn(result, *args, **kwargs))
+        return self
 
     def onerror(self, fn, *args, **kwargs):
-        return _AfterWrap(self.d.addErrback(lambda f: fn(f, *args, **kwargs)))
+        self.d.addErrback(lambda f: fn(f, *args, **kwargs))
+        return self
 
     def cancel(self):
         self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+
+    def addCallback(self, *args, **kwargs):
+        self.d.addCallback(*args, **kwargs)
+        return self
+
+    def addErrback(self, *args, **kwargs):
+        self.d.addErrback(*args, **kwargs)
+        return self
+
+    def addBoth(self, *args, **kwargs):
+        self.d.addBoth(*args, **kwargs)
+        return self
+
+    def addCallbacks(self, *args, **kwargs):
+        self.d.addCallbacks(*args, **kwargs)
+        return self
+
+    def addErrbacks(self, *args, **kwargs):
+        self.d.addErrbacks(*args, **kwargs)
+        return self
+
+    def callback(self, *args, **kwargs):
+        assert False, "objects returned by the after() construct should not be callback'd"
+
+    def errback(self, *args, **kwargs):
+        assert False, "objects returned by the after() construct should not be errback'd"
 
 
 exec_async = lambda f: inlineCallbacks(f)()
