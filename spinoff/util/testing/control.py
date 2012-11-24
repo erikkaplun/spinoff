@@ -3,7 +3,7 @@ from __future__ import print_function
 import abc
 from pickle import PicklingError
 
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from spinoff.util.async import sleep, after
 
 
@@ -260,18 +260,21 @@ class Buffer(object):
         else:
             self.queue.append(arg)
 
+    @inlineCallbacks
     def expect(self, times=1):
         """If times > 1, returns `None`."""
-        if self.queue:
-            return self.queue.pop(0)
-        else:
-            self.d = Deferred()
-            return self.d
-        if times > 1:
-            self.expect(times - 1)
+        for _ in range(times):
+            if self.queue:
+                ret = self.queue.pop(0)
+                if times == 1:
+                    returnValue(ret)
+            else:
+                self.d = Deferred()
+                ret = yield self.d
+                if times == 1:
+                    returnValue(ret)
 
-    @property
-    def is_empty(self):
+    def expect_not(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
         result is True or False depending on whether the queue is still empty when the Deferred fires or not.
 
