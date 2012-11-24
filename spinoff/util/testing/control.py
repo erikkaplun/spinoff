@@ -255,7 +255,8 @@ class Buffer(object):
 
     def __call__(self, arg=None):
         if self.d:
-            self.d.callback(arg)
+            d, self.d = self.d, None
+            d.callback(arg)
         else:
             self.queue.append(arg)
 
