@@ -1,0 +1,5 @@
+language: python
+python:
+    - "2.7"
+install: python setup.py develop; pip install genshi; pip install nose
+script: python setup.py test
