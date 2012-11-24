@@ -261,21 +261,21 @@ class Buffer(object):
             self.queue.append(arg)
 
     @inlineCallbacks
-    def expect(self, times=None, max=None):
-        """If times > 1, returns `None`."""
-        assert max is None or times is None, "only one of `times` or `max` is allowed"
-        if times is None:
-            times = max if max else 1
+    def expect(self, upto=None, exactly=None):
+        """If upto > 1, returns `None`."""
+        assert exactly is None or upto is None, "only one of `upto` or `exactly` is allowed"
+        if upto is None:
+            upto = exactly if exactly else 1
         ret = []
-        for _ in range(times):
+        for _ in range(upto):
             if self.queue:
                 ret.append(self.queue.pop(0))
             else:
                 self.d = Deferred()
                 ret.append((yield self.d))
-        if max:
+        if exactly:
             yield self.expect_not()
-        returnValue(ret if times > 1 else ret[0])
+        returnValue(ret if upto > 1 else ret[0])
 
     def expect_not(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
