@@ -1,7 +1,9 @@
 Overview
 ========
 
-Spinoff is a framework for writing distributed, fault tolerant and scalable applications in Python.  Spinoff is based on the [Actor Model](http://en.wikipedia.org/wiki/Actor_model) and borrows from [Akka](http://akka.io) (location transparency, actor references, etc) and [Erlang](http://en.wikipedia.org/wiki/Erlang_(programming_language)) (processes, `nodename@hosthost` style node references (not implemented yet)).
+Spinoff is a framework for writing distributed, fault tolerant and scalable applications in Python. <a href="http://travis-ci.org/eallik/spinoff" title="Spinoff on Travis-CI.org"><img src="https://secure.travis-ci.org/eallik/spinoff.png?branch=master" alt="&lt;build status indicator on travis-ci.org/eallik/spinoff&gt;"/></a>
+
+Spinoff is based on the [Actor Model](http://en.wikipedia.org/wiki/Actor_model) and borrows from [Akka](http://akka.io) (location transparency, actor references, etc) and [Erlang](http://en.wikipedia.org/wiki/Erlang_(programming_language)) (processes, `nodename@hosthost` style node references (not implemented yet)).
 
 Spinoff has been built using [Twisted](http://twistedmatrix.com/) as the underlying framework and [ZeroMQ](http://www.zeromq.org/) (via `pyzmq` and a fork of `txzmq`) for remoting.
 
