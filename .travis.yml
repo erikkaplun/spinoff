@@ -3,5 +3,8 @@ python:
     - "2.7"
     - "2.6"
     - "pypy"
-install: python setup.py develop; pip install genshi; pip install nose
-script: python setup.py test
+install:
+    - pip install . --use-mirrors
+    - pip install genshi --use-mirrors
+script:
+    - python setup.py test
