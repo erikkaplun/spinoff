@@ -92,43 +92,50 @@ def cancel_all_idle_calls():
     _idle_calls.clear()
 
 
-class _AfterWrap(Deferred):
-    def __init__(self, d):
-        self.d = d
+class FakeDeferred(object, Deferred):
+    reset = False
 
-    def do(self, fn, *args, **kwargs):
-        self.d.addCallback(lambda _: fn(*args, **kwargs))
-        return self
-
-    def then(self, fn, *args, **kwargs):
-        self.d.addCallback(lambda result: fn(result, *args, **kwargs))
-        return self
-
-    def onerror(self, fn, *args, **kwargs):
-        self.d.addErrback(lambda f: fn(f, *args, **kwargs))
-        return self
-
-    def cancel(self):
-        self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+    def __init__(self, d=None):
+        self.d = d or Deferred()
 
     def addCallback(self, *args, **kwargs):
-        self.d.addCallback(*args, **kwargs)
+        if self.reset:
+            d, self.d = self.d, Deferred()
+        else:
+            d = self.d
+        d.addCallback(*args, **kwargs)
         return self
 
     def addErrback(self, *args, **kwargs):
-        self.d.addErrback(*args, **kwargs)
+        if self.reset:
+            d, self.d = self.d, Deferred()
+        else:
+            d = self.d
+        d.addErrback(*args, **kwargs)
         return self
 
     def addBoth(self, *args, **kwargs):
-        self.d.addBoth(*args, **kwargs)
+        if self.reset:
+            d, self.d = self.d, Deferred()
+        else:
+            d = self.d
+        d.addBoth(*args, **kwargs)
         return self
 
     def addCallbacks(self, *args, **kwargs):
-        self.d.addCallbacks(*args, **kwargs)
+        if self.reset:
+            d, self.d = self.d, Deferred()
+        else:
+            d = self.d
+        d.addCallbacks(*args, **kwargs)
         return self
 
     def addErrbacks(self, *args, **kwargs):
-        self.d.addErrbacks(*args, **kwargs)
+        if self.reset:
+            d, self.d = self.d, Deferred()
+        else:
+            d = self.d
+        d.addErrbacks(*args, **kwargs)
         return self
 
     def callback(self, *args, **kwargs):
@@ -136,6 +143,34 @@ class _AfterWrap(Deferred):
 
     def errback(self, *args, **kwargs):
         assert False, "objects returned by the after() construct should not be errback'd"
+
+    def callback_and_reset(self, result):
+        self.reset = True
+        self.d.callback(result)
+
+    def errback_and_reset(self, failure):
+        self.reset = True
+        self.d.errback(failure)
+
+
+class _AfterWrap(FakeDeferred):
+    def __init__(self, d):
+        FakeDeferred.__init__(self, d)
+
+    def do(self, fn, *args, **kwargs):
+        self.addCallback(lambda _: fn(*args, **kwargs))
+        return self
+
+    def then(self, fn, *args, **kwargs):
+        self.addCallback(lambda result: fn(result, *args, **kwargs))
+        return self
+
+    def onerror(self, fn, *args, **kwargs):
+        self.addErrback(lambda f: fn(f, *args, **kwargs))
+        return self
+
+    def cancel(self):
+        self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
 exec_async = lambda f: inlineCallbacks(f)()
