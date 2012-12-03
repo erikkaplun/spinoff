@@ -5,7 +5,7 @@ from cStringIO import StringIO
 
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 
-from spinoff.actor import Actor, spawn
+from spinoff.actor import Actor, spawn, Ref
 from spinoff.actor.exceptions import Unhandled
 from spinoff.actor.process import Process
 from spinoff.contrib.filetransfer.util import read_file_async
@@ -63,6 +63,8 @@ class FilePublisher(Actor):
 
     @classmethod
     def get(cls, node=None):
+        if isinstance(node, Ref):
+            node = node._cell.root.node
         if not cls._instance:
             cls._instance = (node.spawn if node else spawn)(cls)
         return cls._instance
