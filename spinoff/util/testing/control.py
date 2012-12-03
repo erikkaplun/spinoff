@@ -261,13 +261,13 @@ class Buffer(object):
             self.queue.append(arg)
 
     @inlineCallbacks
-    def expect(self, upto=None, exactly=None):
-        """If upto > 1, returns `None`."""
-        assert exactly is None or upto is None, "only one of `upto` or `exactly` is allowed"
-        if upto is None:
-            upto = exactly if exactly else 1
+    def expect(self, atleast=None, exactly=None):
+        """If atleast > 1, returns `None`."""
+        assert bool(exactly is None) != bool(atleast is None), "exactly one of `atleast` or `exactly` is required"
+        if atleast is None:
+            atleast = exactly if exactly else 1
         ret = []
-        for _ in range(upto):
+        for _ in range(atleast):
             if self.queue:
                 ret.append(self.queue.pop(0))
             else:
@@ -275,7 +275,11 @@ class Buffer(object):
                 ret.append((yield self.d))
         if exactly:
             yield self.expect_none()
-        returnValue(ret if upto > 1 else ret[0])
+        returnValue(ret)
+
+    @inlineCallbacks
+    def expect_one(self):
+        returnValue((yield self.expect(exactly=1))[0])
 
     def expect_none(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
