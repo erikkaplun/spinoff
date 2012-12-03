@@ -4,7 +4,7 @@ _EMPTY = object()
 class Decision(object):
     class __metaclass__(type):
         def __instancecheck__(self, other):
-            return type.__instancecheck__(self, other) or other is None and self is Decision
+            return self in type(other).__mro__ or other is None and self is Decision
 
     def __repr__(self):
         return type(self).__name__
