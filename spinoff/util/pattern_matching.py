@@ -50,6 +50,14 @@ class _Marker(object):
 class Matcher(_Marker):
     ignore = False
 
+    def __new__(self, *args):
+        obj = super(Matcher, self).__new__(self, *[args[0]] if args else [])
+        if len(args) <= 1:
+            return obj
+        else:
+            obj.__init__(args[0])
+            return obj.__eq__(args[1])
+
     def __req__(self, x):
         return self.__eq__(x)
 
