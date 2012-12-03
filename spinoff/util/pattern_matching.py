@@ -67,6 +67,10 @@ class ANY(Matcher):
     def __eq__(self, x):
         return True
 
+    def __call__(self, *args, **kwargs):
+        """Enables `ANY` to be used as a function that takes any arguments and always returns `True`."""
+        return True
+
     def __str__(self):
         return 'ANY'
 ANY = ANY()
