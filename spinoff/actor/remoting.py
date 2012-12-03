@@ -542,9 +542,9 @@ class MockNetwork(object):  # pragma: no cover
             sock.gotMultipart(msg)
 
     # XXX: change `duration` into `iterations` so that changing `step` wouldn't affect tests, as far as non-packet-lossy tests are concerned
-    def simulate(self, duration, step=0.1):
+    def simulate(self, duration, step=Decimal('0.1')):
         MAX_PRECISION = 5
-        step = round(Decimal(step), MAX_PRECISION)
+        step = round(Decimal(str(step)) if not isinstance(step, Decimal) else step, MAX_PRECISION)
         if not step:
             raise TypeError("step value to simulate must be positive and with a precision of less than or equal to %d "
                             "significant figures" % (MAX_PRECISION,))
