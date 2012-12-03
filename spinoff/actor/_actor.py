@@ -520,7 +520,7 @@ class Guardian(_BaseCell, _BaseRef):
             actor.stop()
             # dbg("GUARDIAN: joining...", actor, actor._cell)
             try:
-                yield with_timeout(.01, actor.join())
+                yield with_timeout(3.0, actor.join())  # TODO: make configurable/interactive
             except Timeout:  # pragma: no cover
                 # dbg("GUARDIAN: actor %r refused to stop" % (actor,))
                 assert False, "actor %r refused to stop" % (actor,)
