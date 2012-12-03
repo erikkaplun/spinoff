@@ -1,4 +1,5 @@
 import copy
+import inspect
 import re
 
 
@@ -51,12 +52,22 @@ class Matcher(_Marker):
     ignore = False
 
     def __new__(self, *args):
-        obj = super(Matcher, self).__new__(self, *[args[0]] if args else [])
-        if len(args) <= 1:
+        obj = super(Matcher, self).__new__(self, *args if args else [])
+
+        try:
+            argspec = inspect.getargspec(type(obj).__init__)
+        except TypeError:
             return obj
         else:
-            obj.__init__(args[0])
-            return obj.__eq__(args[1])
+            if argspec.varargs or argspec.keywords:
+                return obj
+
+        nargs = len(argspec.args) - 1
+        if len(args) <= nargs:  # <= because for example (at least) copy.copy causes us to be called with no arguments
+            return obj
+        else:
+            obj.__init__(*args[:nargs])
+            return obj.__eq__(*args[nargs:])
 
     def __req__(self, x):
         return self.__eq__(x)
