@@ -10,6 +10,15 @@ Spinoff has been built using [Twisted](http://twistedmatrix.com/) as the underly
 Spinoff is currently under continuous development but is nevertheless usable for writing real applications—its fault tolerance features also protect it against bugs in its own code.
 
 
+Hype
+====
+
+> _"anyway, spinoff is really super nice to play with all this stuff
+> because it's cheap to write code in it
+> it really shines at making quick prototypes"_
+
+...so let's hope one day there will be a testimonial here saying "it really shines at making production software".
+
 Example
 =======
 
