@@ -48,6 +48,9 @@ class _Marker(object):
     def __repr__(self):
         return self.__str__()
 
+    def __str__(self):
+        return "%s(<unknown>)" % (type(self).__name__,)
+
 
 class Matcher(_Marker):
     ignore = False
