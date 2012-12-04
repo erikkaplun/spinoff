@@ -243,6 +243,9 @@ class HASSUBSET(Matcher):
         else:
             raise TypeError("a dict or a list is required")
 
+    def __str__(self):
+        return 'HASSUBSET(%r)' % self.items
+
 
 def HASITEMS(*args, **kwargs):
     warnings.warn("HASITEMS has been deprecated in favor of HASSUBSET", DeprecationWarning)
