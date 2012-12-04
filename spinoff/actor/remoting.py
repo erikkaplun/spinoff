@@ -210,8 +210,9 @@ class Hub(object):
                 conn.seen = self.reactor.seconds()
 
         elif msg == DISCONNECT:
-            conn.close()
-            del self.connections[sender_addr]
+            if conn:
+                conn.close()
+                del self.connections[sender_addr]
 
         else:
             path, msg = self._loads(msg)
