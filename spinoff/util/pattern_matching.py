@@ -1,6 +1,7 @@
 import copy
 import inspect
 import re
+import warnings
 
 
 class _Values(list):
@@ -220,7 +221,7 @@ class CONTAINS(Matcher):
         return 'CONTAINS(%r)' % self.subset_or_elem
 
 
-class HASITEMS(Matcher):
+class HASSUBSET(Matcher):
     def __init__(self, items):
         self.items = items
 
@@ -238,3 +239,8 @@ class HASITEMS(Matcher):
             return True
         else:
             raise TypeError("a dict or a list is required")
+
+
+def HASITEMS(*args, **kwargs):
+    warnings.warn("HASITEMS has been deprecated in favor of HASSUBSET", DeprecationWarning)
+    return HASSUBSET(*args, **kwargs)
