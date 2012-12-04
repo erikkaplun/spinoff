@@ -161,18 +161,18 @@ class _Receiver(Process):
 
 
 class FileRef(object):
-    def __init__(self, pub_id, file_service, orig_name):
+    def __init__(self, pub_id, file_service, name_hint):
         """Private; see File.publish instead"""
         self.pub_id = pub_id
         self.file_service = file_service
-        self.orig_name = orig_name
+        self.name_hint = name_hint
 
     @classmethod
     def publish(cls, path, node=None):
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, orig_name=os.path.split(path)[1])
+        return cls(pub_id, file_service, name_hint=os.path.basename(path))
 
     def get_handle(self):
         return FileHandle(self.pub_id, self.file_service)
@@ -182,7 +182,7 @@ class FileRef(object):
     #     raise NotImplementedError
 
     def __repr__(self):
-        return "<file %s @ %r>" % (self.orig_name, self.file_service)
+        return "<file %s @ %r>" % (self.name_hint, self.file_service)
 
 
 class FileHandle(object):
