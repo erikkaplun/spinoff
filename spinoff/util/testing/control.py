@@ -4,7 +4,7 @@ import abc
 from pickle import PicklingError
 
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
-from spinoff.util.async import sleep, after
+from spinoff.util.async import sleep, after, with_timeout
 
 
 class Holder(object):
@@ -261,7 +261,7 @@ class Buffer(object):
             self.queue.append(arg)
 
     @inlineCallbacks
-    def expect(self, atleast=None, exactly=None):
+    def expect(self, atleast=None, exactly=None, timeout=1.0):
         """If atleast > 1, returns `None`."""
         assert bool(exactly is None) != bool(atleast is None), "exactly one of `atleast` or `exactly` is required"
         if atleast is None:
@@ -272,14 +272,14 @@ class Buffer(object):
                 ret.append(self.queue.pop(0))
             else:
                 self.d = Deferred()
-                ret.append((yield self.d))
+                ret.append((yield with_timeout(timeout, self.d)))
         if exactly:
             yield self.expect_none()
         returnValue(ret)
 
     @inlineCallbacks
-    def expect_one(self):
-        returnValue((yield self.expect(exactly=1))[0])
+    def expect_one(self, *args, **kwargs):
+        returnValue((yield self.expect(exactly=1, *args, **kwargs))[0])
 
     def expect_none(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
