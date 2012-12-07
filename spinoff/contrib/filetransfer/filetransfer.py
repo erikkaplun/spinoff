@@ -1,11 +1,14 @@
 import datetime
+import errno
 import uuid
 import os
+import warnings
 from cStringIO import StringIO
 
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
+from txcoroutine import coroutine
 
-from spinoff.actor import Actor, spawn, Ref
+from spinoff.actor import Actor, Ref
 from spinoff.actor.exceptions import Unhandled
 from spinoff.actor.process import Process
 from spinoff.contrib.filetransfer.util import read_file_async
@@ -66,7 +69,7 @@ class FilePublisher(Actor):
         if isinstance(node, Ref):
             node = node._cell.root.node
         if node not in cls._instances:
-            cls._instances[node] = (node.spawn if node else spawn)(cls.using(node=node))
+            cls._instances[node] = node.spawn(cls.using(node=node))
         return cls._instances[node]
 
     def pre_start(self, node):
@@ -170,28 +173,60 @@ class _Receiver(Process):
 
 
 class FileRef(object):
-    def __init__(self, pub_id, file_service, name_hint):
+    _fetching = {}
+
+    def __init__(self, pub_id, file_service, abstract_path, size):
         """Private; see File.publish instead"""
         self.pub_id = pub_id
         self.file_service = file_service
-        self.name_hint = name_hint
+        self.abstract_path = abstract_path
+        self.size = size
 
     @classmethod
-    def publish(cls, path, node=None):
+    def publish(cls, path, node):
+        if not os.path.exists(path):
+            raise IOError("File not found: %s" % (path,))
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, name_hint=os.path.basename(path))
+        return cls(pub_id, file_service, abstract_path=os.path.basename(path), size=os.path.getsize(path))
 
-    def get_handle(self):
-        return FileHandle(self.pub_id, self.file_service)
+    def open(self, context=None):
+        return FileHandle(self.pub_id, self.file_service, context=context)
+
+    @coroutine
+    def fetch(self, path, context=None):
+        self._fetching[path] = Deferred()
+        mkdir_p(os.path.dirname(path))
+        with self.open(context=context) as f:
+            yield f.read_into(path)
+        dbg("fetched into", path, "with size", os.path.getsize(path))
+        self._fetching[path].callback(None)
+        del self._fetching[path]
+
+    @coroutine
+    def fetch_if_needed(self, path, error_on_mismatch=True, warn_on_mismatch=True, context=None):
+        if path in self._fetching:
+            yield self._fetching[path]
+            return
+        if os.path.exists(path):
+            if os.path.getsize(path) == self.size:
+                return
+            else:
+                msg = "Size of an already fetched file %db does not match the original size %db: %s " % (os.path.getsize(path), self.size, path)
+                if error_on_mismatch:
+                    raise IOError(msg)
+                if warn_on_mismatch:
+                    warnings.warn(msg)
+                os.remove(path)
+        yield self.fetch(path, context=context)
 
     # @classmethod
     # def at_url(cls, url):
     #     raise NotImplementedError
 
     def __repr__(self):
-        return "<file %s @ %r>" % (self.name_hint, self.file_service)
+        return "<file %s @ %r>" % (self.abstract_path, self.file_service)
 
 
 class FileHandle(object):
@@ -204,10 +239,11 @@ class FileHandle(object):
 
     receiver = None
 
-    def __init__(self, pub_id, file_service):
+    def __init__(self, pub_id, file_service, context):
         """Private; see File.publish or File.at_url instead"""
         self.pub_id = pub_id
         self.file_service = file_service
+        self.context = context
 
     def read(self, size=None):
         """Asynchronously reads `size` number of bytes.
@@ -215,10 +251,6 @@ class FileHandle(object):
         If `size` is not specified, returns the content of the entire file.
 
         """
-        if self.closed:
-            raise Exception("Can't read from a File that's been closed")
-        if not self.opened:
-            self.open()
         d = Deferred()
         if size is None or size > DEFAULT_CHUNK_SIZE:
             return self._read_multipart(total_size=size)
@@ -229,8 +261,23 @@ class FileHandle(object):
             return d
 
     @inlineCallbacks
-    def _read_multipart(self, total_size):
-        ret = StringIO()
+    def read_into(self, file):
+        if os.path.exists(file):
+            os.unlink(file)
+        with open(file, 'wb') as f:
+            yield self._read_multipart(read_into=f)
+
+    @inlineCallbacks
+    def _read_multipart(self, total_size=None, read_into=None):
+        if self.closed:
+            raise Exception("Can't read from a File that's been closed")
+        if not self.opened:
+            self._do_open()
+
+        if read_into:
+            ret = None
+        else:
+            read_into = ret = StringIO()
 
         while total_size is None or total_size > 0:
             if total_size is not None:
@@ -243,16 +290,16 @@ class FileHandle(object):
             self.receiver << ('next-chunk', chunk_size, d)
             chunk, more_coming = yield d
 
-            ret.write(chunk)
+            read_into.write(chunk)
 
             if not more_coming:
                 break
 
         returnValue(ret.getvalue() if ret else None)
 
-    def open(self):
+    def _do_open(self):
         self.opened = True
-        self.receiver = spawn(_Receiver.using(self.pub_id, self.file_service))
+        self.receiver = self.context.spawn(_Receiver.using(self.pub_id, self.file_service))
         self.receiver << ('next-chunk', 0, Deferred().addErrback(err))
 
     def close(self):
@@ -271,3 +318,21 @@ class FileHandle(object):
     def __setstate__(self, (pub_id, file_service)):
         self.pub_id = pub_id
         self.file_service = file_service
+
+    def __enter__(self):
+        self._do_open()
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        # dbg(args, kwargs)
+        self.close()
+
+
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
