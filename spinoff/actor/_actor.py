@@ -207,7 +207,7 @@ class _HubBound(object):
     _hub = None
 
     def __init__(self, hub, is_local=True):
-        assert hub or is_local if TESTING else not hub
+        assert bool(hub) != bool(is_local)
         if hub:
             self._hub = hub
 
