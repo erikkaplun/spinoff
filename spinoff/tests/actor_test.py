@@ -23,7 +23,7 @@ from spinoff.util.testing import (
     EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, MockActor, assert_event_not_emitted,
     Barrier,)
 from spinoff.actor.events import RemoteDeadLetter
-from spinoff.util.actor import wrap_globals
+from spinoff.util.testing.actor import wrap_globals
 
 
 # ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
