@@ -84,6 +84,10 @@ class FilePublisher(Actor):
     def receive(self, msg):
         if ('publish', ANY, ANY) == msg:
             _, file_path, pub_id = msg
+            if not os.path.exists(file_path) and not os.path.isdir(file_path):
+                err("attempt to publish a file that does not exist")
+                return
+
             if pub_id in self.published:
                 raise FileAlreadyPublished("Attempt to publish %r with ID %r but a file already exists with that ID" % (file_path, pub_id))
             else:
