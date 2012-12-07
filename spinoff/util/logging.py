@@ -12,6 +12,7 @@ import os
 import multiprocessing
 from collections import defaultdict
 from Queue import Queue, Empty
+from spinoff.util.python import dump_method_call
 
 try:
     import colorama
@@ -109,6 +110,14 @@ LEVELS = [(name.ljust(5), style) for name, style in LEVELS]
 
 def dbg(*args, **kwargs):
     _write(0, *args, **kwargs)
+
+
+def dbg_call(fn, *args, **kwargs):
+    t0 = time.time()
+    ret = fn(*args, **kwargs)
+    t1 = time.time()
+    _write(0, "%sms for %s => %r" % (round((t1 - t0) * 1000), dump_method_call(fn.__name__, args, kwargs), ret))
+    return ret
 
 
 def dbg1(*args, **kwargs):
