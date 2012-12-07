@@ -9,7 +9,6 @@ import types
 import traceback
 import warnings
 import weakref
-from functools import wraps
 from pickle import PicklingError
 from collections import deque
 from itertools import count, chain
