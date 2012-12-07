@@ -87,6 +87,7 @@ class Connection(object):
             # during testing, since everything is running in the same thread with no remoting (by default)
             # this will unnecessarily give control back to the test which means stuff will happen in the middle
             # of closing.
+            # XXX: this actually should be possible regardless of the above comment
             yield sleep(0)
 
         self._kill_queue()
