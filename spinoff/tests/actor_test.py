@@ -27,6 +27,7 @@ from spinoff.util.testing import (
     EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, Unclean, MockActor, assert_event_not_emitted,
     Barrier,)
 from spinoff.actor.events import RemoteDeadLetter
+from spinoff.util.actor import wrap_globals
 
 
 # ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
@@ -2972,6 +2973,7 @@ def test_remoting_with_real_zeromq():
 
     self_ref << 'hello, stranger!'
     eq_(actor1_msgs.clear(), ['hello, stranger!'])
+test_remoting_with_real_zeromq.timeout = 2.0
 
 
 ##
@@ -3519,82 +3521,4 @@ def TestNode():
     return Node(hub=HubWithNoRemoting())
 
 
-def wrap_globals():
-    """Ensures that errors in actors during tests don't go unnoticed."""
-
-    def wrap(fn):
-        if inspect.isgeneratorfunction(fn):
-            fn = inlineCallbacks(fn)
-
-        @functools.wraps(fn)
-        @deferred(timeout=fn.timeout if hasattr(fn, 'timeout') else None)
-        @inlineCallbacks
-        def ret():
-            # dbg("\n============================================\n")
-
-            import spinoff.actor._actor
-            spinoff.actor._actor.TESTING = True
-
-            Actor.reset_flags(debug=True)
-
-            # TODO: once the above TODO (fresh Node for each test fn) is complete, consider making Events non-global by
-            # having each Node have its own Events instance.
-            Events.reset()
-
-            with ErrorCollector():
-                try:
-                    yield fn()
-                finally:
-                    # dbg("TESTWRAP: ------------------------- cleaning up after %s" % (fn.__name__,))
-
-                    yield Node.stop_all()
-
-                    if _idle_calls:
-                        # dbg("TESTWRAP: processing all remaining scheduled calls...")
-                        _process_idle_calls()
-                        # dbg("TESTWRAP: ...scheduled calls done.")
-
-                    if '__pypy__' not in sys.builtin_module_names:
-                        gc.collect()
-                        for trash in gc.garbage[:]:
-                            if isinstance(trash, DebugInfo):
-                                # dbg("DEBUGINFO: __del__")
-                                if trash.failResult is not None:
-                                    exc = Unclean(trash._getDebugTracebacks())
-                                    trash.__dict__.clear()
-                                    raise exc
-                                gc.garbage.remove(trash)
-
-                        assert not gc.garbage, "Memory leak detected"
-
-                        # if gc.garbage:
-                        #     dbg("GARGABE: detected after %s:" % (fn.__name__,), len(gc.garbage))
-                        #     import objgraph as ob
-                        #     import os
-
-                        #     def dump_chain(g_):
-                        #         def calling_test(x):
-                        #             if not isframework(x):
-                        #                 return None
-                        #         import spinoff
-                        #         isframework = lambda x: type(x).__module__.startswith(spinoff.__name__)
-                        #         ob.show_backrefs([g_], filename='backrefs.png', max_depth=100, highlight=isframework)
-
-                        #     for gen in gc.garbage:
-                        #         dump_chain(gen)
-                        #         dbg("   TESTWRAP: mem-debuggin", gen)
-                        #         import pdb; pdb.set_trace()
-                        #         os.remove('backrefs.png')
-
-                        # to avoid the above assertion from being included as part of any tracebacks from the test
-                        # function--the last line of a context managed block is included in tracebacks originating
-                        # from context managers.
-                        pass
-
-        return ret
-
-    for name, value in globals().items():
-        if name.startswith('test_') and callable(value):
-            globals()[name] = wrap(value)
-wrap_globals()
-del wrap_globals
+wrap_globals(globals())
