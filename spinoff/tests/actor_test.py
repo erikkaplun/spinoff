@@ -1,16 +1,12 @@
 from __future__ import print_function
 
-import functools
 import gc
-import inspect
 import random
 import re
-import sys
 import weakref
 
 from nose.tools import eq_, ok_
-from nose.twistedtools import deferred
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, DebugInfo, returnValue
+from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, returnValue
 from twisted.internet.task import Clock
 
 from spinoff.actor import (
@@ -20,11 +16,11 @@ from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
 from spinoff.actor.remoting import Hub, MockNetwork, HubWithNoRemoting
 from spinoff.actor.exceptions import InvalidEscalation
-from spinoff.util.async import _process_idle_calls, _idle_calls, with_timeout, sleep
+from spinoff.util.async import with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
-    assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, ErrorCollector, EvSeq,
-    EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, Unclean, MockActor, assert_event_not_emitted,
+    assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, EvSeq,
+    EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, MockActor, assert_event_not_emitted,
     Barrier,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.actor import wrap_globals
