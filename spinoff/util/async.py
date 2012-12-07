@@ -4,7 +4,7 @@ import traceback
 import sys
 
 from twisted.python.failure import Failure
-from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, DeferredList
+from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, DeferredList, maybeDeferred
 from twisted.internet import reactor, task
 
 
@@ -256,3 +256,17 @@ class EventBuffer(object):
                 _kwargs.update(self._kwargs)
                 _kwargs.update(kwargs)
             self._fn(*_args, **_kwargs)
+
+
+def deferred_with(cm, f, *args, **kwargs):
+    cm.__enter__()
+
+    def on_failure(f):
+        should_suppress = cm.__exit__(f.type, f.value, f.getTracebackObject())
+        return None if should_suppress else f
+
+    return (
+        maybeDeferred(f, *args, **kwargs)
+        .addCallback(lambda result: (cm.__exit__(None, None, None), result)[-1])
+        .addErrback(on_failure)
+    )
