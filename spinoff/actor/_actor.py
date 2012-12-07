@@ -169,6 +169,10 @@ class _BaseRef(object):
     def is_stopped(self):
         raise NotImplementedError
 
+    @abc.abstractproperty
+    def uri(self):
+        raise NotImplementedError
+
     def __div__(self, next):
         """Looks up a descendant of this actor.
 
@@ -270,6 +274,7 @@ class Ref(_BaseRef, _HubBound):
     # Ref constructor should set is_resolved=False by default, but that requires is_dead for creating dead refs, because
     # currently dead refs are just Refs with no cell and is_local=True
     is_local = True
+    uri = None
 
     def __init__(self, cell, uri, is_local=True, hub=None):
         super(Ref, self).__init__(hub=hub, is_local=is_local)
