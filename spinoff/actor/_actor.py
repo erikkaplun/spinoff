@@ -30,7 +30,6 @@ from spinoff.util.python import clean_tb_twisted
 
 
 TESTING = False
-_NODE = None  # set in __init__.py
 
 
 _VALID_IP_RE = '(?:(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])'
@@ -202,29 +201,7 @@ class _BaseRef(object):
         self.send('_stop')
 
 
-class _HubBound(object):
-    """Internal abstract class for objects that depend on {being bound to/having available} a `Hub` instance."""
-    _hub = None
-
-    def __init__(self, hub, is_local=True):
-        assert bool(hub) != bool(is_local)
-        if hub:
-            self._hub = hub
-
-    @property
-    def hub(self):
-        """Returns the hub that this object should use for remote messaging and lookup.
-
-        During `TESTING`, the `Node`, and from there on, all `_HubBound` objects, propagate the hub they are bound to
-        down to any new `_HubBound` objects created. Otherwise, `Node.hub` is used.
-
-        """
-        ret = self._hub or (_NODE.hub if _NODE else None)
-        assert ret or self.is_local
-        return ret
-
-
-class Ref(_BaseRef, _HubBound):
+class Ref(_BaseRef):
     """A serializable, location-transparent, encapsulating reference to an actor.
 
     `Ref`s can be obtained in several different ways.
@@ -275,18 +252,19 @@ class Ref(_BaseRef, _HubBound):
     # currently dead refs are just Refs with no cell and is_local=True
     is_local = True
     uri = None
+    hub = None
 
     def __init__(self, cell, uri, is_local=True, hub=None):
-        super(Ref, self).__init__(hub=hub, is_local=is_local)
+        assert is_local or not cell
+        assert not hub if is_local else hub, "remote refs must have a hub"
         assert uri is None or isinstance(uri, Uri)
         if cell:
             assert not hub
             assert isinstance(cell, Cell)
             self._cell = cell
         self.uri = uri
-        if not is_local:
-            assert not cell
-            self.is_local = False
+        self.hub = hub
+        self.is_local = is_local
 
     def send(self, message, force_async=False):
         """Sends a message to the actor represented by this `Ref`.
@@ -306,7 +284,9 @@ class Ref(_BaseRef, _HubBound):
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
-            elif message not in ('_stop', '_suspend', '_resume', '_restart', (IN(['terminated', '_watched', '_unwatched']), ANY)):
+            elif message in ('_stop', '_suspend', '_resume', '_restart', (IN(['terminated', '_watched', '_unwatched']), ANY)):
+                pass
+            else:
                 Events.log(DeadLetter(self, message))
 
     @property
@@ -345,18 +325,18 @@ class Ref(_BaseRef, _HubBound):
     def __getstate__(self):
         # assert self._cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
         # assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
-        return str(self.uri)
+        return str(self.uri)  # if self.is_local else (str(self.uri), self.hub)
 
     def __setstate__(self, uri):
-        # if it's a tuple, it's a remote `Ref`, otherwise it must be just a local `Ref`
-        # being pickled and unpickled for whatever reason:
+        # if it's a tuple, it's a remote `Ref` and the tuple origates from IncomingMessageUnpickler,
+        # otherwise it must be just a local `Ref` being pickled and unpickled for whatever reason:
         if isinstance(uri, tuple):
             self.is_local = False
-            uri, self._hub = uri
+            uri, self.hub = uri
         self.uri = Uri.parse(uri)
 
 
-class _BaseCell(_HubBound):
+class _BaseCell(object):
     __metaclass__ = abc.ABCMeta
 
     _children = {}  # XXX: should be a read-only dict
@@ -397,7 +377,7 @@ class _BaseCell(_HubBound):
 
         assert name not in self._children  # XXX: ordering??
         self._children[name] = None
-        child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub if TESTING else None)
+        child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub)
         if name in self._children:  # it might have been removed already
             self._children[name] = child
 
@@ -476,15 +456,16 @@ class Guardian(_BaseCell, _BaseRef):
     node = None
     uri = None
     cell = None
+    hub = None
 
     def __init__(self, uri, node, hub, supervision=Stop):
-        super(Guardian, self).__init__(hub=hub)
         if supervision not in (Stop, Restart, Resume):
             raise TypeError("Invalid supervision specified for Guardian")
         self.uri = uri
         self.node = node
         self.root = self
         self._cell = self  # for _BaseCell
+        self.hub = hub
         self.supervision = supervision
 
     @property
@@ -568,7 +549,7 @@ class Node(object):
         if not hub:  # pragma: no cover
             raise TypeError("Node instances must be bound to a Hub")
         self._uri = Uri(name=None, parent=None, node=hub.nodeid if hub else None)
-        self.guardian = Guardian(uri=self._uri, node=self, hub=hub if TESTING else None, supervision=root_supervision)
+        self.guardian = Guardian(uri=self._uri, node=self, hub=hub, supervision=root_supervision)
         self.set_hub(hub)
         Node._all.append(self)
 
@@ -601,7 +582,7 @@ class Node(object):
         elif not uri.root:  # pragma: no cover
             raise TypeError("Node can't look up a relative Uri; did you mean Node.guardian.lookup(%r)?" % (uri_or_addr,))
         else:
-            return Ref(cell=None, uri=uri, is_local=False, hub=self.hub if TESTING else None)
+            return Ref(cell=None, uri=uri, is_local=False, hub=self.hub)
 
     def spawn(self, *args, **kwargs):
         return self.guardian.spawn(*args, **kwargs)
@@ -784,17 +765,17 @@ class Cell(_BaseCell):
     _ref = None
     _child_name_gen = None
     uri = None
+    hub = None
 
     watchers = None
     watchees = None
 
     def __init__(self, parent, factory, uri, hub):
-        super(Cell, self).__init__(hub=hub)
-
         if not callable(factory):  # pragma: no cover
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.parent = parent
         self.uri = uri
+        self.hub = hub
 
         self.factory = factory
 
@@ -1331,9 +1312,8 @@ class TempActor(Actor):
     @classmethod
     def make(cls, node=None):
         # if not cls.pool:
-        _spawn = node.spawn if node else spawn
         d = Deferred()
-        ret = _spawn(cls.using(d, cls.pool))
+        ret = node.spawn(cls.using(d, cls.pool))
         return ret, d
         # TODO:this doesn't work reliably for some reason, otherwise it could be a major performance enhancer,
         # at least for as long as actors are as heavy as they currently are
@@ -1348,21 +1328,6 @@ class TempActor(Actor):
         d, self.d = self.d, Deferred()
         self.pool.add((self.ref, self.d))
         call_when_idle(d.errback if isinstance(msg, BaseException) else d.callback, msg)
-
-
-@wraps(_BaseCell.spawn)
-def spawn(*args, **kwargs):
-    if not _NODE:  # pragma: no cover
-        raise TypeError("No active node set")
-    else:
-        return _NODE.spawn(*args, **kwargs)
-
-
-def lookup(uri):  # pragma: no cover
-    if not _NODE:
-        raise TypeError("No active node set")
-    else:
-        return _NODE.lookup(uri)
 
 
 def _ignore_error(actor):

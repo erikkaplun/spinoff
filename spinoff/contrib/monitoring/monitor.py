@@ -1,6 +1,6 @@
 from twisted.internet import reactor
 
-from spinoff.actor import Actor, spawn
+from spinoff.actor import Actor
 from spinoff.actor.exceptions import Unhandled
 from spinoff.util.async import after
 from spinoff.util.logging import dbg
@@ -126,9 +126,9 @@ class MonitorClient(Actor):
     _instances = {}
 
     @classmethod
-    def get(cls, monitor):
+    def get(cls, monitor, node):
         if monitor not in cls._instances:
-            cls._instances[monitor] = spawn(cls.using(monitor))
+            cls._instances[monitor] = node.spawn(cls.using(monitor))
         return cls._instances[monitor]
 
     def __init__(self, monitor):

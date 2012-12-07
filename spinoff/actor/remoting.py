@@ -381,8 +381,7 @@ class IncomingMessageUnpickler(Unpickler):
         # if the ctor. function (penultimate on the stack) is the `Ref` class...
         if isinstance(self.stack[-2], Ref):
             # Ref.__setstate__ will know it's a remote ref if the state is a tuple
-            self.stack[-1] = (self.stack[-1],
-                              self.hub if _actor.TESTING else None)
+            self.stack[-1] = (self.stack[-1], self.hub)
 
             self.load_build()  # continue with the default implementation
 
@@ -392,7 +391,7 @@ class IncomingMessageUnpickler(Unpickler):
                 ref.is_local = True
                 ref._cell = self.hub.guardian.lookup_cell(ref.uri)
                 # dbg(("dead " if not ref._cell else "") + "local ref detected")
-                del ref._hub  # local refs never need hubs
+                del ref.hub  # local refs never need hubs
         else:  # pragma: no cover
             self.load_build()
 
