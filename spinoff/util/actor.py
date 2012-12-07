@@ -6,7 +6,7 @@ import inspect
 import sys
 
 from nose.twistedtools import deferred
-from twisted.internet.defer import inlineCallbacks, DebugInfo, setDebugging
+from twisted.internet.defer import inlineCallbacks, DebugInfo
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.events import Events
