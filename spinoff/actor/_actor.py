@@ -1415,11 +1415,17 @@ class TypedRef(_BaseRef):
     def __init__(self, ref):
         self.ref = ref
 
+    @property
     def is_local(self):
         return self.ref.is_local
 
+    @property
     def is_stopped(self):
         return self.ref.is_stopped
+
+    @property
+    def uri(self):
+        return self.ref.uri
 
     def __div__(self, next):
         return self.ref.__div__(next)
