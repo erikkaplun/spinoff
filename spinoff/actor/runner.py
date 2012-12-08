@@ -10,7 +10,7 @@ from twisted.internet.defer import inlineCallbacks
 from twisted.python.failure import Failure
 from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
-from spinoff.actor import spawn, Actor, set_default_node, Node
+from spinoff.actor import Actor, Node
 from spinoff.actor._actor import _validate_nodeid
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic
@@ -60,11 +60,13 @@ class ActorRunner(Service):
                 hub = HubWithNoRemoting()
 
             supervision = {'stop': Stop, 'restart': Restart, 'resume': Resume}[self._supervise]
-            set_default_node(Node(hub=hub, root_supervision=supervision))
+            node = Node(hub=hub, root_supervision=supervision)
 
             try:
-                self._wrapper = spawn(Wrapper.using(self._actor_cls.using(**self._init_params),
-                                                    spawn_at=self._name, keep_running=self._keep_running), name='_runner')
+                self._wrapper = node.spawn(Wrapper.using(
+                    self._actor_cls.using(**self._init_params),
+                    spawn_at=self._name, keep_running=self._keep_running
+                ), name='_runner')
             except Exception:
                 panic("Failed to start wrapper for %s\n" % (actor_path,),
                       Failure().getTraceback())
