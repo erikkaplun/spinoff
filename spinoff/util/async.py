@@ -267,6 +267,6 @@ def deferred_with(cm, f, *args, **kwargs):
 
     return (
         maybeDeferred(f, *args, **kwargs)
-        .addCallback(lambda result: (cm.__exit__(None, None, None), result)[-1])
         .addErrback(on_failure)
+        .addCallback(lambda result: (cm.__exit__(None, None, None), result)[-1])
     )
