@@ -110,7 +110,7 @@ def dump_method_call(name, args, kwargs):
     return "%s(%s%s)" % (
         name,
         ", ".join(map(repr, args)),
-        "" if not kwargs else ", ".join("%s=%r" % kv for kv in kwargs.items())
+        "" if not kwargs else ", " + ", ".join("%s=%r" % kv for kv in kwargs.items())
     )
 
 
