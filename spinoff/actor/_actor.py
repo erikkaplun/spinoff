@@ -708,6 +708,8 @@ class Actor(object):
 # TODO: rename to _UnspawnedActor
 class Props(object):
     def __init__(self, cls, *args, **kwargs):
+        if hasattr(inspect, 'getcallargs'):
+            inspect.getcallargs(cls.__init__, None, *args, **kwargs)
         self.cls, self.args, self.kwargs = cls, args, kwargs
 
     def __call__(self):
