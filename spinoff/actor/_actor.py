@@ -1311,10 +1311,10 @@ class TempActor(Actor):
     pool = set()
 
     @classmethod
-    def make(cls, node=None):
+    def make(cls, context=None):
         # if not cls.pool:
         d = Deferred()
-        ret = node.spawn(cls.using(d, cls.pool))
+        ret = context.spawn(cls.using(d, cls.pool))
         return ret, d
         # TODO:this doesn't work reliably for some reason, otherwise it could be a major performance enhancer,
         # at least for as long as actors are as heavy as they currently are
