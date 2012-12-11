@@ -175,12 +175,12 @@ class _Receiver(Process):
 class FileRef(object):
     _fetching = {}
 
-    def __init__(self, pub_id, file_service, abstract_path, size):
+    def __init__(self, pub_id, file_service, abstract_path, mtime):
         """Private; see File.publish instead"""
         self.pub_id = pub_id
         self.file_service = file_service
         self.abstract_path = abstract_path
-        self.size = size
+        self.mtime = mtime
 
     @classmethod
     def publish(cls, path, node):
@@ -189,7 +189,7 @@ class FileRef(object):
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, abstract_path=os.path.basename(path), size=os.path.getsize(path))
+        return cls(pub_id, file_service, abstract_path=os.path.basename(path), mtime=os.stat(path).st_mtime)
 
     def open(self, context=None):
         return FileHandle(self.pub_id, self.file_service, context=context)
@@ -200,6 +200,7 @@ class FileRef(object):
         mkdir_p(os.path.dirname(path))
         with self.open(context=context) as f:
             yield f.read_into(path)
+        os.utime(path, (self.mtime, self.mtime))
         dbg("fetched into", path, "with size", os.path.getsize(path))
         self._fetching[path].callback(None)
         del self._fetching[path]
@@ -210,10 +211,10 @@ class FileRef(object):
             yield self._fetching[path]
             return
         if os.path.exists(path):
-            if os.path.getsize(path) == self.size:
+            if os.stat(path).st_mtime == self.mtime:
                 return
             else:
-                msg = "Size of an already fetched file %db does not match the original size %db: %s " % (os.path.getsize(path), self.size, path)
+                msg = "mtime of an already fetched file %s does not match the original mtime %s: %s " % (os.stat(path).st_mtime, self.mtime, path)
                 if error_on_mismatch:
                     raise IOError(msg)
                 if warn_on_mismatch:
