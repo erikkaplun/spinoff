@@ -21,6 +21,8 @@ setup(
         'txzmq==0.5.1',
     ],
 
+    data_files=[('twisted/plugins', ['twisted/plugins/startnode.py'])],
+
     dependency_links=[
         'https://github.com/eallik/txZMQ/tarball/newapi#egg=txzmq-0.5.1'
     ],
