@@ -203,7 +203,7 @@ class FileRef(object):
         del self._fetching[path]
 
     @coroutine
-    def fetch_if_needed(self, path, error_on_mismatch=True, warn_on_mismatch=True, context=None):
+    def fetch_if_needed(self, path, error_on_mismatch=False, warn_on_mismatch=False, context=None):
         if path in self._fetching:
             yield self._fetching[path]
             return
