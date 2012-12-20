@@ -144,6 +144,8 @@ class _Receiver(Process):
         if ('take-file', ANY) == msg:
             _, sender = msg
         elif ('terminated', file_service) == msg:
+            _, _, d = yield self.get(('next-chunk', ANY, ANY))
+            d.errback(Exception("file sender died prematurely"))
             return
         else:
             raise Unhandled(msg)
