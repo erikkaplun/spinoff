@@ -1311,7 +1311,7 @@ class TempActor(Actor):
     pool = set()
 
     @classmethod
-    def make(cls, context=None):
+    def make(cls, context):
         # if not cls.pool:
         d = Deferred()
         ret = context.spawn(cls.using(d, cls.pool))
