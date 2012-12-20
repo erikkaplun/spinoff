@@ -294,4 +294,4 @@ class Buffer(object):
                 raise AssertionError("Negative expectation failed")
 
         check_queue()
-        return after(0.01).do(check_queue)
+        return after(0.002).do(check_queue)
