@@ -181,13 +181,13 @@ class FileRef(object):
         self.mtime = mtime
 
     @classmethod
-    def publish(cls, path, node):
+    def publish(cls, path, node, abstract_path=None):
         if not os.path.exists(path):
             raise IOError("File not found: %s" % (path,))
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, abstract_path=os.path.basename(path), mtime=os.stat(path).st_mtime)
+        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=os.stat(path).st_mtime)
 
     def open(self, context=None):
         return FileHandle(self.pub_id, self.file_service, context=context)
@@ -238,11 +238,12 @@ class FileHandle(object):
 
     receiver = None
 
-    def __init__(self, pub_id, file_service, context):
+    def __init__(self, pub_id, file_service, context, abstract_path):
         """Private; see File.publish or File.at_url instead"""
         self.pub_id = pub_id
         self.file_service = file_service
         self.context = context
+        self.abstract_path = abstract_path
 
     def read(self, size=None):
         """Asynchronously reads `size` number of bytes.
@@ -325,6 +326,9 @@ class FileHandle(object):
     def __exit__(self, *args, **kwargs):
         # dbg(args, kwargs)
         self.close()
+
+    def __repr__(self):
+        return "<open file '%s' @ %r>" % (self.abstract_path, self.file_service)
 
 
 def mkdir_p(path):
