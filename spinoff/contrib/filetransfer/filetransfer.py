@@ -314,11 +314,7 @@ class FileHandle(object):
         self.close()
 
     def __getstate__(self):
-        return (self.pub_id, self.file_service)
-
-    def __setstate__(self, (pub_id, file_service)):
-        self.pub_id = pub_id
-        self.file_service = file_service
+        raise Exception("file handles cannot be pickled")
 
     def __enter__(self):
         return self
