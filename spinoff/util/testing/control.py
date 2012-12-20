@@ -279,7 +279,7 @@ class Buffer(object):
 
     @inlineCallbacks
     def expect_one(self, *args, **kwargs):
-        returnValue((yield self.expect(exactly=1, *args, **kwargs))[0])
+        returnValue((yield self.expect(atleast=1, *args, **kwargs))[0])
 
     def expect_none(self):
         """If the queue is not empty, returns False immediately, otherwise a Deferred that fires a bit later and whose
