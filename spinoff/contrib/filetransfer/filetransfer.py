@@ -270,8 +270,7 @@ class FileHandle(object):
     def _read_multipart(self, total_size=None, read_into=None):
         if self.closed:
             raise Exception("Can't read from a File that's been closed")
-        if not self.opened:
-            self._do_open()
+        assert self.opened
 
         if read_into:
             ret = None
@@ -319,7 +318,6 @@ class FileHandle(object):
         self.file_service = file_service
 
     def __enter__(self):
-        self._do_open()
         return self
 
     def __exit__(self, *args, **kwargs):
