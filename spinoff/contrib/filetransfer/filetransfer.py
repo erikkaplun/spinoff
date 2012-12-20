@@ -190,13 +190,14 @@ class FileRef(object):
         return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=os.stat(path).st_mtime)
 
     def open(self, context=None):
-        return FileHandle(self.pub_id, self.file_service, context=context)
+        ret = FileHandle(self.pub_id, self.file_service, context=context)
+        return ret._open().addCallback(lambda _: ret)
 
     @coroutine
     def fetch(self, path, context=None):
         self._fetching[path] = Deferred()
         mkdir_p(os.path.dirname(path))
-        with self.open(context=context) as f:
+        with (yield self.open(context=context)) as f:
             yield f.read_into(path)
         os.utime(path, (self.mtime, self.mtime))
         self._fetching[path].callback(None)
@@ -295,10 +296,12 @@ class FileHandle(object):
 
         returnValue(ret.getvalue() if ret else None)
 
-    def _do_open(self):
+    def _open(self):
         self.opened = True
         self.receiver = self.context.spawn(_Receiver.using(self.pub_id, self.file_service))
-        self.receiver << ('next-chunk', 0, Deferred().addErrback(err))
+        d = Deferred()
+        self.receiver << ('next-chunk', 0, d)
+        return d
 
     def close(self):
         self.closed = True
