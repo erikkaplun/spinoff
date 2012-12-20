@@ -66,15 +66,11 @@ class FilePublisher(Actor):
 
     @classmethod
     def get(cls, node=None):
-        if isinstance(node, Ref):
-            node = node._cell.root.node
         if node not in cls._instances:
-            cls._instances[node] = node.spawn(cls.using(node=node))
+            cls._instances[node] = node.spawn(cls.using())
         return cls._instances[node]
 
-    def pre_start(self, node):
-        self._node = node
-
+    def pre_start(self):
         self.published = {}  # <pub_id> => (<local file path>, <time added>)
         self.senders = {}  # <sender> => <pub_id>
 
@@ -134,7 +130,7 @@ class FilePublisher(Actor):
             del self.senders[sender]
 
     def post_stop(self):
-        del self._instances[self._node]
+        del self._instances[self.node]
 
 
 class _Receiver(Process):
