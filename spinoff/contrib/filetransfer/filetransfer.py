@@ -199,7 +199,6 @@ class FileRef(object):
         with self.open(context=context) as f:
             yield f.read_into(path)
         os.utime(path, (self.mtime, self.mtime))
-        dbg("fetched into", path, "with size", os.path.getsize(path))
         self._fetching[path].callback(None)
         del self._fetching[path]
 
@@ -324,7 +323,6 @@ class FileHandle(object):
         return self
 
     def __exit__(self, *args, **kwargs):
-        # dbg(args, kwargs)
         self.close()
 
     def __repr__(self):
