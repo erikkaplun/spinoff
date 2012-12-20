@@ -224,7 +224,7 @@ class FileRef(object):
     #     raise NotImplementedError
 
     def __repr__(self):
-        return "<file %s @ %r>" % (self.abstract_path, self.file_service)
+        return "<file '%s' @ %r>" % (self.abstract_path, self.file_service)
 
 
 class FileHandle(object):
