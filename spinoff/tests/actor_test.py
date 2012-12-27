@@ -2975,11 +2975,11 @@ test_remoting_with_real_zeromq.timeout = 2.0
 ##
 ## PROCESSES
 
-def test_process_run_must_return_a_generator():
-    with assert_raises(TypeError):
-        class MyProc(Process):
-            def run(self):
-                pass
+# def test_process_run_must_return_a_generator():
+#     with assert_raises(TypeError):
+#         class MyProc(Process):
+#             def run(self):
+#                 pass
 
 
 def test_processes_run_is_called_when_the_process_is_spawned():
