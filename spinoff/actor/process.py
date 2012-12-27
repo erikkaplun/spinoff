@@ -2,7 +2,6 @@
 from __future__ import print_function
 
 import abc
-import inspect
 import sys
 import traceback
 import warnings
@@ -26,8 +25,8 @@ class ProcessType(ActorType):
         path_of_new_class = dict_['__module__'] + '.' + name
 
         if path_of_new_class != 'spinoff.actor.process.Process':
-            if not inspect.isgeneratorfunction(ret.run):
-                raise TypeError("Process.run must return a generator")
+            # if not inspect.isgeneratorfunction(ret.run):
+            #     raise TypeError("Process.run must return a generator")
             ret.run = coroutine(ret.run)
 
         return ret
