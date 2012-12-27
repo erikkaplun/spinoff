@@ -190,7 +190,7 @@ class FileRef(object):
         return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=os.stat(path).st_mtime)
 
     def open(self, context=None):
-        ret = FileHandle(self.pub_id, self.file_service, context=context)
+        ret = FileHandle(self.pub_id, self.file_service, context=context, abstract_path=self.abstract_path)
         return ret._open().addCallback(lambda _: ret)
 
     @coroutine
