@@ -205,7 +205,10 @@ def _do_write(level, *args, **kwargs):
             else:
                 # TODO: find a faster way to get the module than inspect.getmodule
                 caller = inspect.getmodule(frame)
-                caller_full_path = caller_module = caller.__name__
+                if caller:
+                    caller_full_path = caller_module = caller.__name__
+                else:
+                    caller_full_path = caller_module = ''  # .pyc
 
             if ENABLE_ONLY and not any(re.match(x, caller_full_path) for x in ENABLE_ONLY):
                 return
