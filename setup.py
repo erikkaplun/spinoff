@@ -12,7 +12,7 @@ setup(
     name="spinoff",
     description="Framework for writing distributed, fault tolerant and scalable applications",
     long_description=long_description,
-    version="0.6.7",
+    version="0.6.8",
     packages=find_packages(),
 
     install_requires=[
