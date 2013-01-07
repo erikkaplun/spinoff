@@ -78,10 +78,11 @@ class Connection(object):
         del self.queue
 
     @inlineCallbacks
-    def close(self):
+    def close(self, disconnect_other=True):
         log()
 
-        self.sock.sendMultipart((self.our_addr, DISCONNECT))
+        if disconnect_other:
+            self.sock.sendMultipart((self.our_addr, DISCONNECT))
         if not _actor.TESTING:
             # have to avoid this during testing, and it's not needed anyway;
             # during testing, since everything is running in the same thread with no remoting (by default)
@@ -212,7 +213,7 @@ class Hub(object):
 
         elif msg == DISCONNECT:
             if conn:
-                conn.close()
+                conn.close(disconnect_other=False)
                 del self.connections[sender_addr]
 
         else:
