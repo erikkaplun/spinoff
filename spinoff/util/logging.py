@@ -233,8 +233,8 @@ def _do_write(level, *args, **kwargs):
                 elif caller_fn:
                     caller_fn._r_logstring = logstring
 
-            logname = getattr(caller, '_r_logname', None)
-            if not logname:
+            logname = getattr(caller, '_r_logname', None) if caller else ''
+            if logname is None:
                 logname = CYAN + get_logname(caller) + RESET_COLOR
                 if not hasattr(caller, '__slots__'):
                     caller._r_logname = logname
