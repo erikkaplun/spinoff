@@ -100,7 +100,6 @@ class Connection(object):
         q, self.queue = self.queue, None
         while q:
             ref, msg = q.popleft()
-            assert ref.uri.root.url == self.addr
             self._do_send(dumps((ref.uri.path, msg), protocol=2))
 
     def _kill_queue(self):
