@@ -14,7 +14,8 @@ from spinoff.actor import (
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.process import Process
 from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
-from spinoff.actor.remoting import Hub, MockNetwork, HubWithNoRemoting
+from spinoff.actor.remoting import Hub, HubWithNoRemoting
+from spinoff.actor.remoting.mock import MockNetwork
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import with_timeout, sleep
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
