@@ -56,15 +56,13 @@ class Hub(object):
         # guarantees that terminations will not go unnoticed and that termination messages won't arrive out of order
         self.version = 0
 
-        f1 = ZmqFactory()
-        insock = ZmqPullConnection(f1)
-        outsock_factory = lambda: ZmqPushConnection(f1, linger=0)
+        zf = ZmqFactory()
 
-        self.insock = insock
-        insock.gotMultipart = self._got_message
-        insock.addEndpoints([ZmqEndpoint('bind', _resolve_addr(self.addr))])
+        self.insock = ZmqPullConnection(zf)
+        self.insock.gotMultipart = self._got_message
+        self.insock.addEndpoints([ZmqEndpoint('bind', _resolve_addr(self.addr))])
 
-        self.outsock_factory = outsock_factory
+        self.outsock_factory = lambda: ZmqPushConnection(zf, linger=0)
         self.connections = {}
 
         self._next_heartbeat = reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
