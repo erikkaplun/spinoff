@@ -1,25 +1,22 @@
 # coding: utf8
 from __future__ import print_function, absolute_import
 
-import inspect
-import random
 import struct
 import traceback
 from cStringIO import StringIO
-from decimal import Decimal
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import reactor
 from txzmq import ZmqEndpoint
 
-from spinoff.actor import Ref, Uri, Node
+from spinoff.actor import Ref, Uri
 from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
 from spinoff.actor.resolv import resolve
-from spinoff.util.logging import logstring, dbg, panic
+from spinoff.util.logging import logstring, panic
 from spinoff.util.pattern_matching import ANY
 from .connection import Connection
 from .pickler import IncomingMessageUnpickler
-from .validation import _validate_nodeid, _valid_addr, _assert_valid_nodeid, _assert_valid_addr, _PROTO_ADDR_RE
+from .validation import _validate_nodeid, _valid_addr, _PROTO_ADDR_RE
 
 # TODO: use shorter messages outside of testing
 # MUST be a single char
