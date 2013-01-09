@@ -7,7 +7,7 @@ from cStringIO import StringIO
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import reactor
-from txzmq import ZmqEndpoint
+from txzmq import ZmqEndpoint, ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
 from spinoff.actor import Ref, Uri
 from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
@@ -42,7 +42,7 @@ class Hub(object):
 
     nodeid = None
 
-    def __init__(self, insock, outsock_factory, nodeid, reactor=reactor):
+    def __init__(self, nodeid, reactor=reactor):
         if not nodeid or not isinstance(nodeid, str):  # pragma: no cover
             raise TypeError("The 'nodeid' argument to Hub must be a str")
         _validate_nodeid(nodeid)
@@ -55,6 +55,10 @@ class Hub(object):
 
         # guarantees that terminations will not go unnoticed and that termination messages won't arrive out of order
         self.version = 0
+
+        f1 = ZmqFactory()
+        insock = ZmqPullConnection(f1)
+        outsock_factory = lambda: ZmqPushConnection(f1, linger=0)
 
         self.insock = insock
         insock.gotMultipart = self._got_message

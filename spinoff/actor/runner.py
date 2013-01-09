@@ -8,7 +8,6 @@ from twisted.internet import reactor
 from twisted.internet.error import ReactorNotRunning
 from twisted.internet.defer import inlineCallbacks
 from twisted.python.failure import Failure
-from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
 
 from spinoff.actor import Actor, Node
 from spinoff.actor._actor import _validate_nodeid
@@ -46,10 +45,7 @@ class ActorRunner(Service):
             if self._nodeid:
                 Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
                 try:
-                    f1 = ZmqFactory()
-                    insock = ZmqPullConnection(f1)
-                    outsock = lambda: ZmqPushConnection(f1, linger=0)
-                    hub = Hub(insock, outsock, nodeid=self._nodeid)
+                    hub = Hub(nodeid=self._nodeid)
                 except Exception:
                     err("Could not set up remoting")
                     traceback.print_exc()

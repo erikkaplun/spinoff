@@ -37,15 +37,6 @@ class MockNetwork(object):  # pragma: no cover
 
         return Node(hub=Hub(insock, outsock, nodeid=nodeid, reactor=self.clock))
 
-    def outsock_addEndpoints(self, src, endpoints):
-        self.connect(src, endpoints)
-
-    def outsock_sendMultipart(self, src, dst, msgParts):
-        self.enqueue(src, dst, msgParts)
-
-    def outsock_shutdown(self, addr, target_addr):
-        self.disconnect(addr, target_addr)
-
     # def mapperdaemon(self, addr):
     #     pass
 
@@ -175,17 +166,17 @@ class MockOutSocket(object):  # pragma: no cover
 
     def sendMultipart(self, msgParts):
         assert self.endpoint_addr, "Outgoing sockets should not send before they connect"
-        self.owner.outsock_sendMultipart(src=self.addr, dst=self.endpoint_addr, msgParts=msgParts)
+        self.owner.enqueue(src=self.addr, dst=self.endpoint_addr, msgParts=msgParts)
 
     def addEndpoints(self, endpoints):
         assert len(endpoints) == 1, "Outgoing sockets should not connect to more than 1 endpoint"
         # dbg(endpoints[0].address)
         self.endpoint_addr = endpoints[0].address
-        self.owner.outsock_addEndpoints(self.addr, endpoints)
+        self.owner.connect(src=self.addr, endpoints=endpoints)
 
     def shutdown(self):
         dbg()
-        self.owner.outsock_shutdown(self.addr, self.endpoint_addr)
+        self.owner.disconnect(self.addr, self.endpoint_addr)
 
     def __repr__(self):
         return '<outsock:%s>' % (self.addr,)
