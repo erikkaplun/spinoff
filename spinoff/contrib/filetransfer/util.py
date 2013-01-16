@@ -6,6 +6,6 @@ def read_file_async(filename, start=0, end=None):
 
 
 def _do_read_file_async(filename, start, end):
-    with open(filename) as f:
+    with open(filename, 'rb') as f:
         f.seek(start)
         return f.read(end - start) if end is not None else f.read()
