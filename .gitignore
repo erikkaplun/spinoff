@@ -11,3 +11,4 @@ twisted/plugins/dropin.cache
 .coverage
 cover/
 MANIFEST
+*~

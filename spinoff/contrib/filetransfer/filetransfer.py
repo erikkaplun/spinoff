@@ -47,7 +47,7 @@ class _Sender(Process):
                 chunk = yield read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
                 seek_ptr += len(chunk)
 
-                more_coming = len(chunk) == chunk_size
+                more_coming = len(chunk) > 0 if chunk_size > 0 else True
 
                 send_to << ('chunk', chunk, more_coming)
 
