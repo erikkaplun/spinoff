@@ -28,32 +28,18 @@ _queue = Queue()
 
 
 if WIN32:
-    import msvcrt
-    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-
-    from encodings.aliases import aliases
-    aliases['cp65001'] = 'utf_8'
-
-    class UniStream(object):
-        __slots__ = 'fileno', 'softspace',
-
-        def __init__(self, fileobject):
-            self.fileno = fileobject.fileno()
-            self.softspace = False
-
-        def write(self, text):
-            os.write(self.fileno, text.encode('utf_8') if isinstance(text, unicode) else text)
-
-        def flush(self):
-            pass  # XXX: ?
-
-        def isatty(self):
-            return True  # XXX: hack so that colorama would wrap us
-
-    sys.stdout = UniStream(sys.stdout)
-    sys.stderr = UniStream(sys.stderr)
+    from .win32fix import fix_unicode_on_win32
+    fix_unicode_on_win32()
 
     if colorama:
+        import colorama.initialise
+        # colorama remembers those at import time, so we need to set them again after our unicode fix
+        colorama.initialise.orig_stdout = sys.stdout
+        colorama.initialise.orig_stderr = sys.stderr
+        # colorama doesn't touch stuff that is not .isatty()==True for some reason
+        sys.stdout.isatty = sys.stderr.isatty = lambda: True
+        # see also: http://code.google.com/p/colorama/issues/detail?id=41
+
         colorama.init()
     else:
         print("Colored log output disabled on WIN32; easy_install colorama to enable")
