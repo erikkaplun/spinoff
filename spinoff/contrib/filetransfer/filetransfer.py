@@ -195,30 +195,18 @@ class FileRef(object):
 
     @coroutine
     def fetch(self, path, context=None):
-        self._fetching[path] = Deferred()
-        mkdir_p(os.path.dirname(path))
-        with (yield self.open(context=context)) as f:
-            yield f.read_into(path)
-        os.utime(path, (self.mtime, self.mtime))
-        self._fetching[path].callback(None)
-        del self._fetching[path]
-
-    @coroutine
-    def fetch_if_needed(self, path, error_on_mismatch=False, warn_on_mismatch=False, context=None):
         if path in self._fetching:
             yield self._fetching[path]
-            return
-        if os.path.exists(path):
-            if os.stat(path).st_mtime == self.mtime:
-                return
-            else:
-                msg = "mtime of an already fetched file %s does not match the original mtime %s: %s " % (os.stat(path).st_mtime, self.mtime, path)
-                if error_on_mismatch:
-                    raise IOError(msg)
-                if warn_on_mismatch:
-                    warnings.warn(msg)
+        else:
+            if os.path.exists(path) and os.stat(path).st_mtime != self.mtime:
                 os.remove(path)
-        yield self.fetch(path, context=context)
+            self._fetching[path] = Deferred()
+            mkdir_p(os.path.dirname(path))
+            with (yield self.open(context=context)) as f:
+                yield f.read_into(path)
+            os.utime(path, (self.mtime, self.mtime))
+            self._fetching[path].callback(None)
+            del self._fetching[path]
 
     # @classmethod
     # def at_url(cls, url):
