@@ -996,9 +996,7 @@ class Cell(_BaseCell):
             pre_start = actor.pre_start
             args, kwargs = actor._Actor__startargs
             try:
-                self._ongoing = pre_start(*args, **kwargs)
-                yield self._ongoing
-                del self._ongoing
+                yield pre_start(*args, **kwargs)
             except Exception:
                 # dbg(u"☹")
                 raise CreateFailed("Actor failed to start", actor)
