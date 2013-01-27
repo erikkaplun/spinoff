@@ -70,11 +70,12 @@ class Hub(object):
 
     @logstring(u"⇜")
     def _got_message(self, (sender_addr, msg)):
-        conn = self.connections.get(sender_addr)
         t = self.reactor.seconds()
         if t > self._next_heartbeat_t + self.ALLOWED_HEARTBEAT_DELAY / 2.0:
             self._next_heartbeat.cancel()
             self._manage_heartbeat_and_visibility()
+
+        conn = self.connections.get(sender_addr)
 
         if msg[0] == PING:
             remote_version, = struct.unpack(PING_VERSION_FORMAT, msg[1:])  # not sure this is even necessary
