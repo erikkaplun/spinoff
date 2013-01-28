@@ -226,6 +226,8 @@ class FileHandle(object):
 
     receiver = None
 
+    _reading = {}
+
     def __init__(self, pub_id, file_service, context, abstract_path):
         """Private; see File.publish or File.at_url instead"""
         self.pub_id = pub_id
@@ -250,10 +252,17 @@ class FileHandle(object):
 
     @inlineCallbacks
     def read_into(self, file):
-        if os.path.exists(file):
-            os.unlink(file)
-        with open(file, 'wb') as f:
-            yield self._read_multipart(read_into=f)
+        if file in self._reading:
+            yield self._reading[file]
+        else:
+            d = self._reading[file] = Deferred()
+            try:
+                if os.path.exists(file):
+                    os.unlink(file)
+                with open(file, 'wb') as f:
+                    yield self._read_multipart(read_into=f)
+            finally:
+                d.callback(None)
 
     @inlineCallbacks
     def _read_multipart(self, total_size=None, read_into=None):
