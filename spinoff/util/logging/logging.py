@@ -37,7 +37,10 @@ if WIN32:
         colorama.initialise.orig_stdout = sys.stdout
         colorama.initialise.orig_stderr = sys.stderr
         # colorama doesn't touch stuff that is not .isatty()==True for some reason
-        sys.stdout.isatty = sys.stderr.isatty = lambda: True
+        try:
+            sys.stdout.isatty = sys.stderr.isatty = lambda: True
+        except AttributeError:
+            pass
         # see also: http://code.google.com/p/colorama/issues/detail?id=41
 
         colorama.init()
