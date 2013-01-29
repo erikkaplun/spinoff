@@ -6,30 +6,13 @@ import sys
 import traceback
 import warnings
 
-from twisted.internet.defer import Deferred, CancelledError
-from txcoroutine import coroutine
-
-from spinoff.actor import Actor, ActorType
+import gevent
+from spinoff.actor import Actor
 from spinoff.actor.events import HighWaterMarkReached, Events
 from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import OR
 from spinoff.util.logging import logstring, flaw, panic
-
-
-class ProcessType(ActorType):
-    def __new__(self, name, bases, dict_):
-        """Verifies that the run method is a generator, and wraps it with `txcoroutine.coroutine`."""
-        ret = super(ProcessType, self).__new__(self, name, bases, dict_)
-
-        path_of_new_class = dict_['__module__'] + '.' + name
-
-        if path_of_new_class != 'spinoff.actor.process.Process':
-            # if not inspect.isgeneratorfunction(ret.run):
-            #     raise TypeError("Process.run must return a generator")
-            ret.run = coroutine(ret.run)
-
-        return ret
 
 
 # This class does a lot of two things:
@@ -38,14 +21,12 @@ class ProcessType(ActorType):
 #  2) access private members of the Actor class because that's the most (memory) efficient way and Process really would
 #     be a friend class of Actor if Python had such thing.
 class Process(Actor):
-    __metaclass__ = ProcessType
-
     hwm = 10000  # default high water mark
 
-    __get_d = None
+    __waiting_get = None
     __queue = None
 
-    _coroutine = None
+    _proc = None
 
     @abc.abstractmethod
     def run(self, *args, **kwargs):  # pragma: no cover
@@ -53,18 +34,17 @@ class Process(Actor):
 
     def pre_start(self, *args, **kwargs):
         # dbg()
-        self._coroutine = self.run(*args, **kwargs)
+        self._proc = gevent.spawn(self.run, *args, **kwargs)
         # dbg("coroutine created")
-        self._coroutine.addCallback(self.__handle_complete)
-        if self._coroutine:
-            self._coroutine.addErrback(self.__handle_failure)
+        self._proc.link_value(self.__handle_complete)
+        self._proc.link_exception(self.__handle_failure)
         # dbg(u"✓")
 
     def receive(self, msg):
         # dbg("recv %r" % (msg,))
-        if self.__get_d and self.__get_d.wants(msg):
+        if self.__waiting_get and self.__waiting_get.wants(msg):
             # dbg("injecting %r" % (msg,))
-            self.__get_d.callback(msg)
+            self.__waiting_get.set(msg)
             # dbg("...injectng %r OK" % (msg,))
         else:
             # dbg("queueing")
@@ -79,58 +59,45 @@ class Process(Actor):
     def get(self, *patterns):
         # dbg("get")
         pattern = OR(*patterns)
-        try:
-            if self.__queue:
-                try:
-                    ix = self.__queue.index(pattern)
-                except ValueError:
-                    pass
-                else:
-                    # dbg("next message from queue")
-                    return self.__queue.pop(ix)
-
-            # dbg("ready for message")
-            self.__get_d = _PickyDeferred(pattern, canceller=self.__clear_get_d)
-            self.__get_d.addCallback(self.__clear_get_d)
-            return self.__get_d
-        except Exception:  # pragma: no cover
-            panic(traceback.format_exc())
-
-    def __clear_get_d(self, result):
-        self.__get_d = None
-        return result
-
-    def __handle_failure(self, f):
-        # dbg("deleting self._coroutine")
-        del self._coroutine
-        if isinstance(f.value, CancelledError):
-            return
-
-        try:
-            f.raiseException()
-        except Exception:
+        if self.__queue:
             try:
-                # XXX: seems like a hack but should be safe;
-                # hard to do it better without convoluting `Actor`
-                self._Actor__cell.tainted = True
-                # dbg("...reporting to parent")
-                self._Actor__cell.report_to_parent()
-            except Exception:  # pragma: no cover
-                panic("failure in handle_faiure:\n", traceback.format_exc())
+                ix = self.__queue.index(pattern)
+            except ValueError:
+                pass
+            else:
+                # dbg("next message from queue")
+                return self.__queue.pop(ix)
+
+        # dbg("ready for message")
+        w = self.__waiting_get = _PickyAsyncResult(pattern)
+        w.rawlink(self.__clear_get_d)
+        return self.__waiting_get.get()
+
+    def __clear_get_d(self, _):
+        self.__waiting_get = None
+
+    def __handle_failure(self, proc):
+        # dbg("deleting self._proc")
+        del self._proc
+        # XXX: seems like a hack but should be safe;
+        # hard to do it better without convoluting `Actor`
+        self._Actor__cell.tainted = True
+        # dbg("...reporting to parent")
+        self._Actor__cell.report((proc.exception, proc.traceback))
 
     def __handle_complete(self, result):
         # dbg()
         if result:
             warnings.warn("Process.run should not return anything--it's ignored")
-        del self._coroutine
+        del self._proc
         self.stop()
 
     def __shutdown(self):
         # dbg()
-        if self._coroutine:
-            self._coroutine.cancel()
-        if self.__get_d:
-            del self.__get_d
+        if self._proc:
+            self._proc.kill()
+        if self.__waiting_get:
+            del self.__waiting_get
 
     def flush(self):
         if self.__queue:  # XXX: added without testing
@@ -145,25 +112,22 @@ class Process(Actor):
         if not (exc and tb):
             flaw("programming flaw: escalate called outside of exception context")
             raise InvalidEscalation("Process.escalate must be called in an exception context")
-        ret = Deferred()
-        call_when_idle(lambda: (
-            self._Actor__cell.report_to_parent((exc, tb)),
-            ret.callback(None),
-        ))
-        return ret
+        self._Actor__cell.report((exc, tb))
+        self._resumed = gevent.event.Event()
+        self._resumed.wait()
 
     def __repr__(self):
         return Actor.__repr__(self).replace('<actor-impl:', '<proc-impl:')
 
 
-class _PickyDeferred(Deferred):
+class _PickyAsyncResult(gevent.event.AsyncResult):
     def __init__(self, pattern, *args, **kwargs):
-        Deferred.__init__(self, *args, **kwargs)
+        gevent.event.AsyncResult.__init__(self, *args, **kwargs)
         self.pattern = pattern
 
     def wants(self, result):
         return result == self.pattern
 
-    def callback(self, result):
+    def set(self, result):
         assert self.wants(result)
-        Deferred.callback(self, result)
+        gevent.event.AsyncResult.set(self, result)

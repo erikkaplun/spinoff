@@ -3,6 +3,7 @@ from __future__ import print_function
 import re
 import traceback
 
+import gevent
 from twisted.application.service import Service
 from twisted.internet import reactor
 from twisted.internet.error import ReactorNotRunning
@@ -12,7 +13,7 @@ from twisted.python.failure import Failure
 from spinoff.actor import Actor, Node
 from spinoff.actor._actor import _validate_nodeid
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
-from spinoff.util.logging import log, err, panic
+from spinoff.util.logging import log, err, panic, dbg
 from spinoff.util.async import after
 from spinoff.util.pattern_matching import ANY
 from spinoff.actor.events import Events, Message
@@ -71,7 +72,7 @@ class ActorRunner(Service):
                 if self._initial_message is not _EMPTY:
                     self._wrapper << ('_forward', self._initial_message)
 
-        reactor.callLater(0.0, start_actor)
+        reactor.callLater(0.0, gevent.spawn, start_actor)
 
     @inlineCallbacks
     def stopService(self):

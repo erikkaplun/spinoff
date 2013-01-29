@@ -1,3 +1,5 @@
+import gevent
+
 from spinoff.actor import Actor
 from spinoff.actor.process import Process
 from spinoff.util.logging import dbg
@@ -16,6 +18,7 @@ class ExampleProcess(Process):
             yield with_timeout(5.0, self.get('ack'))
 
             dbg("got 'ack' from %r; now sleeping a bit..." % (child,))
+
             yield sleep(1.0)
 
 

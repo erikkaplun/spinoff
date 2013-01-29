@@ -1,5 +1,8 @@
 from __future__ import print_function
 
+import geventreactor
+geventreactor.install()
+
 import sys
 import traceback
 

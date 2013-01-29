@@ -10,7 +10,7 @@ from twisted.internet.defer import inlineCallbacks
 from txzmq import ZmqEndpoint
 
 from spinoff.actor import _actor
-from spinoff.actor._actor import _VALID_NODEID_RE
+from spinoff.actor.validate import _VALID_NODEID_RE
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.util.async import sleep
 from spinoff.util.logging import logstring, log

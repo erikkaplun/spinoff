@@ -7,8 +7,8 @@ import sys
 import traceback
 from contextlib import contextmanager
 
-from nose import twistedtools
-from twisted.internet.defer import CancelledError, inlineCallbacks, DebugInfo
+from gevent import idle, with_timeout
+from twisted.internet.defer import CancelledError, DebugInfo
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
@@ -141,10 +141,6 @@ class Unclean(Exception):
 
 
 def test_errorcollector_can_be_used_with_assert_raises():
-    from spinoff.actor import _actor
-    tmp = _actor.Actor.SPAWNING_IS_ASYNC
-    _actor.Actor.SPAWNING_IS_ASYNC = False
-
     spawn = Node(hub=HubWithNoRemoting()).spawn
 
     class MockException(Exception):
@@ -157,15 +153,13 @@ def test_errorcollector_can_be_used_with_assert_raises():
             message_received[0] = True
             raise MockException
 
-    try:
-        a = spawn(MyActor)
-        with ErrorCollector():  # emulate a real actor test case
-            with assert_raises(MockException):
-                with ErrorCollector():
-                    a << None
-                    assert message_received[0]
-    finally:
-        _actor.Actor.SPAWNING_IS_ASYNC = tmp
+    a = spawn(MyActor)
+    with ErrorCollector():  # emulate a real actor test case
+        with assert_raises(MockException):
+            with ErrorCollector():
+                a << None
+                idle()
+                assert message_received[0]
 
 
 @contextmanager
@@ -222,11 +216,7 @@ def wrap_globals(globals):
     """Ensures that errors in actors during tests don't go unnoticed."""
 
     def wrap(fn):
-        if inspect.isgeneratorfunction(fn):
-            fn = inlineCallbacks(fn)
-
         @functools.wraps(fn)
-        @twistedtools.deferred(timeout=fn.timeout if hasattr(fn, 'timeout') else 1.0)
         def ret():
             # dbg("\n============================================\n")
 
@@ -272,13 +262,15 @@ def wrap_globals(globals):
                     #         import pdb; pdb.set_trace()
                     #         os.remove('backrefs.png')
 
-            return (
-                deferred_with(ErrorCollector(), fn)
-                .addBoth(lambda result: Node.stop_all().addCallback(lambda _: result))
-                .addBoth(lambda result: (_process_idle_calls(), result)[-1])
-                .addBoth(lambda result: (check_memleaks(), result)[-1])
-            )
-
+            try:
+                with ErrorCollector():
+                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 1.0, fn)
+                    idle()
+                return ret
+            finally:
+                Node.stop_all()
+                _process_idle_calls()
+                check_memleaks()
         return ret
 
     for name, value in globals.items():
