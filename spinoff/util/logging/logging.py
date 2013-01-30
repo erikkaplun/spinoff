@@ -37,7 +37,10 @@ if WIN32:
         colorama.initialise.orig_stdout = sys.stdout
         colorama.initialise.orig_stderr = sys.stderr
         # colorama doesn't touch stuff that is not .isatty()==True for some reason
-        sys.stdout.isatty = sys.stderr.isatty = lambda: True
+        try:
+            sys.stdout.isatty = sys.stderr.isatty = lambda: True
+        except AttributeError:
+            pass
         # see also: http://code.google.com/p/colorama/issues/detail?id=41
 
         colorama.init()
@@ -239,7 +242,7 @@ def _do_write(level, *args, **kwargs):
             dump_parent_caller = kwargs.pop('caller', False)
             # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
             print(("%s %s %s  %s %s  %s  in %s" %
-                  (datetime.datetime.strftime(datetime.datetime.utcfromtimestamp(time.time()), "%X"), os.getpid(), levelname, loc, logname, statestr, logstring)),
+                  (datetime.datetime.strftime(datetime.datetime.utcfromtimestamp(time.time() - time.timezone), "%X"), os.getpid(), levelname, loc, logname, statestr, logstring)),
                   file=OUTFILE, *(args + (comment,)))
             if dump_parent_caller:
                 parent_frame = frame

@@ -24,7 +24,7 @@ def sleep(seconds=0, reactor=reactor):
     return task.deferLater(reactor, seconds, lambda: None)
 
 
-def after(seconds, reactor=reactor):
+def after(seconds=0, reactor=reactor):
     """Readability sugar for `sleep`.
 
     Supports specifying delayed actions with `do` or `then`. `do` does not pass any arguments to the callback, whereas

@@ -195,30 +195,18 @@ class FileRef(object):
 
     @coroutine
     def fetch(self, path, context=None):
-        self._fetching[path] = Deferred()
-        mkdir_p(os.path.dirname(path))
-        with (yield self.open(context=context)) as f:
-            yield f.read_into(path)
-        os.utime(path, (self.mtime, self.mtime))
-        self._fetching[path].callback(None)
-        del self._fetching[path]
-
-    @coroutine
-    def fetch_if_needed(self, path, error_on_mismatch=False, warn_on_mismatch=False, context=None):
         if path in self._fetching:
             yield self._fetching[path]
-            return
-        if os.path.exists(path):
-            if os.stat(path).st_mtime == self.mtime:
-                return
-            else:
-                msg = "mtime of an already fetched file %s does not match the original mtime %s: %s " % (os.stat(path).st_mtime, self.mtime, path)
-                if error_on_mismatch:
-                    raise IOError(msg)
-                if warn_on_mismatch:
-                    warnings.warn(msg)
+        else:
+            if os.path.exists(path) and os.stat(path).st_mtime != self.mtime:
                 os.remove(path)
-        yield self.fetch(path, context=context)
+            self._fetching[path] = Deferred()
+            mkdir_p(os.path.dirname(path))
+            with (yield self.open(context=context)) as f:
+                yield f.read_into(path)
+            os.utime(path, (self.mtime, self.mtime))
+            self._fetching[path].callback(None)
+            del self._fetching[path]
 
     # @classmethod
     # def at_url(cls, url):
@@ -237,6 +225,8 @@ class FileHandle(object):
     closed = False
 
     receiver = None
+
+    _reading = {}
 
     def __init__(self, pub_id, file_service, context, abstract_path):
         """Private; see File.publish or File.at_url instead"""
@@ -262,10 +252,17 @@ class FileHandle(object):
 
     @inlineCallbacks
     def read_into(self, file):
-        if os.path.exists(file):
-            os.unlink(file)
-        with open(file, 'wb') as f:
-            yield self._read_multipart(read_into=f)
+        if file in self._reading:
+            yield self._reading[file]
+        else:
+            d = self._reading[file] = Deferred()
+            try:
+                if os.path.exists(file):
+                    os.unlink(file)
+                with open(file, 'wb') as f:
+                    yield self._read_multipart(read_into=f)
+            finally:
+                d.callback(None)
 
     @inlineCallbacks
     def _read_multipart(self, total_size=None, read_into=None):
