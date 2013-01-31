@@ -187,7 +187,7 @@ class FileRef(object):
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=os.stat(path).st_mtime)
+        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=reasonable_get_mtime(path))
 
     def open(self, context=None):
         ret = FileHandle(self.pub_id, self.file_service, context=context, abstract_path=self.abstract_path)
@@ -198,7 +198,7 @@ class FileRef(object):
         if path in self._fetching:
             yield self._fetching[path]
         else:
-            if os.path.exists(path) and os.stat(path).st_mtime != self.mtime:
+            if os.path.exists(path) and reasonable_get_mtime(path) != self.mtime:
                 os.remove(path)
             self._fetching[path] = Deferred()
             mkdir_p(os.path.dirname(path))
@@ -331,3 +331,8 @@ def mkdir_p(path):
             pass
         else:
             raise
+
+
+def reasonable_get_mtime(fname):
+    mtime = os.stat(fname).st_mtime
+    return round(mtime, 2)
