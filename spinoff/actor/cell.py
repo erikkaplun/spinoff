@@ -180,11 +180,9 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             while True:
                 m = self.queue.get()
                 if m in ('_resume', '_stop'):
-                    assert self.queue.empty()
                     self.queue.queue.extendleft(stash)
                     _stop()
                 elif m == '_restart':
-                    assert self.queue.empty()
                     self.queue.queue.extendleft(stash)
                     _restart()
                 else:
