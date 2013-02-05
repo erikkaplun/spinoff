@@ -364,7 +364,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 if isinstance(exc, WrappingException):
                     inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
                     inner_exc_fm = ''.join('      ' + line for line in inner_exc_fm)
-                    exc_fmt += "\n-------\nCAUSE:\n\n" + inner_exc_fm
+                    exc_fmt += "-------\n" + inner_exc_fm
             fail('\n\n', exc_fmt)
         else:
             fail("Died because a watched actor (%r) died" % (exc.watchee,))
