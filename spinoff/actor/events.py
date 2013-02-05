@@ -4,7 +4,7 @@ import sys
 import traceback
 from collections import namedtuple
 
-from twisted.internet.defer import Deferred
+from gevent.event import AsyncResult
 from spinoff.util.logging import err, log, fail
 
 
@@ -131,7 +131,7 @@ class Events(object):
             consumers = self.consumers.get(type(event))
             if consumers:
                 consumer_d = consumers.pop(0)
-                consumer_d.callback(event)
+                consumer_d.set(event)
                 return
 
             subscriptions = self.subscriptions.get(type(event))
@@ -155,9 +155,9 @@ class Events(object):
     def consume_one(self, event_type):
         assert isinstance(event_type, type)
         c = self.consumers
-        d = Deferred(lambda _: c[event_type].remove(d))
-        c.setdefault(event_type, []).append(d)
-        return d
+        ret = AsyncResult()
+        c.setdefault(event_type, []).append(ret)
+        return ret
 
     def reset(self):
         self.subscriptions = {}

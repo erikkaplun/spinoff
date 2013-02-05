@@ -179,37 +179,35 @@ class DebugActor(object):
 
 @contextmanager
 def assert_one_event(ev):
-    d = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
+    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
     except:
         raise
     else:
-        assert d.called, ("Event %r should have been emitted but was not" % (ev,)
-                          if not isinstance(ev, type) else
-                          "Event of type %s should have been emitted but was not" % (ev.__name__,))
-        result = deferred_result(d)
+        assert result.ready(), ("Event %r should have been emitted but was not" % (ev,)
+                                if not isinstance(ev, type) else
+                                "Event of type %s should have been emitted but was not" % (ev.__name__,))
+        result = result.get()
         if isinstance(ev, type):
             assert isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__)
         else:
             assert result == ev, "Event %r should have been emitted but %s was" % (ev, result)
-    finally:
-        d.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
 @contextmanager
 def assert_event_not_emitted(ev):
-    d = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
+    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
     except:
         raise
     else:
-        assert not d.called or deferred_result(d) != ev, \
+        assert not result.called or deferred_result(result) != ev, \
             "Event %s should not have been emitted" % (
                 (" of type %s" % (ev.__name__,)) if isinstance(ev, type) else ev,)
     finally:
-        d.addErrback(lambda f: f.trap(CancelledError)).cancel()
+        result.addErrback(lambda f: f.trap(CancelledError)).cancel()
 
 
 def wrap_globals(globals):
@@ -274,7 +272,7 @@ def wrap_globals(globals):
         return ret
 
     for name, value in globals.items():
-        if name.startswith('test_') and callable(value):
+        if name.startswith('test_') and callable(value) and not inspect.isgeneratorfunction(value):
             globals[name] = wrap(value)
 
 

@@ -9,11 +9,7 @@ import sys
 
 from gevent import idle, sleep
 from gevent.event import Event, AsyncResult
-from gevent.queue import Channel
-from geventreactor import waitForDeferred
 from nose.tools import eq_, ok_
-from twisted.internet.defer import Deferred, inlineCallbacks, DeferredQueue, fail, CancelledError, returnValue
-from twisted.internet.task import Clock
 
 from spinoff.actor import Actor, Props, Node, Ref, Uri
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
@@ -25,8 +21,7 @@ from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict,
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, EvSeq,
-    EVENT, NEXT, Latch, Trigger, Counter, expect_failure, Slot, simtime, MockActor, assert_event_not_emitted,
-    Barrier,)
+    EVENT, NEXT, Counter, expect_failure, simtime, MockActor, assert_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
 from spinoff.util.logging import dbg
@@ -1142,1001 +1137,870 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #     ok_(noexist.is_local)
 
 
-# ##
-# ## SUPERVISION & ERROR HANDLING
+##
+## SUPERVISION & ERROR HANDLING
 
-# def test_child_is_resumed_if_supervise_returns_resume():
-#     """Child is resumed if `supervise` returns `Resume`"""
-#     spawn = DummyNode().spawn
+def test_supervision_decision_resume():
+    """Child is resumed if `supervise` returns `Resume`"""
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'raise' << 'other-message'
 
-#     message_received = Latch()
+        def supervise(self, _):
+            return Resume
 
-#     class Child(Actor):
-#         def receive(self, message):
-#             if message == 'raise':
-#                 raise MockException
-#             else:
-#                 message_received()
+    class Child(Actor):
+        def receive(self, message):
+            if message == 'raise':
+                raise MockException
+            else:
+                message_received.set()
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'raise' << 'other-message'
-
-#         def supervise(self, _):
-#             return Resume
-
-#     spawn(Parent)
-
-#     assert message_received
+    message_received = Event()
+    DummyNode().spawn(Parent)
+    message_received.wait()
 
 
-# def test_child_is_restarted_if_supervise_returns_restart():
-#     """Child is restarted if `supervise` returns `Restart`"""
-#     spawn = DummyNode().spawn
+def test_supervision_decision_restart():
+    """Child is restarted if `supervise` returns `Restart`"""
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'raise'
 
-#     child_started = Counter()
+        def supervise(self, _):
+            return Restart
 
-#     class Child(Actor):
-#         def pre_start(self):
-#             child_started()
+    class Child(Actor):
+        def pre_start(self):
+            child_started()
 
-#         def receive(self, message):
-#             raise MockException
+        def receive(self, message):
+            raise MockException
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'raise'
-
-#         def supervise(self, _):
-#             return Restart
-
-#     spawn(Parent)
-#     assert child_started == 2
+    child_started = Counter()
+    DummyNode().spawn(Parent)
+    idle()
+    eq_(child_started, 2)
 
 
-# def test_child_is_stopped_if_supervise_returns_stop():
-#     """Child is stopped if `supervise` returns `Stop`"""
-#     spawn = DummyNode().spawn
+def test_supervision_decision_stop():
+    """Child is stopped if `supervise` returns `Stop`"""
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'raise'
 
-#     child_stopped = Latch()
+        def supervise(self, _):
+            return Stop
 
-#     class Child(Actor):
-#         def post_stop(self):
-#             child_stopped()
+    class Child(Actor):
+        def post_stop(self):
+            child_stopped.set()
 
-#         def receive(self, message):
-#             raise MockException
+        def receive(self, message):
+            raise MockException
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'raise'
-
-#         def supervise(self, _):
-#             return Stop
-
-#     spawn(Parent)
-
-#     assert child_stopped
+    child_stopped = Event()
+    DummyNode().spawn(Parent)
+    child_stopped.wait()
 
 
-# def test_child_is_stop_if_supervise_returns_stop():
-#     """Exception is escalated if `supervise` returns `Escalate`"""
-#     spawn = DummyNode().spawn
+def test_supervision_decision_escalate():
+    class ParentsParent(Actor):
+        def pre_start(self):
+            self.spawn(Parent)
 
-#     escalated = Latch()
+        def supervise(self, exc):
+            escalated.set()
+            return Stop
 
-#     class Child(Actor):
-#         def receive(self, message):
-#             raise MockException
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'raise'
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'raise'
+        def supervise(self, _):
+            return Escalate
 
-#         def supervise(self, _):
-#             return Escalate
+    class Child(Actor):
+        def receive(self, message):
+            raise MockException
 
-#     class ParentsParent(Actor):
-#         def pre_start(self):
-#             self.spawn(Parent)
-
-#         def supervise(self, exc):
-#             escalated()
-#             return Stop
-
-#     spawn(ParentsParent)
-
-#     assert escalated
+    escalated = Event()
+    DummyNode().spawn(ParentsParent)
+    escalated.wait()
 
 
 # def test_TODO_exception_escalations_are_reported_as_events():
 #     pass
 
 
-# def test_child_error_suspends_child():
-#     spawn = DummyNode().spawn
-
-#     release_parent = Trigger()
-
-#     child = Slot()
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             child << self.spawn(Child)
-
-#         def supervise(self, exc):
-#             assert isinstance(exc, MockException)
-#             evseq('parent_received_error')
-#             return Resume
-
-#         def receive(self, message):
-#             return release_parent
-
-#     class Child(Actor):
-#         def receive(self, message):
-#             if message == 'cause-error':
-#                 evseq('child_causing_error')
-#                 raise MockException
-#             else:
-#                 evseq('child_received_message')
-
-#     evseq = EvSeq()
-
-#     parent = spawn(Parent)
-#     parent << 'block'
-
-#     child() << 'cause-error' << 'dummy'
-
-#     release_parent()
-
-#     yield evseq.await(EVENT('child_causing_error'))
-#     yield evseq.await(EVENT('parent_received_error'))
-#     yield evseq.await(EVENT('child_received_message'))
-
-
-# def test_error_in_deferred_receive_behaves_the_same_as_non_deferred():
-#     spawn = DummyNode().spawn
-
-#     class MyActor(Actor):
-#         def receive(self, _):
-#             return fail(MockException())
-
-#     a = spawn(MyActor)
-
-#     with expect_failure(MockException):
-#         a << 'dummy'
-
-
-# def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
-#     spawn = DummyNode().spawn
-
-#     class Child(Actor):
-#         def receive(self, _):
-#             self.stop()
-#             raise MockException
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'dummy'
-
-#         def supervise(self, exc):
-#             assert False
-
-#     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-#         spawn(Parent)
-
-
-# def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent():
-#     spawn = DummyNode().spawn
-
-#     termination_message_received = Latch()
-
-#     class Child(Actor):
-#         def post_stop(self):
-#             raise MockException
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.child = self.spawn(Child)
-#             self.watch(self.child)
-#             self.child.stop()
-
-#         def receive(self, message):
-#             assert message == ('terminated', self.child)
-#             termination_message_received()
-
-#     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-#         spawn(Parent)
-
-#     assert termination_message_received
-
-
-# def test_supervision_message_is_handled_directly_by_supervise_method():
-#     spawn = DummyNode().spawn
-
-#     supervise_called = Latch()
-#     exc_received = Slot()
-
-#     exc = MockException('arg1', 'arg2')
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             supervise_called()
-#             exc_received << exc
-#             return Stop
-
-#         def pre_start(self):
-#             self.spawn(Child) << None
-
-#     class Child(Actor):
-#         def receive(self, _):
-#             raise exc
-
-#     spawn(Parent)
-#     assert supervise_called
-#     assert isinstance(exc_received(), MockException) and exc_received().args == exc.args
-
-
-# def test_init_error_reports_to_supervisor():
-#     spawn = DummyNode().spawn
-
-#     # TODO: see akka ActorInitializationException
-#     received_exception = Slot()
-
-#     class ChildWithFailingInit(Actor):
-#         def __init__(self):
-#             raise MockException
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             received_exception << exc
-#             return Stop
-
-#         def pre_start(self):
-#             self.spawn(ChildWithFailingInit)
-
-#     spawn(Parent)
-
-#     exc = received_exception()
-#     assert isinstance(exc, CreateFailed)
-#     with assert_raises(MockException):
-#         exc.raise_original()
-
-
-# def test_pre_start_error_reports_to_supervisor():
-#     spawn = DummyNode().spawn
-
-#     received_exception = Slot()
-#     post_stop_called = Latch()
-
-#     class ChildWithFailingInit(Actor):
-#         def pre_start(self):
-#             raise MockException
-
-#         def post_stop(self):
-#             post_stop_called()
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             received_exception << exc
-#             return Stop
-
-#         def pre_start(self):
-#             self.spawn(ChildWithFailingInit)
-
-#     spawn(Parent)
-
-#     exc = received_exception()
-#     assert isinstance(exc, CreateFailed)
-#     with assert_raises(MockException):
-#         exc.raise_original()
-
-#     assert not post_stop_called, "post_stop must not be called if there was an error in pre_start"
-
-
-# def test_receive_error_reports_to_supervisor():
-#     spawn = DummyNode().spawn
-
-#     received_exception = Slot()
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             received_exception << exc
-#             return Stop
-
-#         def pre_start(self):
-#             self.spawn(ChildWithExcInReceive) << None
-
-#     class ChildWithExcInReceive(Actor):
-#         method_under_test = 'receive'
-
-#         def receive(self, _):
-#             raise MockException
-
-#     spawn(Parent)
-#     assert isinstance(received_exception(), MockException), \
-#         "Child errors in the 'receive' method should be sent to its parent"
-
-
-# def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
-#     spawn = DummyNode().spawn
-
-#     class Parent(Actor):
-#         def __init__(self, child_cls, supervisor_decision):
-#             self.child_cls = child_cls
-#             self.supervisor_decision = supervisor_decision
-
-#         def supervise(self, exc):
-#             return self.supervisor_decision
-
-#         def pre_start(self):
-#             self.spawn(self.child_cls)
-
-#     #
-
-#     class ChildWithErrorInInit(Actor):
-#         def __init__(self):
-#             child_created()
-
-#             if not init_already_raised:  # avoid infinite ping-pong
-#                 init_already_raised()
-#                 raise MockException
-
-#     init_already_raised = Latch()
-#     child_created = Counter()
-#     spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
-#     assert child_created == 2
-
-#     init_already_raised = Latch()
-#     child_created = Counter()
-#     with assert_one_warning():
-#         spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Resume))
-#     assert child_created == 2
-
-#     # #
-
-#     class ChildWithErrorInPreStart(Actor):
-#         def pre_start(self):
-#             child_started()
-
-#             if not pre_start_already_raised:  # avoid infinite ping-pong
-#                 pre_start_already_raised()
-#                 raise MockException
-
-#     pre_start_already_raised = Latch()
-#     child_started = Counter()
-#     spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
-#     assert child_started == 2
-
-#     pre_start_already_raised = Latch()
-#     child_started = Counter()
-#     with assert_one_warning():
-#         spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Resume))
-#     assert child_started == 2
-
-
-# def test_error_report_after_restart_is_ignored():
-#     spawn = DummyNode().spawn
-
-#     child = Slot()
-#     child_released = Trigger()
-
-#     class Child(Actor):
-#         def receive(self, _):
-#             yield child_released
-#             raise MockException
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             if not child():  # so that after the restart the child won't exist
-#                 child << self.spawn(Child)
-
-#     parent = spawn(Parent)
-
-#     child() << 'dummy'
-#     parent << '_restart'
-
-#     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-#         child_released()
-
-
-# def test_default_supervision_stops_for_create_failed():
-#     spawn = DummyNode().spawn
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.child = self.watch(self.spawn(Child))
-
-#         def receive(self, message):
-#             assert message == ('terminated', self.child)
-#             termination_message_received()
-
-#     class Child(Actor):
-#         def __init__(self):
-#             raise MockException
-
-#     termination_message_received = Latch()
-#     spawn(Parent)
-#     assert termination_message_received
-
-#     #
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             raise MockException
-
-#     termination_message_received = Latch()
-#     spawn(Parent)
-#     assert termination_message_received
-
-
-# # def test_TODO_default_supervision_stops_for_actorkilled():
-# #     # TODO: akka treats actor-killed as an exception--does this make sense?
-# #     pass
-
-
-# def test_default_supervision_restarts_for_any_other_exception():
-#     spawn = DummyNode().spawn
-
-#     child_started = Counter()
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child) << 'fail'
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             child_started()
-
-#         def receive(self, _):
-#             raise MockException
-
-#     spawn(Parent)
-#     assert child_started == 2
-
-
-# def test_default_supervision_is_applied_if_supervision_returns_default():
-#     spawn = DummyNode().spawn
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             c = self.spawn(child_cls)
-#             child << c
-#             Events.consume_one(DeadLetter)
-#             c << 'dummy'
-
-#         def supervise(self, _):
-#             return Default
-
-#     class ChildWithFailingInit(Actor):
-#         def pre_start(self):
-#             child_started()
-#             raise MockException
-
-#     child_cls = ChildWithFailingInit
-#     child = Slot()
-#     child_started = Counter()
-#     spawn(Parent)
-#     assert child_started == 1
-#     assert child().is_stopped  # no better way as of now to check if child has stopped
-
-#     #
-
-#     class ChildWithFailingReceive(Actor):
-#         def pre_start(self):
-#             child_started()
-
-#         def receive(self, _):
-#             raise MockException
-
-#     child_cls = ChildWithFailingReceive
-#     child_started = Counter()
-#     spawn(Parent)
-#     assert child_started == 2
-
-
-# # def test_TODO_other_error_escalates():
-# #     # TODO: what does this mean in Akka anyway?
-# #     pass
-
-
-# def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
-#     spawn = DummyNode().spawn
-
-#     class Supervisor(Actor):
-#         def pre_start(self):
-#             self.spawn(Child)
-
-#         def supervise(self, exc):
-#             return supervision_decision
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             self.send('dummy')
-
-#         def receive(self, _):
-#             raise MockException
-
-#     supervision_decision = Escalate
-#     with expect_failure(MockException):
-#         spawn(Supervisor)
-
-#     supervision_decision = None
-#     with expect_failure(MockException):
-#         spawn(Supervisor)
-
-
-# def test_error_is_escalated_if_supervision_raises_exception():
-#     spawn = DummyNode().spawn
-
-#     class SupervisorException(Exception):
-#         pass
-
-#     class Supervisor(Actor):
-#         def pre_start(self):
-#             self.spawn(Child)
-
-#         def supervise(self, exc):
-#             raise SupervisorException
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             self.send('dummy')
-
-#         def receive(self, _):
-#             raise MockException
-
-#     with expect_failure(SupervisorException):
-#         spawn(Supervisor)
-
-
-# def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
-#     spawn = DummyNode().spawn
-
-#     class Supervisor(Actor):
-#         def pre_start(self):
-#             self.spawn(Child)
-
-#         def supervise(self, exc):
-#             return 'illegal-value'
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             self.send('dummy')
-
-#         def receive(self, _):
-#             raise MockException
-
-#     with expect_failure(BadSupervision, "Should raise BadSupervision if supervision returns an illegal value") as basket:
-#         spawn(Supervisor)
-
-#     with assert_raises(MockException):
-#         basket[0].raise_original()
+def test_error_suspends_actor():
+    class Parent(Actor):
+        def pre_start(self):
+            child.set(self.spawn(Child))
+
+        def supervise(self, exc):
+            ok_(isinstance(exc, MockException))
+            parent_received_error.set()
+            parent_supervise_released.wait()
+            return Resume
+
+    class Child(Actor):
+        def receive(self, message):
+            if message == 'cause-error':
+                raise MockException
+            else:
+                child_received_message.set()
+
+    spawn = DummyNode().spawn
+    child = AsyncResult()
+    parent_received_error, parent_supervise_released, child_received_message = Event(), Event(), Event()
+
+    spawn(Parent)
+    child.get() << 'cause-error' << 'dummy'
+    parent_received_error.wait()
+    ok_(not child_received_message.is_set(), "actor should not receive messages after error until being resumed")
+    parent_supervise_released.set()
+    child_received_message.wait()
+
+
+def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
+    class Child(Actor):
+        def receive(self, _):
+            self.stop()
+            raise MockException
+
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'dummy'
+
+        def supervise(self, exc):
+            ok_(False, "should not reach here")
+
+    spawn = DummyNode().spawn
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        spawn(Parent)
+        idle()
+
+
+def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent_as_normal():
+    class Child(Actor):
+        def post_stop(self):
+            raise MockException
+
+    class Parent(Actor):
+        def pre_start(self):
+            self.child = self.spawn(Child)
+            self.watch(self.child)
+            self.child.stop()
+
+        def supervise(self, exc):
+            ok_(False, "should not reach here")
+
+        def receive(self, message):
+            eq_(message, ('terminated', self.child))
+            termination_message_received.set()
+
+    spawn = DummyNode().spawn
+    termination_message_received = Event()
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        spawn(Parent)
+        idle()
+    termination_message_received.wait()
+
+
+def test_supervision_message_is_handled_directly_by_supervise_method():
+    class Parent(Actor):
+        def supervise(self, exc):
+            supervise_called.set()
+            exc_received.set(exc)
+            return Stop
+
+        def pre_start(self):
+            self.spawn(Child) << None
+
+    class Child(Actor):
+        def receive(self, _):
+            raise exc
+
+    spawn = DummyNode().spawn
+    supervise_called = Event()
+    exc_received = AsyncResult()
+    exc = MockException('arg1', 'arg2')
+
+    spawn(Parent)
+    supervise_called.wait()
+    ok_(isinstance(exc_received.get(), MockException))
+    ok_(exc_received.get().args, exc.args)
+
+
+def test_init_error_reports_to_supervisor():
+    class ChildWithFailingInit(Actor):
+        def __init__(self):
+            raise MockException
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            received_exception.set(exc)
+            return Stop
+
+        def pre_start(self):
+            self.spawn(ChildWithFailingInit)
+
+    spawn = DummyNode().spawn
+    received_exception = AsyncResult()
+    spawn(Parent)
+    exc = received_exception.get()
+    ok_(isinstance(exc, CreateFailed))
+    with assert_raises(MockException):
+        exc.raise_original()
+
+
+def test_pre_start_error_reports_to_supervisor():
+    class ChildWithFailingInit(Actor):
+        def pre_start(self):
+            raise MockException
+
+        def post_stop(self):
+            post_stop_called()
+
+    class Parent(Actor):
+        def supervise(self, exc):
+            received_exception.set(exc)
+            return Stop
+
+        def pre_start(self):
+            self.spawn(ChildWithFailingInit)
+
+    spawn = DummyNode().spawn
+    received_exception = AsyncResult()
+    post_stop_called = Event()
+    spawn(Parent)
+    exc = received_exception.get()
+    ok_(isinstance(exc, CreateFailed))
+    with assert_raises(MockException):
+        exc.raise_original()
+    ok_(not post_stop_called.is_set(), "post_stop must not be called if there was an error in pre_start")
+
+
+def test_receive_error_reports_to_supervisor():
+    class Parent(Actor):
+        def supervise(self, exc):
+            received_exception.set(exc)
+            return Stop
+
+        def pre_start(self):
+            self.spawn(ChildWithExcInReceive) << None
+
+    class ChildWithExcInReceive(Actor):
+        method_under_test = 'receive'
+
+        def receive(self, _):
+            raise MockException
+
+    spawn = DummyNode().spawn
+    received_exception = AsyncResult()
+    spawn(Parent)
+    ok_(isinstance(received_exception.get(), MockException),
+        "Child errors in the 'receive' method should be sent to its parent")
+
+
+def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
+    class Parent(Actor):
+        def __init__(self, child_cls, supervisor_decision):
+            self.child_cls = child_cls
+            self.supervisor_decision = supervisor_decision
+
+        def supervise(self, exc):
+            return self.supervisor_decision
+
+        def pre_start(self):
+            self.spawn(self.child_cls)
+
+    ##
+
+    class ChildWithErrorInInit(Actor):
+        def __init__(self):
+            child_created()
+            if not init_already_raised.is_set():  # avoid infinite ping-pong
+                init_already_raised.set()
+                raise MockException
+
+    spawn = DummyNode().spawn
+    init_already_raised = Event()
+    child_created = Counter()
+    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
+    idle()
+    eq_(child_created, 2)
+    #
+    init_already_raised = Event()
+    child_created = Counter()
+    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Resume))
+    idle()
+    eq_(child_created, 1, "resuming a tainted actor stops it")
+
+    ##
+
+    class ChildWithErrorInPreStart(Actor):
+        def pre_start(self):
+            child_started()
+            if not pre_start_already_raised.is_set():  # avoid infinite ping-pong
+                pre_start_already_raised.set()
+                raise MockException
+
+    spawn = DummyNode().spawn
+    pre_start_already_raised = Event()
+    child_started = Counter()
+    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
+    idle()
+    eq_(child_started, 2)
+    #
+    pre_start_already_raised = Event()
+    child_started = Counter()
+    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Resume))
+    idle()
+    eq_(child_started, 1, "resuming a tainted actor stops it")
+
+
+def test_error_report_after_restart_is_ignored():
+    class Parent(Actor):
+        def pre_start(self):
+            if not child.ready():  # so that after the restart the child won't exist
+                child.set(self.spawn(Child))
+
+    class Child(Actor):
+        def receive(self, _):
+            child_released.wait()
+            raise MockException
+
+    spawn = DummyNode().spawn
+    child = AsyncResult()
+    child_released = Event()
+
+    parent = spawn(Parent)
+    child.get() << 'dummy'
+    parent << '_restart'
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        child_released.set()
+        idle()
+
+
+def test_default_supervision_stops_for_create_failed():
+    class Parent(Actor):
+        def pre_start(self):
+            self.child = self.spawn(Child)
+            self.watch(self.child)
+
+        def receive(self, message):
+            eq_(message, ('terminated', self.child))
+            termination_message_received.set()
+
+    class Child(Actor):
+        def __init__(self):
+            raise MockException
+    termination_message_received = Event()
+    DummyNode().spawn(Parent)
+    termination_message_received.wait()
+
+    class Child(Actor):
+        def pre_start(self):
+            raise MockException
+    termination_message_received = Event()
+    DummyNode().spawn(Parent)
+    termination_message_received.wait()
+
+
+# def test_TODO_default_supervision_stops_for_actorkilled():
+#     # TODO: akka treats actor-killed as an exception--does this make sense?
+#     pass
+
+
+def test_default_supervision_restarts_by_default():
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child) << 'fail'
+
+    class Child(Actor):
+        def pre_start(self):
+            child_started()
+
+        def receive(self, _):
+            raise MockException
+
+    child_started = Counter()
+    DummyNode().spawn(Parent)
+    idle()
+    eq_(child_started, 2)
+
+
+def test_supervision_decision_default():
+    class Parent(Actor):
+        def pre_start(self):
+            c = self.spawn(Child)
+            child.set(c)
+            Events.consume_one(DeadLetter)
+            c << 'dummy'
+
+        def supervise(self, _):
+            return Default
+
+    class Child(Actor):
+        def pre_start(self):
+            child_started()
+            raise MockException
+
+    spawn = DummyNode().spawn
+
+    #
+
+    child = AsyncResult()
+    child_started = Counter()
+    spawn(Parent)
+    idle()
+    eq_(child_started, 1)
+    ok_(child.get().is_stopped)
+
+    #
+
+    class Child(Actor):
+        def pre_start(self):
+            child_started()
+
+        def receive(self, _):
+            raise MockException
+
+    child_started = Counter()
+    spawn(Parent)
+    idle()
+    eq_(child_started, 2)
+
+
+# def test_TODO_other_error_escalates():
+#     # TODO: what does this mean in Akka anyway?
+#     pass
+
+
+def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
+    class Supervisor(Actor):
+        def pre_start(self):
+            self.spawn(Child)
+
+        def supervise(self, exc):
+            return supervision_decision
+
+    class Child(Actor):
+        def pre_start(self):
+            self << 'dummy'
+
+        def receive(self, _):
+            raise MockException
+
+    spawn = DummyNode().spawn
+    supervision_decision = Escalate
+    with expect_failure(MockException):
+        spawn(Supervisor)
+        idle()
+    supervision_decision = None
+    with expect_failure(MockException):
+        spawn(Supervisor)
+        idle()
+
+
+def test_error_is_escalated_if_supervision_raises_exception():
+    spawn = DummyNode().spawn
+
+    class SupervisorException(Exception):
+        pass
+
+    class Supervisor(Actor):
+        def pre_start(self):
+            self.spawn(Child)
+
+        def supervise(self, exc):
+            raise SupervisorException
+
+    class Child(Actor):
+        def pre_start(self):
+            self << 'dummy'
+
+        def receive(self, _):
+            raise MockException
+
+    with expect_failure(SupervisorException):
+        spawn(Supervisor)
+        idle()
+
+
+def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
+    class Supervisor(Actor):
+        def pre_start(self):
+            self.spawn(Child)
+
+        def supervise(self, exc):
+            return 'illegal-value'
+
+    class Child(Actor):
+        def pre_start(self):
+            self << 'dummy'
+
+        def receive(self, _):
+            raise MockException
+
+    spawn = DummyNode().spawn
+    with expect_failure(BadSupervision, "Should raise BadSupervision if supervision returns an illegal value") as basket:
+        spawn(Supervisor)
+        idle()
+    with assert_raises(MockException):
+        basket[0].raise_original()
 
 
 # def test_TODO_baseexceptions_are_also_propagated_through_the_hierarchy():
 #     pass
 
 
-# # def test_TODO_supervise_can_specify_maxrestarts():
-# #     class Parent(Actor):
-# #         def supervise(self, _):
-# #             return Restart(max=3)
+# def test_TODO_supervise_can_specify_maxrestarts():
+#     class Parent(Actor):
+#         def supervise(self, _):
+#             return Restart(max=3)
 
-# #         def pre_start(self):
-# #             self.spawn(Child)
+#         def pre_start(self):
+#             self.spawn(Child)
 
-# #     child_started = Counter()
+#     child_started = Counter()
 
-# #     class Child(Actor):
-# #         def pre_start(self):
-# #             child_started()
-# #             raise MockException
+#     class Child(Actor):
+#         def pre_start(self):
+#             child_started()
+#             raise MockException
 
-# #     spawn(Parent)
+#     spawn(Parent)
 
-# #     assert child_started == 4, child_started
+#     assert child_started == 4, child_started
 
 
 # def test_TODO_supervision_can_be_marked_as_allforone_or_oneforone():
 #     pass
 
 
-# ##
-# ## GUARDIAN
+##
+## GUARDIAN
 
 # def test_TODO_guardian_supervision():
 #     pass
 
 
-# ##
-# ## HIERARCHY
+##
+## HIERARCHY
 
-# def test_actors_remember_their_children():
-#     spawn = DummyNode().spawn
-
-#     class MyActor(Actor):
-#         def pre_start(self):
-#             assert not self.children
-
-#             child1 = self.spawn(Actor)
-#             assert child1 in self.children
-
-#             child2 = self.spawn(Actor)
-#             assert child2 in self.children
-
-#     spawn(MyActor)
+def test_actors_remember_their_children():
+    class MyActor(Actor):
+        def pre_start(self):
+            ok_(not self.children)
+            child1 = self.spawn(Actor)
+            ok_(child1 in self.children)
+            child2 = self.spawn(Actor)
+            ok_(child2 in self.children)
+    DummyNode().spawn(MyActor)
 
 
-# def test_stopped_child_is_removed_from_its_parents_list_of_children():
-#     spawn = DummyNode().spawn
+def test_stopped_child_is_removed_from_its_parents_list_of_children():
+    class MyActor(Actor):
+        def pre_start(self):
+            child = self.spawn(Actor)
+            ok_(child in self.children)
+            self.watch(child)
+            child.stop()
+            # XXX: assert child in self._children
 
-#     receive_called = Latch()
+        def receive(self, message):
+            receive_called.set()
+            eq_(message, ('terminated', ANY))
+            _, child = message
+            ok_(child not in self.children)
 
-#     class MyActor(Actor):
-#         def pre_start(self):
-#             child = self.spawn(Actor)
-#             assert child in self.children
-#             self.watch(child)
-#             child.stop()
-#             # XXX: assert child in self._children
-
-#         def receive(self, message):
-#             receive_called()
-#             assert message == ('terminated', ANY)
-#             _, child = message
-#             assert child not in self.children
-
-#     spawn(MyActor)
-#     assert receive_called
+    receive_called = Event()
+    DummyNode().spawn(MyActor)
+    receive_called.wait()
 
 
-# def test_suspending_suspends_and_resuming_resumes_all_children():
-#     # Actor.SENDING_IS_ASYNC = True  # so that we could use EvSeq
+def test_suspending_suspends_and_resuming_resumes_all_children():
+    class Parent(Actor):
+        def pre_start(self):
+            child.set(self.spawn(Child))
 
-#     spawn = DummyNode().spawn
+        def supervise(self, exc):
+            ok_(isinstance(exc, MockException))
+            parent_received_error.set()
+            return Resume  # should resume both Child and SubChild, and allow SubChild to process its message
 
-#     # so that we could control them from the outside
-#     child, subchild = Slot(), Slot()
+    class Child(Actor):
+        def pre_start(self):
+            subchild.set(self.spawn(SubChild))
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             child << self.spawn(Child)
+        def receive(self, message):
+            raise MockException  # should also cause SubChild to be suspended
 
-#         def supervise(self, exc):
-#             assert isinstance(exc, MockException)
-#             evseq('parent_received_error')
-#             return Resume  # should resume both Child and SubChild, and allow SubChild to process its message
+    class SubChild(Actor):
+        def receive(self, message):
+            subchild_received_message.set()
 
-#     class Child(Actor):
-#         def pre_start(self):
-#             subchild << self.spawn(SubChild)
+    spawn = DummyNode().spawn
+    child, subchild = AsyncResult(), AsyncResult()
+    parent_received_error, subchild_received_message = Event(), Event()
+    spawn(Parent)
+    child.get() << 'dummy'  # will cause Child to raise MockException
+    subchild.get() << 'dummy'
 
-#         def receive(self, message):
-#             raise MockException  # should also cause SubChild to be suspended
-
-#     class SubChild(Actor):
-#         def receive(self, message):
-#             evseq('subchild_received_message')
-
-#     evseq = EvSeq()
-
-#     spawn(Parent)
-
-#     child() << 'dummy'  # will cause Child to raise MockException
-#     subchild() << 'dummy'
-
-#     yield evseq.await(NEXT('parent_received_error'))
-#     yield evseq.await(NEXT('subchild_received_message'))
+    parent_received_error.wait()
+    subchild_received_message.wait()
 
 
-# def test_stopping_stops_children():
-#     spawn = DummyNode().spawn
+def test_stopping_stops_children():
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child)
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child)
+    class Child(Actor):
+        def post_stop(self):
+            child_stopped.set()
 
-#     class Child(Actor):
-#         def post_stop(self):
-#             child_stopped()
-
-#     child_stopped = Latch()
-
-#     p = spawn(Parent)
-#     p.stop()
-
-#     assert child_stopped
+    spawn = DummyNode().spawn
+    child_stopped = Event()
+    spawn(Parent).stop()
+    child_stopped.wait()
 
 
-# def test_stopping_parent_from_child():
-#     spawn = DummyNode().spawn
+def test_stopping_parent_from_child():
+    class PoorParent(Actor):
+        def pre_start(self):
+            child.set(self.spawn(EvilChild))
 
-#     child = Slot()
-#     started = Counter()
+        def post_stop(self):
+            parent_stopped.set()
 
-#     class PoorParent(Actor):
-#         def supervise(self, _):
-#             return Restart
+    class EvilChild(Actor):
+        def pre_start(self):
+            self._parent.stop()  # this will queue a `_stop` in the parent's queue
 
-#         def pre_start(self):
-#             child << self.spawn(EvilChild)
-
-#     class EvilChild(Actor):
-#         def pre_start(self):
-#             started()
-#             if started == 2:
-#                 # this is the result of the `Restart` above, which means the parent is currently processing `_error`;
-#                 # so we're going to deceive the parent and kill it by its own child!
-
-#                 self._parent.stop()  # this will queue a `_stop` in the parent's queue
-#                 self.stop()  # this will queue `_child_terminated` in the parent's queue on top of `_stop`
-
-#                 # the parent is still processing `_error`
-
-#         def receive(self, _):
-#             # invoke the parent's supervision
-#             raise MockException
-
-#     parent = spawn(PoorParent)
-#     child() << 'begin-conspiracy'
-#     yield with_timeout(0.01, parent.join())
+    child = AsyncResult()
+    parent_stopped = Event()
+    DummyNode().spawn(PoorParent)
+    child.get() << 'dummy'
+    parent_stopped.wait()
 
 
-# def test_restarting_stops_children():
-#     spawn = DummyNode().spawn
+def test_restarting_stops_children():
+    class Parent(Actor):
+        def pre_start(self):
+            started()
+            if started == 1:  # only start the first time, so after the restart, there should be no children
+                self.spawn(Child)
+            else:
+                ok_(not self.children)
+                parent_restarted.set()
 
-#     started = Counter()
+    class Child(Actor):
+        def post_stop(self):
+            child_stopped.set()
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             started()
-#             if started == 1:  # only start the first time, so after the restart, there should be no children
-#                 self.spawn(Child)
-#             else:
-#                 assert not self.children, self.children
-
-#     class Child(Actor):
-#         def post_stop(self):
-#             child_stopped()
-
-#     child_stopped = Latch()
-
-#     p = spawn(Parent)
-#     p << '_restart'
-
-#     assert child_stopped
+    started = Counter()
+    child_stopped, parent_restarted = Event(), Event()
+    DummyNode().spawn(Parent) << '_restart'
+    child_stopped.wait()
+    parent_restarted.wait()
 
 
 # def test_TODO_restarting_does_not_restart_children_if_told_so():
 #     pass  # Parent.stop_children_on_restart = False
 
 
-# def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the_message():
-#     spawn = DummyNode().spawn
+def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the_message():
+    class Parent(Actor):
+        def pre_start(self):
+            self.spawn(Child)
 
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.spawn(Child)
+        def receive(self, message):
+            ok_(False)
+
+    class Child(Actor):
+        def post_stop(self):
+            self._parent << 'should-not-be-received'
 
-#         def receive(self, message):
-#             assert False
+    p = DummyNode().spawn(Parent)
+    with assert_one_event(DeadLetter(ANY, ANY)):
+        p.stop()
+        idle()
 
-#     class Child(Actor):
-#         def post_stop(self):
-#             self._parent.send('should-not-be-received')
-
-#     p = spawn(Parent)
-
-#     with assert_one_event(DeadLetter(ANY, ANY)):
-#         p.stop()
-
-
-# def test_queued_messages_are_logged_as_deadletters_after_stop():
-#     spawn = DummyNode().spawn
-
-#     Actor.SENDING_IS_ASYNC = True
-
-#     deadletter_event_emitted = Events.consume_one(DeadLetter)
-
-#     a = spawn(Actor)
-
-#     a.stop()
-
-#     a << 'dummy'
-
-#     assert (yield deadletter_event_emitted) == DeadLetter(a, 'dummy')
-
-
-# def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is_ignored():
-#     node = DummyNode()
-#     a = node.spawn(Actor)
-#     a << ('_child_terminated', node.spawn(Actor))
-
-
-# ##
-# ## DEATH WATCH
-
-# def test_watch_returns_the_actor_that_was_watched():
-#     """Actor.watch returns the actor that was passed to it"""
-#     spawn = DummyNode().spawn
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             a = self.watch(self.spawn(Actor))
-#             assert a
-
-#     spawn(Parent)
-
-
-# def test_watching_running_actor():
-#     # when spawning is async, the actor is immediately spawn and thus we are watching an already running actor
-#     return _do_test_watching_actor(async=False)
-
-
-# def test_watching_new_actor():
-#     # when spawning is synchronous, the actor has not yet been spawn at the time we start watching it
-#     return _do_test_watching_actor(async=True)
-
-
-# @inlineCallbacks
-# def _do_test_watching_actor(async=False):
-#     # We could just set this after we have already spawned the Watcher to avoid needing 2 monitoring Deferreds, but for
-#     # safety, we set it for the entire duration of the test.
-#     Actor.SPAWNING_IS_ASYNC = async
-
-#     spawn = DummyNode().spawn
-
-#     watcher_spawned = Deferred()
-#     message_receieved = Deferred()
-
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watch(watchee)
-#             watcher_spawned.callback(None)
-
-#         def receive(self, message):
-#             message_receieved.callback(message)
-
-#     watchee = spawn(Actor)
-
-#     spawn(Watcher)
-#     yield watcher_spawned
-
-#     assert not message_receieved.called
-
-#     watchee.stop()
-#     assert (yield message_receieved) == ('terminated', watchee)
-
-
-# def test_watching_self_is_noop_or_warning_and_returns_self():
-#     """Watching self warns by default and does nothing if explicitly told it's safe"""
-#     spawn = DummyNode().spawn
-
-#     class MyActor(Actor):
-#         def pre_start(self):
-#             assert self.watch(self.ref) == self.ref
-
-#         def receive(self, message):
-#             assert False, message
-
-#     a = spawn(MyActor)
-
-#     dead_letter_emitted_d = Events.consume_one(DeadLetter)
-#     a.stop()
-#     assert not dead_letter_emitted_d.called
-
-
-# def test_termination_message_contains_ref_that_forwards_to_deadletters():
-#     spawn = DummyNode().spawn
-
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watch(watchee)
-
-#         def receive(self, message):
-#             _, sender = message
-#             with assert_one_event(DeadLetter(sender, 'dummy')):
-#                 sender << 'dummy'
-
-#     watchee = spawn(Actor)
-
-#     spawn(Watcher)
-#     watchee.stop()
-
-
-# def test_watching_dead_actor():
-#     spawn = DummyNode().spawn
-
-#     message_receieved = Latch()
-
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watch(watchee)
-
-#         def receive(self, message):
-#             message_receieved()
-
-#     watchee = spawn(Actor)
-#     watchee.stop()
-
-#     spawn(Watcher)
-
-#     assert message_receieved
-
-
-# def test_watching_dying_actor():
-#     spawn = DummyNode().spawn
-
-#     release_watchee = Trigger()
-#     message_receieved = Latch()
-
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watch(watchee)
-
-#         def receive(self, message):
-#             assert message == ('terminated', ANY)
-#             message_receieved()
-
-#     class SlowWatchee(Actor):
-#         @inlineCallbacks
-#         def post_stop(self):
-#             yield release_watchee
-
-#     watchee = spawn(SlowWatchee)
-#     watchee.stop()
-
-#     spawn(Watcher)
-
-#     release_watchee()
-
-#     assert message_receieved
-
-
-# def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination():
-#     spawn = DummyNode().spawn
-
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watch(watchee)
-
-#         def receive(self, message):
-#             raise Unhandled
-
-#     watchee = spawn(Actor)
-#     watchee.stop()
-
-#     with expect_failure(UnhandledTermination):
-#         spawn(Watcher)
-
-
-# def test_system_messages_to_dead_actorrefs_are_discarded():
-#     spawn = DummyNode().spawn
-
-#     a = spawn(Actor)
-#     a.stop()
-
-#     for event in ['_stop', '_suspend', '_resume', '_restart']:
-#         d = Events.consume_one(DeadLetter)
-#         a << event
-#         assert not d.called, "message %r sent to a dead actor should be discarded" % (event,)
-#         d.addErrback(lambda f: f.trap(CancelledError)).cancel()
-
-
-# def test_termination_message_to_dead_actor_is_discarded():
-#     spawn = DummyNode().spawn
-
-#     class Parent(Actor):
-#         def pre_start(self):
-#             self.watch(self.spawn(Actor)).stop()
-#             self.ref.stop()
-
-#     d = Events.consume_one(DeadLetter)
-#     spawn(Parent)
-#     assert not d.called, d.result
-
-#     d.addErrback(lambda f: f.trap(CancelledError)).cancel()  # just to be nice
+
+def test_queued_messages_are_logged_as_deadletters_after_stop():
+    spawn = DummyNode().spawn
+    deadletter_event_emitted = Events.consume_one(DeadLetter)
+    a = spawn(Actor)
+    a.stop()
+    a << 'dummy'
+    eq_(deadletter_event_emitted.get(), DeadLetter(a, 'dummy'))
+
+
+def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is_ignored():
+    spawn = DummyNode().spawn
+    a = spawn(Actor)
+    a << ('_child_terminated', spawn(Actor))
+    idle()
+
+
+##
+## DEATH WATCH
+
+def test_watch_returns_the_arg():
+    class Parent(Actor):
+        def pre_start(self):
+            a = self.spawn(Actor)
+            ok_(self.watch(a) is a)
+    DummyNode().spawn(Parent)
+
+
+def test_watching_running_actor():
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            message_receieved.set(message)
+
+    spawn = DummyNode().spawn
+    message_receieved = AsyncResult()
+    watchee = spawn(Actor)
+    spawn(Watcher)
+    watchee.stop()
+    eq_(message_receieved.get(), ('terminated', watchee))
+
+
+def test_watching_new_actor():
+    class Watcher(Actor):
+        def pre_start(self):
+            a = self.spawn(Actor)
+            a.stop()
+            watchee.set(a)
+            self.watch(a)
+
+        def receive(self, message):
+            message_receieved.set(message)
+
+    spawn = DummyNode().spawn
+    watchee, message_receieved = AsyncResult(), AsyncResult()
+    spawn(Watcher)
+    eq_(message_receieved.get(), ('terminated', watchee.get()))
+
+
+def test_watching_dead_actor():
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            message_receieved.set(message)
+
+    spawn = DummyNode().spawn
+    message_receieved = AsyncResult()
+    watchee = spawn(Actor)
+    watchee.stop()
+    idle()
+    spawn(Watcher)
+    eq_(message_receieved.get(), ('terminated', watchee))
+
+
+def test_watching_self_is_noop_and_returns_self():
+    class MyActor(Actor):
+        def pre_start(self):
+            eq_(self.watch(self.ref), self.ref)
+
+        def receive(self, message):
+            ok_(False)
+
+    a = DummyNode().spawn(MyActor)
+    dead_letter_emitted = Events.consume_one(DeadLetter)
+    a.stop()
+    idle()
+    ok_(not dead_letter_emitted.ready())
+
+
+def test_termination_message_contains_ref_that_forwards_to_deadletters():
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            eq_(message, ('terminated', watchee))
+            _, sender = message
+            with assert_one_event(DeadLetter(sender, 'dummy')):
+                sender << 'dummy'
+                idle()
+            all_ok.set()
+
+    all_ok = Event()
+    spawn = DummyNode().spawn
+    watchee = spawn(Actor)
+    spawn(Watcher)
+    watchee.stop()
+    all_ok.wait()
+
+
+def test_watching_dying_actor():
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            eq_(message, ('terminated', ANY))
+            message_receieved.set()
+
+    class Watchee(Actor):
+        def post_stop(self):
+            watchee_released.wait()
+
+    spawn = DummyNode().spawn
+    watchee_released, message_receieved = Event(), Event()
+
+    watchee = spawn(Watchee)
+    watchee.stop()
+    spawn(Watcher)
+    watchee_released.set()
+    message_receieved.wait()
+
+
+def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination():
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
+
+        def receive(self, message):
+            raise Unhandled
+
+    spawn = DummyNode().spawn
+    watchee = spawn(Actor)
+    watchee.stop()
+    with expect_failure(UnhandledTermination):
+        spawn(Watcher)
+        idle()
+
+
+def test_system_messages_to_dead_actorrefs_are_discarded():
+    a = DummyNode().spawn(Actor)
+    a.stop()
+    for event in ['_stop', '_suspend', '_resume', '_restart']:
+        d = Events.consume_one(DeadLetter)
+        a << event
+        ok_(not d.ready(), "message %r sent to a dead actor should be discarded" % (event,))
+
+
+def test_termination_message_to_dead_actor_is_discarded():
+    class Parent(Actor):
+        def pre_start(self):
+            self.watch(self.spawn(Actor)).stop()
+            self.stop()
+    d = Events.consume_one(DeadLetter)
+    DummyNode().spawn(Parent)
+    idle()
+    ok_(not d.ready())
 
 
 # @simtime
@@ -2144,7 +2008,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #     network = MockNetwork(clock)
 #     node1, node2 = network.node('host1:123'), network.node('host2:123')
 
-#     received = Latch()
+#     received = Event()
 
 #     class Watcher(Actor):
 #         def pre_start(self):
@@ -2171,7 +2035,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #     network = MockNetwork(clock)
 #     node1, node2 = network.node('host1:123'), network.node('host2:123')
 
-#     received = Latch()
+#     received = Event()
 
 #     class Watcher(Actor):
 #         def pre_start(self):
@@ -2198,7 +2062,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #     network = MockNetwork(clock)
 #     node1, _ = network.node('host1:123'), network.node('host2:123')
 
-#     received = Latch()
+#     received = Event()
 
 #     class Watcher(Actor):
 #         def pre_start(self):
@@ -2219,7 +2083,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #         network = MockNetwork(clock)
 #         node1, node2 = network.node('watcher-host:123'), network.node('watchee-host:123')
 
-#         received = Latch()
+#         received = Event()
 
 #         class Watcher(Actor):
 #             def pre_start(self):
@@ -2341,7 +2205,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #             def pre_start(self):
 #                 child << self.spawn(factory, name='actor1')
 
-#         child = Slot()
+#         child = AsyncResult()
 #         node.spawn(Parent, name='parent')
 #         return child()
 
@@ -2642,8 +2506,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # test_remoting_with_real_zeromq.timeout = 2.0
 
 
-# ##
-# ## PROCESSES
+##
+## PROCESSES
 
 # # def test_process_run_must_return_a_generator():
 # #     with assert_raises(TypeError):
@@ -2655,7 +2519,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_processes_run_is_called_when_the_process_is_spawned():
 #     spawn = DummyNode().spawn
 
-#     run_called = Latch()
+#     run_called = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2670,9 +2534,9 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_process_run_is_a_coroutine():
 #     spawn = DummyNode().spawn
 
-#     step1_reached = Latch()
-#     release = Trigger()
-#     step2_reached = Latch()
+#     step1_reached = Event()
+#     release = Event()
+#     step2_reached = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2704,8 +2568,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
 #     spawn = DummyNode().spawn
 
-#     release = Trigger()
-#     after_release = Latch()
+#     release = Event()
+#     after_release = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2726,7 +2590,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_process_run_is_cancelled_if_the_actor_is_stopped():
 #     spawn = DummyNode().spawn
 
-#     exited = Latch()
+#     exited = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2745,7 +2609,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 
 #     random_message = 'dummy-%s' % (random.random(),)
 
-#     received_message = Slot()
+#     received_message = AsyncResult()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2762,8 +2626,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_getting_two_messages_in_a_row_waits_till_the_next_message_is_received():
 #     spawn = DummyNode().spawn
 
-#     second_message = Slot()
-#     first_message = Slot()
+#     second_message = AsyncResult()
+#     first_message = AsyncResult()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2782,10 +2646,10 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_sending_to_a_process_that_is_processing_a_message_queues_it():
 #     spawn = DummyNode().spawn
 
-#     first_message_received = Latch()
-#     second_message_received = Latch()
+#     first_message_received = Event()
+#     second_message_received = Event()
 
-#     release_proc = Trigger()
+#     release_proc = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2822,7 +2686,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 
 #     #
 
-#     release = Trigger()
+#     release = Event()
 
 #     class MyProcWithSlowStartup(Process):
 #         def run(self):
@@ -2839,7 +2703,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_normal_failures():
 #     spawn = DummyNode().spawn
 
-#     release = Trigger()
+#     release = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2858,10 +2722,10 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_restarting_a_process_reinvokes_its_run_method():
 #     spawn = DummyNode().spawn
 
-#     proc = Slot()
-#     supervision_invoked = Trigger()
-#     restarted = Trigger()
-#     post_stop_called = Latch()
+#     proc = AsyncResult()
+#     supervision_invoked = Event()
+#     restarted = Event()
+#     post_stop_called = Event()
 
 #     class Parent(Actor):
 #         def supervise(self, exc):
@@ -2896,8 +2760,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts_it():
 #     spawn = DummyNode().spawn
 
-#     proc = Slot()
-#     restarted = Trigger()
+#     proc = AsyncResult()
+#     restarted = Event()
 
 #     class Parent(Actor):
 #         def supervise(self, exc):
@@ -2943,7 +2807,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_all_queued_messages_are_reported_as_unhandled_on_flush():
 #     spawn = DummyNode().spawn
 
-#     release = Trigger()
+#     release = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -2986,8 +2850,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 
 #     messages = []
 
-#     release1 = Trigger()
-#     release2 = Trigger()
+#     release1 = Event()
+#     release2 = Event()
 
 #     class MyProc(Process):
 #         def run(self):
@@ -3034,8 +2898,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
 #     spawn = DummyNode().spawn
 
-#     process_continued = Latch()
-#     supervision_invoked = Trigger()
+#     process_continued = Event()
+#     supervision_invoked = Event()
 
 #     class Parent(Actor):
 #         def supervise(self, exc):
@@ -3065,7 +2929,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 # def test_calling_escalate_outside_of_error_context_causes_runtime_error():
 #     spawn = DummyNode().spawn
 
-#     exc_raised = Latch()
+#     exc_raised = Event()
 
 #     class FalseAlarmParent(Actor):
 #         def supervise(self, exc):

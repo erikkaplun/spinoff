@@ -309,7 +309,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             elif m == ('_error', ANY, ANY, ANY):
                 _, sender, exc, tb = m
                 Events.log(ErrorIgnored(sender, exc, tb))
-            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == ('_restart', ANY) or m == ('_stop', ANY) or m == ('_suspend', ANY) or m == ('_resume', ANY)):
+            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_restart' or m == '_stop' or m == '_suspend' or m == '_resume'):
                 Events.log(DeadLetter(ref, m))
         self.parent.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
@@ -409,7 +409,6 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
 
     def _watched(self, other):
         # dbg("WATCHED BY", other, caller=4)
-        assert not self.stopped
         if not self.watchers:
             self.watchers = set()
         self.watchers.add(other)
@@ -439,17 +438,17 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     # def logstate(self):  # pragma: no cover
     #     return {'--\\': self.shutting_down, '+': self.stopped, 'N': not self.started, '_': self.suspended, '?': self.tainted, 'X': self.processing_messages, }
 
-    def logcomment(self):  # pragma: no cover
-        if not self.queue.empty() or self.inbox:
-            def g():
-                for i, msg in enumerate(chain(self.inbox, [' ... '], self.queue.queue)):
-                    yield msg if isinstance(msg, str) else repr(msg)
-                    if i == 2:
-                        yield '...'
-                        return
-            return '<<<[%s]' % (', '.join(g()),)
-        else:
-            return ''
+    # def logcomment(self):  # pragma: no cover
+    #     if not self.queue.empty() or self.inbox:
+    #         def g():
+    #             for i, msg in enumerate(chain(self.inbox, [' ... '], self.queue.queue)):
+    #                 yield msg if isinstance(msg, str) else repr(msg)
+    #                 if i == 2:
+    #                     yield '...'
+    #                     return
+    #         return '<<<[%s]' % (', '.join(g()),)
+    #     else:
+    #         return ''
 
     def __repr__(self):
         return "<cell:%s@%s>" % (type(self.impl).__name__ if self.impl else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__), self.uri.path,)
