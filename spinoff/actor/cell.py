@@ -13,13 +13,14 @@ import gevent.event
 import gevent.queue
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, Error
-from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException
+from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException, InvalidEscalation
 from spinoff.actor.props import Props
 from spinoff.actor.ref import Ref
 from spinoff.actor.supervision import Decision, Resume, Restart, Stop, Default, Escalate
 from spinoff.actor.uri import Uri
 from spinoff.util.logging import logstring, dbg, fail
 from spinoff.util.pattern_matching import ANY
+from spinoff.util.pattern_matching import OR
 
 
 def _do_spawn(parent, factory, uri, hub):
@@ -124,6 +125,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     uri = None
     hub = None
     impl = None
+    proc = None
     stopped = False
 
     inbox = None
@@ -139,22 +141,23 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.factory = factory
         self.parent = parent
+        print("parent of %r is %r" % (uri, parent,), file=sys.stderr)
         self.uri = uri
         self.hub = hub
         self.queue = gevent.queue.Queue()
         self.inbox = deque()
-        gevent.spawn(self.run)
+        self.worker = gevent.spawn(self.work)
 
     @logstring(u'←')
     def receive(self, message):
         self.queue.put(message)
 
     @logstring(u'↻')
-    def run(self):
+    def work(self):
         def _restart():
             # dbg(u"► ↻")
             self.shutdown()
-            gevent.spawn(self.run)
+            self.worker = gevent.spawn(self.work)
             gevent.getcurrent().kill()
 
         def _stop():
@@ -205,6 +208,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                     elif m == '_restart':
                         should_restart = True
                     elif m in ('_suspend', '_resume'):
+                        dbg("SUSPEND OR RESUME")
                         should_suspend_or_resume = m
                     elif m == ('_watched', ANY):
                         self._watched(m[1])
@@ -221,14 +225,19 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 if should_restart:
                     _restart()
                 elif should_suspend_or_resume:
+                    dbg(should_suspend_or_resume, suspended)
                     suspended_new = (should_suspend_or_resume == '_suspend')
                     if suspended != suspended_new:
-                        # dbg(u"||" if suspended_new else u"► ↻")
+                        dbg(u"||" if suspended_new else u"► ↻")
                         suspended = suspended_new
                         if suspended:
                             _suspend_children()
                         else:
-                            _resume_children()
+                            if self.proc and self.proc.exception:
+                                self.destroy()
+                                gevent.getcurrent().kill()
+                            else:
+                                _resume_children()
                 # process the inbox, until there is something again in the queue, or we get suspended
                 while not suspended and self.queue.empty():
                     try:
@@ -246,16 +255,55 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                             if m == ('_error', ANY, ANY, ANY):  # error handling is viewed as user-land logic
                                 _, sender, exc, tb = m
                                 self.supervise(sender, exc, tb)
-                            else:
+                            elif self.proc:
+                                if self._get.balance:
+                                    if self._get_pt == m:
+                                        self._get.put(m)
+                                        # self._get.get()
+                                        if self.proc.exception:
+                                            self.shutdown()
+                                            self.proc.get()
+                                        self.inbox.extendleft(reversed(self.stash))
+                                        # self.proc.switch()
+                                        gevent.idle()
+                                    else:
+                                        self.stash.append(m)
+                                elif self.proc.exception:
+                                    self.shutdown()
+                                    self.proc.get()
+                                else:
+                                    self.inbox.appendleft(m)  # put back
+                                    gevent.idle()
+                            elif self.impl.receive:
                                 try:
                                     self.impl.receive(m)
                                 except Unhandled:
                                     self.unhandled(m)
+                                gevent.idle()
+                            else:
+                                self.unhandled(m)
                         except:
                             suspended = True
                             _suspend_children()
                             self.report()
                             break
+
+    # proc
+
+    def get(self, *patterns):
+        pattern = OR(patterns)
+        self._get_pt = pattern
+        # if self._get.balance:
+        #     self._get.put(None)
+        return self._get.get()
+
+    # def escalate(self):
+    #     _, exc, tb = sys.exc_info()
+    #     if not (exc and tb):
+    #         raise InvalidEscalation("Process.escalate must be called in an exception context")
+    #     self.report((exc, tb))
+    #     self._resumed = gevent.event.Event()
+    #     self._resumed.wait()
 
     # birth & death
 
@@ -274,6 +322,12 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 pre_start(*args, **kwargs)
             except Exception:
                 raise CreateFailed("Actor failed to start", impl)
+        if impl.run:
+            if impl.receive:
+                raise TypeError("actor should implement only run() or receive() but not both")
+            self.proc = gevent.spawn(impl.run)
+            self.stash = []  # consciously chose list over deque because of more efficient pop(ix)
+            self._get = gevent.queue.Channel()
         return impl
 
     def shutdown(self):
@@ -314,6 +368,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         self.parent.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
+        dbg("DETSRY", caller=3)
         self.impl = self.inbox = self.queue = ref._cell = self.parent = None
 
     # unhandled

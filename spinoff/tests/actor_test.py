@@ -7,8 +7,9 @@ import weakref
 import time
 import sys
 
-from gevent import idle, sleep
+from gevent import idle, sleep, GreenletExit
 from gevent.event import Event, AsyncResult
+from gevent.queue import Channel, Empty
 from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Ref, Uri
@@ -296,42 +297,44 @@ def test_suspending():
     ok_(not message_received.is_set())
 
 
-# TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
-# def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
-#     spawn = DummyNode().spawn
+def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
+    def do():
+        class MyActor(Actor):
+            def pre_start(self):
+                released.wait()
+                after_release.set()
 
-#     release = Event()
-#     after_release = Event()
+        spawn = DummyNode().spawn
+        released = Event()
+        after_release = Event()
 
-#     class MyActor(Actor):
-#         def pre_start(self):
-#             release.wait()
-#             after_release.set()
+        a = spawn(MyActor)
+        idle()
+        ok_(not after_release.is_set())
+        a << '_suspend'
+        released.set()
+        idle()
+        ok_(not after_release.is_set())
 
-#     a = spawn(MyActor)
-#     idle()
-#     ok_(not after_release.is_set())
-#     a << '_suspend'
-#     release.set()
-#     idle()
-#     ok_(not after_release.is_set())
-
-#     a << '_resume'
-#     idle()
-#     ok_(after_release.is_set())
+        a << '_resume'
+        idle()
+        ok_(after_release.is_set())
+    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
+    with assert_raises(AssertionError):
+        do()
 
 
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
-    spawn = DummyNode().spawn
-
-    release = Event()
-    message_received = Counter()
-
     class MyActor(Actor):
         def receive(self, message):
             message_received()
-            if not release.is_set():  # only yield the first time for correctness
-                release.wait()
+            if not released.is_set():  # only yield the first time for correctness
+                released.wait()
+
+    spawn = DummyNode().spawn
+
+    released = Event()
+    message_received = Counter()
 
     a = spawn(MyActor)
     a << None
@@ -340,7 +343,7 @@ def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
 
     a << 'foo'
     a << '_suspend'
-    release.set()
+    released.set()
     idle()
     eq_(message_received, 1)
 
@@ -349,29 +352,32 @@ def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
     eq_(message_received, 2)
 
 
-# TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
-# def test_suspending_while_receive_is_blocked_pauses_the_receive():
-#     spawn = DummyNode().spawn
+def test_suspending_while_receive_is_blocked_pauses_the_receive():
+    def do():
+        class MyActor(Actor):
+            def receive(self, _):
+                child_released.wait()
+                after_release_reached.set()
 
-#     child_released = Event()
-#     after_release_reached = Event()
+        spawn = DummyNode().spawn
 
-#     class MyActor(Actor):
-#         def receive(self, _):
-#             child_released.wait()
-#             after_release_reached.set()
+        child_released = Event()
+        after_release_reached = Event()
 
-#     a = spawn(MyActor)
-#     a << 'dummy'
-#     idle()
-#     a << '_suspend'
-#     child_released.set()
-#     idle()
-#     ok_(not after_release_reached.is_set())
+        a = spawn(MyActor)
+        a << 'dummy'
+        idle()
+        a << '_suspend'
+        child_released.set()
+        idle()
+        ok_(not after_release_reached.is_set())
 
-#     a << '_resume'
-#     idle()
-#     ok_(after_release_reached.is_set())
+        a << '_resume'
+        idle()
+        ok_(after_release_reached.is_set())
+    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
+    with assert_raises(AssertionError):
+        do()
 
 
 def test_suspending_while_already_suspended():
@@ -2509,284 +2515,145 @@ def test_termination_message_to_dead_actor_is_discarded():
 ##
 ## PROCESSES
 
-# # def test_process_run_must_return_a_generator():
-# #     with assert_raises(TypeError):
-# #         class MyProc(Process):
-# #             def run(self):
-# #                 pass
 
-
-# def test_processes_run_is_called_when_the_process_is_spawned():
-#     spawn = DummyNode().spawn
-
-#     run_called = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             run_called()
-#             yield
-
-#     spawn(MyProc)
-
-#     assert run_called
-
-
-# def test_process_run_is_a_coroutine():
-#     spawn = DummyNode().spawn
-
-#     step1_reached = Event()
-#     release = Event()
-#     step2_reached = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             step1_reached()
-#             yield release
-#             step2_reached()
-
-#     spawn(MyProc)
-
-#     assert step1_reached
-#     assert not step2_reached
-
-#     release()
-#     assert step2_reached
-
-
-# def test_warning_is_emitted_if_process_run_returns_a_value():
-#     spawn = DummyNode().spawn
-
-#     class ProcThatReturnsValue(Process):
-#         def run(self):
-#             yield
-#             returnValue('foo')
-
-#     with assert_one_warning():
-#         spawn(ProcThatReturnsValue)
-
-
-# def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
-#     spawn = DummyNode().spawn
-
-#     release = Event()
-#     after_release = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield release
-#             after_release()
-
-#     p = spawn(MyProc)
-#     assert not after_release
-
-#     p << '_suspend'
-#     release()
-#     assert not after_release
-
-#     p << '_resume'
-#     assert after_release
-
-
-# def test_process_run_is_cancelled_if_the_actor_is_stopped():
-#     spawn = DummyNode().spawn
-
-#     exited = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             try:
-#                 yield self.get()
-#             except GeneratorExit:
-#                 exited()
-
-#     p = spawn(MyProc)
-#     p.stop()
-#     assert exited
-
-
-# def test_sending_to_a_process_injects_the_message_into_its_coroutine():
-#     spawn = DummyNode().spawn
-
-#     random_message = 'dummy-%s' % (random.random(),)
-
-#     received_message = AsyncResult()
-
-#     class MyProc(Process):
-#         def run(self):
-#             msg = yield self.get()
-#             received_message << msg
-
-#     p = spawn(MyProc)
-#     assert not received_message
-#     p << random_message
-
-#     assert received_message == random_message
-
-
-# def test_getting_two_messages_in_a_row_waits_till_the_next_message_is_received():
-#     spawn = DummyNode().spawn
-
-#     second_message = AsyncResult()
-#     first_message = AsyncResult()
-
-#     class MyProc(Process):
-#         def run(self):
-#             first_message << (yield self.get())
-#             second_message << (yield self.get())
-
-#     p = spawn(MyProc)
-#     p << 'dummy1'
-#     eq_(first_message, 'dummy1')
-#     assert not second_message
-
-#     p << 'dummy2'
-#     eq_(second_message, 'dummy2')
-
-
-# def test_sending_to_a_process_that_is_processing_a_message_queues_it():
-#     spawn = DummyNode().spawn
-
-#     first_message_received = Event()
-#     second_message_received = Event()
-
-#     release_proc = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield self.get()
-#             first_message_received()
-
-#             yield release_proc
-
-#             yield self.get()
-#             second_message_received()
-
-#     p = spawn(MyProc)
-#     p << 'dummy'
-#     assert first_message_received
-
-#     p << 'dummy2'
-#     assert not second_message_received
-#     release_proc()
-#     assert second_message_received
-
-
-# def test_errors_in_process_while_processing_a_message_are_reported_as_normal_failures():
-#     spawn = DummyNode().spawn
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield self.get()
-#             raise MockException
-
-#     p = spawn(MyProc)
-
-#     with expect_failure(MockException):
-#         p << 'dummy'
-
-#     #
-
-#     release = Event()
-
-#     class MyProcWithSlowStartup(Process):
-#         def run(self):
-#             yield release
-#             yield self.get()
-#             raise MockException
-
-#     p = spawn(MyProcWithSlowStartup)
-#     release()
-#     with expect_failure(MockException):
-#         p << 'dummy'
-
-
-# def test_errors_in_process_when_retrieving_a_message_from_queue_are_reported_as_normal_failures():
-#     spawn = DummyNode().spawn
-
-#     release = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield self.get()
-#             yield release
-#             yield self.get()
-#             raise MockException
-
-#     p = spawn(MyProc)
-#     p << 'dummy1'
-#     p << 'dummy2'
-#     with expect_failure(MockException):
-#         release()
-
-
-# def test_restarting_a_process_reinvokes_its_run_method():
-#     spawn = DummyNode().spawn
-
-#     proc = AsyncResult()
-#     supervision_invoked = Event()
-#     restarted = Event()
-#     post_stop_called = Event()
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             supervision_invoked()
-#             return Restart
-
-#         def pre_start(self):
-#             proc << self.spawn(MyProc)
-
-#     class MyProc(Process):
-#         started = 0
-
-#         def run(self):
-#             MyProc.started += 1
-#             if MyProc.started == 2:
-#                 restarted()
-#                 return
-#             yield self.get()
-#             raise MockException
-
-#         def post_stop(self):
-#             post_stop_called()
-
-#     spawn(Parent)
-
-#     proc() << 'dummy'
-#     yield supervision_invoked
-#     yield restarted
-#     assert post_stop_called
-
-
-# def test_error_in_process_suspends_and_taints_and_resuming_it_warns_and_restarts_it():
-#     spawn = DummyNode().spawn
-
-#     proc = AsyncResult()
-#     restarted = Event()
-
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             return Resume
-
-#         def pre_start(self):
-#             proc << self.spawn(MyProc)
-
-#     class MyProc(Process):
-#         started = 0
-
-#         def run(self):
-#             MyProc.started += 1
-#             if MyProc.started == 2:
-#                 restarted()
-#                 return
-#             yield self.get()
-#             raise MockException
-
-#     spawn(Parent)
-
-#     proc() << 'dummy'
-
-#     with assert_one_warning():  # reporting is async, so the warning should be emitted at some point as we're waiting
-#         yield restarted
+def test_processes_run_is_called_when_the_process_is_spawned():
+    class MyProc(Process):
+        def run(self):
+            run_called.set()
+    run_called = Event()
+    DummyNode().spawn(MyProc)
+    run_called.wait()
+
+
+def test_warning_is_emitted_if_process_run_returns_a_value():
+    class ProcThatReturnsValue(Process):
+        def run(self):
+            return 'foo'
+    spawn = DummyNode().spawn
+    with assert_one_warning():
+        spawn(ProcThatReturnsValue)
+        idle()
+
+
+def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
+    def do():
+        class MyProc(Process):
+            def run(self):
+                released.wait()
+                after_release.set()
+
+        released, after_release = Event(), Event()
+
+        p = DummyNode().spawn(MyProc)
+        idle()
+        ok_(not after_release.is_set())
+
+        p << '_suspend'
+        released.set()
+        idle()
+        ok_(not after_release.is_set())
+
+        p << '_resume'
+        after_release.wait()
+    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
+    with assert_raises(AssertionError):
+        do()
+
+
+def test_process_run_is_cancelled_if_the_actor_is_stopped():
+    class MyProc(Process):
+        def run(self):
+            try:
+                self.get()
+            except GreenletExit:
+                exited.set()
+    exited = Event()
+    r = DummyNode().spawn(MyProc)
+    idle()  # `run` is not otherwise called if we .stop() immediately
+    r.stop()
+    exited.wait()
+
+
+def test_sending_a_message_to_a_process():
+    class MyProc(Process):
+        def run(self):
+            received_message.set(self.get())
+    random_message = random.random()
+    received_message = AsyncResult()
+    DummyNode().spawn(MyProc) << random_message
+    eq_(received_message.get(), random_message)
+
+
+def test_sending_2_messages_to_a_process():
+    class MyProc(Process):
+        def run(self):
+            first_message.set(self.get())
+            second_message.set(self.get())
+
+    second_message, first_message = AsyncResult(), AsyncResult()
+    msg1, msg2 = random.random(), random.random()
+    p = DummyNode().spawn(MyProc)
+    p << msg1
+    eq_(first_message.get(), msg1)
+    p << msg2
+    eq_(second_message.get(), msg2)
+
+
+def test_errors_in_process_while_processing_a_message_are_reported():
+    class MyProc(Process):
+        def run(self):
+            self.get()
+            raise MockException
+    p = DummyNode().spawn(MyProc)
+    with expect_failure(MockException):
+        p << 'dummy'
+        idle()
+
+
+def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it():
+    class Parent(Actor):
+        def supervise(self, exc):
+            return Resume
+
+        def pre_start(self):
+            proc.set(self.spawn(MyProc))
+
+    class MyProc(Process):
+        def run(self):
+            raise MockException
+
+        def post_stop(self):
+            stopped.set()
+
+    proc = AsyncResult()
+    stopped = Event()
+    DummyNode().spawn(Parent)
+    proc.get() << 'dummy'
+    stopped.wait()
+
+
+def test_restarting_a_process_reinvokes_its_run_method():
+    class Parent(Actor):
+        def supervise(self, exc):
+            return Restart
+
+        def pre_start(self):
+            proc.set(self.spawn(MyProc))
+
+    class MyProc(Process):
+        def run(self):
+            started()
+            self.get()
+            raise MockException
+
+    proc = AsyncResult()
+    started = Counter()
+    DummyNode().spawn(Parent)
+    idle()
+    eq_(started, 1)
+    proc.get() << 'dummy'
+    idle()
+    eq_(started, 2)
 
 
 # def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
@@ -2807,19 +2674,19 @@ def test_termination_message_to_dead_actor_is_discarded():
 # def test_all_queued_messages_are_reported_as_unhandled_on_flush():
 #     spawn = DummyNode().spawn
 
-#     release = Event()
+#     released = Event()
 
 #     class MyProc(Process):
 #         def run(self):
 #             yield self.get()
-#             yield release
+#             yield released
 #             self.flush()
 
 #     p = spawn(MyProc)
 #     p << 'dummy'
 #     p << 'should-be-reported-as-unhandled'
 #     with assert_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
-#         release()
+#         released()
 
 
 # def test_process_is_stopped_when_the_coroutine_exits():

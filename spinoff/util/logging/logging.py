@@ -248,6 +248,8 @@ def _do_write(level, *args, **kwargs):
                 parent_frame = frame
                 for i in range(dump_parent_caller):
                     parent_frame = parent_frame.f_back
+                    if not parent_frame:
+                        break
                     file_, lineno, caller_name, caller = get_calling_context(parent_frame)
                     loc = "%s:%s" % (file_, lineno)
                     print(" " * (i + 1) + "(invoked by) %s  %s  %s" % (get_logname(caller), caller_name, loc), file=OUTFILE)

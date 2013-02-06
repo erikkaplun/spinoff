@@ -13,6 +13,7 @@ from spinoff.actor.exceptions import InvalidEscalation
 from spinoff.util.async import call_when_idle
 from spinoff.util.pattern_matching import OR
 from spinoff.util.logging import logstring, flaw, panic
+from spinoff.util.logging import dbg
 
 
 # This class does a lot of two things:
@@ -24,30 +25,25 @@ class Process(Actor):
     hwm = 10000  # default high water mark
 
     __waiting_get = None
+    __waiting_get_pattern = None
     __queue = None
 
     _proc = None
 
     @abc.abstractmethod
     def run(self, *args, **kwargs):  # pragma: no cover
-        yield
+        pass
 
     def pre_start(self, *args, **kwargs):
-        # dbg()
         self._proc = gevent.spawn(self.run, *args, **kwargs)
-        # dbg("coroutine created")
         self._proc.link_value(self.__handle_complete)
         self._proc.link_exception(self.__handle_failure)
-        # dbg(u"✓")
 
     def receive(self, msg):
-        # dbg("recv %r" % (msg,))
-        if self.__waiting_get and self.__waiting_get.wants(msg):
-            # dbg("injecting %r" % (msg,))
+        if self.__waiting_get and self.__waiting_get_pattern == msg:
             self.__waiting_get.set(msg)
-            # dbg("...injectng %r OK" % (msg,))
+            self.__waiting_get = None
         else:
-            # dbg("queueing")
             if not self.__queue:
                 self.__queue = []
             self.__queue.append(msg)
@@ -57,7 +53,6 @@ class Process(Actor):
 
     @logstring("get")
     def get(self, *patterns):
-        # dbg("get")
         pattern = OR(*patterns)
         if self.__queue:
             try:
@@ -65,36 +60,23 @@ class Process(Actor):
             except ValueError:
                 pass
             else:
-                # dbg("next message from queue")
                 return self.__queue.pop(ix)
-
-        # dbg("ready for message")
-        w = self.__waiting_get = _PickyAsyncResult(pattern)
-        w.rawlink(self.__clear_get_d)
+        self.__waiting_get = gevent.event.AsyncResult()
+        self.__waiting_get_pattern = pattern
         return self.__waiting_get.get()
 
-    def __clear_get_d(self, _):
-        self.__waiting_get = None
-
     def __handle_failure(self, proc):
-        # dbg("deleting self._proc")
-        del self._proc
-        # XXX: seems like a hack but should be safe;
-        # hard to do it better without convoluting `Actor`
-        self._Actor__cell.tainted = True
-        # dbg("...reporting to parent")
+        self._proc = None
         self._Actor__cell.report((proc.exception, proc.traceback))
 
     def __handle_complete(self, result):
-        # dbg()
-        if result:
+        if result.value and not isinstance(result.value, gevent.GreenletExit):
             warnings.warn("Process.run should not return anything--it's ignored")
-        del self._proc
+        self._proc = None
         self.stop()
 
     def __shutdown(self):
-        # dbg()
-        if self._proc:
+        if self._proc is not None:
             self._proc.kill()
         if self.__waiting_get:
             del self.__waiting_get
@@ -107,7 +89,6 @@ class Process(Actor):
 
     @logstring(u"escalate ↑")
     def escalate(self):
-        # dbg(repr(sys.exc_info()[1]))
         _, exc, tb = sys.exc_info()
         if not (exc and tb):
             flaw("programming flaw: escalate called outside of exception context")
@@ -116,17 +97,14 @@ class Process(Actor):
         self._resumed = gevent.event.Event()
         self._resumed.wait()
 
-    def __repr__(self):
-        return Actor.__repr__(self).replace('<actor-impl:', '<proc-impl:')
-
 
 class _PickyAsyncResult(gevent.event.AsyncResult):
-    def __init__(self, pattern, *args, **kwargs):
-        gevent.event.AsyncResult.__init__(self, *args, **kwargs)
+    def __init__(self, pattern):
+        gevent.event.AsyncResult.__init__(self)
         self.pattern = pattern
 
     def wants(self, result):
-        return result == self.pattern
+        return self.pattern == result
 
     def set(self, result):
         assert self.wants(result)

@@ -33,8 +33,7 @@ class Actor(object):
     def __init__(self, *args, **kwargs):
         self._startargs = args, kwargs
 
-    def receive(self, message):
-        raise Unhandled
+    receive = run = None
 
     def spawn(self, factory, name=None):
         return self.__cell.spawn(factory, name)
