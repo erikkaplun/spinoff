@@ -50,8 +50,12 @@ class _BaseRef(object):
         return self
 
     def stop(self):
-        """Shortcut for `send('_stop')`"""
+        """Sends '_stop' to this actor"""
         self.send('_stop')
+
+    def kill(self):
+        """Sends '_kill' to this actor"""
+        self.send('_kill')
 
 
 class Ref(_BaseRef):

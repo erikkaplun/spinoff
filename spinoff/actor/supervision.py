@@ -10,9 +10,9 @@ class Decision(object):
         return type(self).__name__
 
 
-class Resume(Decision):
-    """The 'resume' supervision decision."""
-Resume = Resume()
+class Ignore(Decision):
+    """The 'ignore' supervision decision."""
+Ignore = Ignore()
 
 
 class _Restart(Decision):

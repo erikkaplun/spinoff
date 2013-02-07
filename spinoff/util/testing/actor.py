@@ -7,7 +7,8 @@ import sys
 import traceback
 from contextlib import contextmanager
 
-from gevent import idle, with_timeout
+from gevent import idle, with_timeout, Timeout, sleep
+from nose.tools import ok_, eq_
 from twisted.internet.defer import CancelledError, DebugInfo
 
 from spinoff.actor import Actor, Node
@@ -163,10 +164,13 @@ def test_errorcollector_can_be_used_with_assert_raises():
 
 
 @contextmanager
-def expect_failure(exc, message=None):
-    with assert_raises(exc, message) as basket:
+def expect_failure(exc, message=None, timeout=0.1):
+    with assert_raises(exc, message=message, timeout=timeout) as basket:
         with ErrorCollector():
             yield basket
+            with Timeout(timeout, exception=False):
+                while True:
+                    idle()
 
 
 class DebugActor(object):
@@ -178,36 +182,38 @@ class DebugActor(object):
 
 
 @contextmanager
-def assert_one_event(ev):
+def assert_one_event(ev, timeout=0.1):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
     except:
         raise
     else:
-        assert result.ready(), ("Event %r should have been emitted but was not" % (ev,)
-                                if not isinstance(ev, type) else
-                                "Event of type %s should have been emitted but was not" % (ev.__name__,))
-        result = result.get()
+        try:
+            result = result.get(timeout=timeout)
+        except Timeout:
+            ok_(False,
+                "Event %r should have been emitted but was not" % (ev,)
+                if not isinstance(ev, type) else
+                "Event of type %s should have been emitted but was not" % (ev.__name__,))
+
         if isinstance(ev, type):
-            assert isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__)
+            ok_(isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__))
         else:
-            assert result == ev, "Event %r should have been emitted but %s was" % (ev, result)
+            eq_(result, ev, "Event %r should have been emitted but %s was" % (ev, result))
 
 
 @contextmanager
-def assert_event_not_emitted(ev):
+def assert_event_not_emitted(ev, during=0.001):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
+        sleep(during)
     except:
         raise
     else:
-        assert not result.called or deferred_result(result) != ev, \
-            "Event %s should not have been emitted" % (
-                (" of type %s" % (ev.__name__,)) if isinstance(ev, type) else ev,)
-    finally:
-        result.addErrback(lambda f: f.trap(CancelledError)).cancel()
+        ok_(not result.ready() or result.get() != ev,
+            "Event %s should not have been emitted" % (" of type %s" % (ev.__name__,) if isinstance(ev, type) else ev,))
 
 
 def wrap_globals(globals):
@@ -262,7 +268,7 @@ def wrap_globals(globals):
 
             try:
                 with ErrorCollector():
-                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 1.0, fn)
+                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 0.25, fn)
                     idle()
                 return ret
             finally:

@@ -6,9 +6,9 @@ from pickle import PicklingError
 
 import gevent
 from spinoff.actor.cell import _BaseCell
-from spinoff.actor.events import Events, UnhandledMessage, TopLevelActorTerminated, UnhandledError
+from spinoff.actor.events import Events, UnhandledMessage, Terminated, UnhandledError
 from spinoff.actor.ref import _BaseRef
-from spinoff.actor.supervision import Resume, Restart, Stop
+from spinoff.actor.supervision import Ignore, Restart, Stop
 from spinoff.util.pattern_matching import IS_INSTANCE, ANY
 
 
@@ -33,7 +33,7 @@ class Guardian(_BaseCell, _BaseRef):
     hub = None
 
     def __init__(self, uri, node, hub, supervision=Stop):
-        if supervision not in (Stop, Restart, Resume):
+        if supervision not in (Stop, Restart, Ignore):
             raise TypeError("Invalid supervision specified for Guardian")
         self.uri = uri
         self.node = node
@@ -55,7 +55,7 @@ class Guardian(_BaseCell, _BaseRef):
                 sender.stop()
             elif self.supervision == Restart:
                 sender << '_restart'
-            elif self.supervision == Resume:
+            elif self.supervision == Ignore:
                 sender << '_resume'
             else:
                 assert False
@@ -64,10 +64,10 @@ class Guardian(_BaseCell, _BaseRef):
             self._child_gone(sender)
             if not self._children and self.all_children_stopped:
                 self.all_children_stopped.set(None)
-            # XXX: find a better way to avoid TopLevelActorTerminated messages for TempActors,
+            # XXX: find a better way to avoid Terminated messages for TempActors,
             # possibly by using a /tmp container for them
             if not str(sender.uri).startswith('/tempactor'):
-                Events.log(TopLevelActorTerminated(sender))
+                Events.log(Terminated(sender))
         elif '_stop' == message:
             return self._do_stop()
         else:

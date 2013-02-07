@@ -1,9 +1,12 @@
 from __future__ import print_function
 
+import time
 import warnings
 from contextlib import contextmanager
 from functools import wraps
 
+from gevent import idle, Timeout
+from nose.tools import eq_
 from twisted.internet.defer import Deferred
 from twisted.internet.task import Clock
 
@@ -90,24 +93,30 @@ def assert_not_raises(exc_class=Exception, message=None):
 
 
 @contextmanager
-def assert_raises(exc_class=Exception, message=None):
+def assert_raises(exc_class=Exception, message=None, timeout=0.1):
     if isinstance(exc_class, basestring):
         message, exc_class = exc_class, Exception
     basket = [None]
     try:
         yield basket
+        with Timeout(timeout):
+            while True:
+                idle()
+    except Timeout:
+        raise AssertionError(message or "An exception should have been raised")
     except exc_class as e:
         basket[0] = e
-    else:
-        raise AssertionError(message or "An exception should have been raised")
 
 
 @contextmanager
-def assert_num_warnings(n, message=None):
+def assert_num_warnings(n, message=None, timeout=0.1):
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         yield
-        assert len(w) == n, message or "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w)))
+        with Timeout(timeout, exception=False):
+            while len(w) < n:
+                idle()
+        eq_(len(w), n, message or "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w))))
 
 
 def assert_no_warnings(message=None):

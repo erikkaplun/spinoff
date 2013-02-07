@@ -28,15 +28,24 @@ class Actor(object):
         cls.SENDING_IS_ASYNC = cls._DEFAULT_SENDING_IS_ASYNC
 
     __cell = None  # make it really private so it's hard and unpleasant to access the cell
-    _startargs = ((), {})
+    args, kwargs = (), {}
 
     def __init__(self, *args, **kwargs):
-        self._startargs = args, kwargs
+        self.args, self.kwargs = args, kwargs
 
     receive = run = None
 
     def spawn(self, factory, name=None):
         return self.__cell.spawn(factory, name)
+
+    def get(self, *patterns):
+        return self.__cell.get(*patterns)
+
+    def flush(self):
+        self.__cell.flush()
+
+    # def escalate(self):
+    #     self.__cell.escalate()
 
     @property
     def children(self):

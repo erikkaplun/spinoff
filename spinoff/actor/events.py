@@ -110,7 +110,7 @@ class Terminated(_SupressedBase, fields('actor', 'reason')):
     pass
 
 
-class TopLevelActorTerminated(Terminated, fields('actor', 'reason')):
+class Terminated(Terminated, fields('actor', 'reason')):
     pass
 
 

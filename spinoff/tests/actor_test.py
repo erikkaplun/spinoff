@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import functools
 import gc
 import random
 import re
@@ -7,25 +8,82 @@ import weakref
 import time
 import sys
 
-from gevent import idle, sleep, GreenletExit
+from gevent import idle, sleep, GreenletExit, with_timeout, Timeout
 from gevent.event import Event, AsyncResult
 from gevent.queue import Channel, Empty
 from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Ref, Uri
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
-from spinoff.actor.process import Process
-from spinoff.actor.supervision import Resume, Restart, Stop, Escalate, Default
+from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
 from spinoff.actor.remoting import Hub, HubWithNoRemoting
 from spinoff.actor.remoting.mock import MockNetwork
 from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
     assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, EvSeq,
-    EVENT, NEXT, Counter, expect_failure, simtime, MockActor, assert_event_not_emitted,)
+    EVENT, NEXT, expect_failure, simtime, MockActor, assert_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
-from spinoff.util.logging import dbg
+
+
+def wait(fn):
+    while True:
+        if fn():
+            break
+        else:
+            idle()
+
+
+class Observable(object):
+    terminator = None
+
+    def __init__(self):
+        self.done = Channel()
+
+    def wait_eq(self, terminator, timeout=0.1, message=None):
+        self.terminator = terminator
+        try:
+            with_timeout(timeout, self.done.get)
+        except Timeout:
+            eq_(self.value, terminator, message)
+
+    def _check(self):
+        if self.value == self.terminator:
+            self.done.put(None)
+
+    def __eq__(self, x):
+        return self.value == x
+
+    def __repr__(self):
+        return "%s(%r)" % (type(self).__name__, self.value)
+
+
+class obs_list(list, Observable):
+    def __init__(self):
+        list.__init__(self)
+        Observable.__init__(self)
+
+    value = property(lambda self: self)
+
+    def do(x):
+        def fn(self, *args, **kwargs):
+            ret = getattr(list, x)(self, *args, **kwargs)
+            self._check()
+            return ret
+        fn.__name__ = x
+        return fn
+
+    for x in ['append', 'extend', 'insert', 'pop', 'remove', 'reverse', 'sort']:
+        locals()[x] = do(x)
+
+
+class obs_count(Observable):
+    value = 0
+
+    def incr(self):
+        self.value += 1
+        self._check()
 
 
 # ATTENTION: all tests functions are smartly auto-wrapped with wrap_globals at the bottom of this file.
@@ -36,22 +94,18 @@ from spinoff.util.logging import dbg
 
 def test_sent_message_is_received():
     # Trivial send and receive.
-    spawn = DummyNode().spawn
-    messages = []
-    a = spawn(Props(MockActor, messages))
+    messages = obs_list()
+    a = DummyNode().spawn(Props(MockActor, messages))
     a << 'foo'
-    idle()
-    eq_(messages, ['foo'])
+    messages.wait_eq(['foo'])
 
 
 def test_sending_operator_is_chainable():
     # Trivial send and receive using the << operator.
-    spawn = DummyNode().spawn
-    messages = []
-    a = spawn(Props(MockActor, messages))
+    messages = obs_list()
+    a = DummyNode().spawn(Props(MockActor, messages))
     a << 'foo' << 'bar'
-    idle()
-    eq_(messages, ['foo', 'bar'])
+    messages.wait_eq(['foo', 'bar'])
 
 
 def test_receive_of_the_same_actor_never_executes_concurrently():
@@ -61,61 +115,48 @@ def test_receive_of_the_same_actor_never_executes_concurrently():
     # a message (i.e. is not idle), will not receive the next message before processing the previous one completes.
     #
     # This test case rules out only the basic recursive case with a non-switching receive method.
-    spawn = DummyNode().spawn
-
-    receive_called = Counter()
-
     class MyActor(Actor):
         def receive(self, message):
             if message == 'init':
-                receive_called()
+                receive_called.incr()
                 self.ref << None
-                eq_(receive_called, 1)
+                eq_(receive_called.value, 1)
             else:
-                receive_called()
+                receive_called.incr()
 
-    spawn(MyActor) << 'init'
-    idle()
-    eq_(receive_called, 2)
+    receive_called = obs_count()
+    DummyNode().spawn(MyActor) << 'init'
+    receive_called.wait_eq(2)
 
     #
 
-    receive_called = Counter()
-
     class MyActor2(Actor):
         def receive(self, message):
-            receive_called()
+            receive_called.incr()
             unblocked.wait()
 
+    receive_called = obs_count()
     unblocked = Event()
-
-    spawn(MyActor2) << None << None
-    idle()
-    eq_(receive_called, 1)
+    DummyNode().spawn(MyActor2) << None << None
+    receive_called.wait_eq(1)
     unblocked.set()
-    idle()
-    eq_(receive_called, 2)
+    receive_called.wait_eq(2)
 
 
 def test_unhandled_message_is_reported():
     # Unhandled messages are reported to Events
-    spawn = DummyNode().spawn
-
     class MyActor(Actor):
         def receive(self, _):
             raise Unhandled
-
-    a = spawn(MyActor)
+    a = DummyNode().spawn(MyActor)
     with assert_one_event(UnhandledMessage(a, 'foo')):
         a << 'foo'
-        idle()
 
 
 def test_unhandled_message_to_guardian_is_also_reported():
     guardian = DummyNode().guardian
     with assert_one_event(UnhandledMessage(guardian, 'foo')):
         guardian << 'foo'
-        idle()
 
 
 def test_with_no_receive_method_all_messages_are_unhandled():
@@ -123,7 +164,6 @@ def test_with_no_receive_method_all_messages_are_unhandled():
     a = spawn(Actor)
     with assert_one_event(UnhandledMessage(a, 'dummy')):
         a << 'dummy'
-        idle()
 
 
 ##
@@ -215,24 +255,16 @@ def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(
 
 
 def test_errors_in_pre_start_are_reported_as_create_failed():
-    spawn = DummyNode().spawn
-
     class MyActor(Actor):
         def pre_start(self):
             raise MockException()
-
     with expect_failure(CreateFailed) as basket:
-        spawn(MyActor)
-        idle()
+        DummyNode().spawn(MyActor)
     with assert_raises(MockException):
         basket[0].raise_original()
 
 
 def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_started():
-    spawn = DummyNode().spawn
-
-    message_received = Event()
-
     class MyActor(Actor):
         def pre_start(self):
             self.ref << 'dummy'
@@ -241,9 +273,9 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
         def receive(self, message):
             message_received.set()
 
-    spawn(MyActor)
-    idle()
-    ok_(message_received.is_set())
+    message_received = Event()
+    DummyNode().spawn(MyActor)
+    message_received.wait()
 
 
 ## REMOTE SPAWNING
@@ -293,7 +325,7 @@ def test_suspending():
     message_received.wait()
     message_received.clear()
     a << '_suspend'
-    idle()
+    sleep(.001)
     ok_(not message_received.is_set())
 
 
@@ -309,16 +341,15 @@ def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
         after_release = Event()
 
         a = spawn(MyActor)
-        idle()
+        sleep(.001)
         ok_(not after_release.is_set())
         a << '_suspend'
         released.set()
-        idle()
+        sleep(.001)
         ok_(not after_release.is_set())
 
         a << '_resume'
-        idle()
-        ok_(after_release.is_set())
+        after_release.wait()
     # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
     with assert_raises(AssertionError):
         do()
@@ -327,29 +358,23 @@ def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
 def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
     class MyActor(Actor):
         def receive(self, message):
-            message_received()
+            message_received.incr()
             if not released.is_set():  # only yield the first time for correctness
                 released.wait()
 
-    spawn = DummyNode().spawn
-
     released = Event()
-    message_received = Counter()
+    message_received = obs_count()
 
-    a = spawn(MyActor)
+    a = DummyNode().spawn(MyActor)
     a << None
-    idle()
-    eq_(message_received, 1)
+    message_received.wait_eq(1)
 
-    a << 'foo'
-    a << '_suspend'
+    a << 'foo' << '_suspend'
     released.set()
-    idle()
-    eq_(message_received, 1)
+    message_received.wait_eq(1)
 
     a << '_resume'
-    idle()
-    eq_(message_received, 2)
+    message_received.wait_eq(2)
 
 
 def test_suspending_while_receive_is_blocked_pauses_the_receive():
@@ -359,21 +384,17 @@ def test_suspending_while_receive_is_blocked_pauses_the_receive():
                 child_released.wait()
                 after_release_reached.set()
 
-        spawn = DummyNode().spawn
-
-        child_released = Event()
-        after_release_reached = Event()
-
-        a = spawn(MyActor)
+        child_released, after_release_reached = Event(), Event()
+        a = DummyNode().spawn(MyActor)
         a << 'dummy'
-        idle()
+        sleep(.001)
         a << '_suspend'
         child_released.set()
-        idle()
+        sleep(.001)
         ok_(not after_release_reached.is_set())
 
         a << '_resume'
-        idle()
+        sleep(.001)
         ok_(after_release_reached.is_set())
     # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
     with assert_raises(AssertionError):
@@ -382,15 +403,11 @@ def test_suspending_while_receive_is_blocked_pauses_the_receive():
 
 def test_suspending_while_already_suspended():
     # This can happen when an actor is suspended and then its parent gets suspended.
-    spawn = DummyNode().spawn
-    message_received = Event()
-
     class DoubleSuspendingActor(Actor):
         def receive(self, msg):
             message_received.set()
-
-    a = spawn(DoubleSuspendingActor)
-    a << '_suspend' << '_suspend' << '_resume' << 'dummy'
+    message_received = Event()
+    DummyNode().spawn(DoubleSuspendingActor) << '_suspend' << '_suspend' << '_resume' << 'dummy'
     message_received.wait()
 
 
@@ -403,30 +420,20 @@ def test_suspending_while_already_suspended():
 
 
 def test_resuming():
-    spawn = DummyNode().spawn
-
     class MyActor(Actor):
         def receive(self, message):
-            message_received()
-
-    a = spawn(MyActor)
+            message_received.incr()
+    a = DummyNode().spawn(MyActor)
     a << '_suspend'
-    message_received = Counter()
+    message_received = obs_count()
     a << 'foo' << 'foo' << '_resume'
-    idle()
-    eq_(message_received, 2)
+    message_received.wait_eq(2)
 
 
 def test_restarting():
-    spawn = DummyNode().spawn
-
-    actor_started = Counter()
-    message_received = Event()
-    post_stop_called = Event()
-
     class MyActor(Actor):
         def pre_start(self):
-            actor_started()
+            actor_started.incr()
 
         def receive(self, _):
             message_received.set()
@@ -434,88 +441,70 @@ def test_restarting():
         def post_stop(self):
             post_stop_called.set()
 
-    a = spawn(MyActor)
-    idle()
-    eq_(actor_started, 1)
+    actor_started = obs_count()
+    message_received, post_stop_called = Event(), Event()
+
+    a = DummyNode().spawn(MyActor)
+    actor_started.wait_eq(1)
     a << '_restart'
     idle()
     ok_(not message_received.is_set())
-    eq_(actor_started, 2)
-    ok_(post_stop_called.is_set())
+    actor_started.wait_eq(2)
+    post_stop_called.wait()
 
 
-def test_restarting_is_not_possible_on_stopped_actors():
-    spawn = DummyNode().spawn
-    actor_started = Counter()
-
+def test_restarting_stopped_actor_has_no_effect():
     class MyActor(Actor):
         def pre_start(self):
-            actor_started()
+            actor_started.incr()
 
-    a = spawn(MyActor)
-    idle()
+    actor_started = obs_count()
+    a = DummyNode().spawn(MyActor)
     a.stop()
-    idle()
     a << '_restart'
-    idle()
+    sleep(.001)
     eq_(actor_started, 1)
 
 
 def test_restarting_doesnt_destroy_the_inbox():
-    spawn = DummyNode().spawn
-
-    messages_received = []
-    started = Counter()
-
     class MyActor(Actor):
         def pre_start(self):
-            started()
+            started.incr()
 
         def receive(self, message):
             messages_received.append(message)
 
-    a = spawn(MyActor)
-    a << 'foo'
-    a << '_restart'
-    a << 'bar'
-    idle()
-
-    eq_(messages_received, ['foo', 'bar'])
+    messages_received = obs_list()
+    started = obs_count()
+    a = DummyNode().spawn(MyActor)
+    a << 'foo' << '_restart' << 'bar'
+    messages_received.wait_eq(['foo', 'bar'])
 
 
 def test_restarting_waits_till_the_ongoing_receive_is_complete():
     # Restarts are not carried out until the current receive finishes.
-    spawn = DummyNode().spawn
-    started = Counter()
-    deferred_cancelled = Event()
-    released = Event()
-
     class MyActor(Actor):
         def pre_start(self):
-            started()
+            started.incr()
 
         def receive(self, message):
+            receive_started.set()
             if started == 1:
                 released.wait()
 
-    a = spawn(MyActor)
+    started = obs_count()
+    receive_started, released = Event(), Event()
+    a = DummyNode().spawn(MyActor)
     a << 'foo'
-    idle()
+    receive_started.wait()
     a << '_restart'
-    ok_(not deferred_cancelled.is_set())
+    sleep(.001)
     eq_(started, 1)
     released.set()
-    idle()
-    eq_(started, 2)
+    started.wait_eq(2)
 
 
 def test_restarting_does_not_complete_until_pre_start_completes():
-    spawn = DummyNode().spawn
-
-    released = Event()
-    received = Event()
-    started = Event()
-
     class MyActor(Actor):
         def pre_start(self):
             if not started:
@@ -526,29 +515,24 @@ def test_restarting_does_not_complete_until_pre_start_completes():
         def receive(self, message):
             received.set()
 
-    a = spawn(MyActor)
+    released, received, started = Event(), Event(), Event()
 
+    a = DummyNode().spawn(MyActor)
     a << '_restart' << 'dummy'
-    idle()
+    sleep(.001)
     ok_(not received.is_set())
     released.set()
     received.wait()
 
 
 def test_actor_is_untainted_after_a_restart():
-    spawn = DummyNode().spawn
-    started_once = Event()
-    received_once = Event()
-    child = AsyncResult()
-    message_received = Event()
-
     class Parent(Actor):
         def pre_start(self):
             child.set(self.spawn(Child))
 
         def supervise(self, exc):
             return (Restart if isinstance(exc, CreateFailed) and isinstance(exc.cause, MockException) else
-                    Resume if isinstance(exc, MockException) else
+                    Ignore if isinstance(exc, MockException) else
                     Escalate)
 
     class Child(Actor):
@@ -564,7 +548,9 @@ def test_actor_is_untainted_after_a_restart():
             else:
                 message_received.set()
 
-    spawn(Parent)
+    started_once, received_once, message_received = Event(), Event(), Event()
+    child = AsyncResult()
+    DummyNode().spawn(Parent)
     child.get() << 'dummy1'
     received_once.wait()
     child.get() << 'dummy'
@@ -572,10 +558,6 @@ def test_actor_is_untainted_after_a_restart():
 
 
 def test_stopping_waits_till_the_ongoing_receive_is_complete():
-    spawn = DummyNode().spawn
-    stopped = Event()
-    released = Event()
-
     class MyActor(Actor):
         def receive(self, message):
             released.wait()
@@ -583,24 +565,19 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete():
         def post_stop(self):
             stopped.set()
 
-    a = spawn(MyActor) << 'foo'
-    idle()
+    stopped, released = Event(), Event()
+    a = DummyNode().spawn(MyActor) << 'foo'
+    sleep(.001)
     a.stop()
     ok_(not stopped.is_set())
     released.set()
-    idle()
-    ok_(stopped.is_set())
+    stopped.wait()
 
 
 def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart():
-    spawn = DummyNode().spawn
-
-    parent_started = Counter()
-    parent_received = Event()
-
     class Parent(Actor):
         def pre_start(self):
-            parent_started()
+            parent_started.incr()
             if parent_started == 1:
                 self.spawn(Child)
 
@@ -612,52 +589,41 @@ def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_aft
         def post_stop(self):
             self._parent << 'should-be-received-after-restart'
 
-    spawn(Parent) << '_restart'
+    parent_started = obs_count()
+    parent_received = Event()
+    DummyNode().spawn(Parent) << '_restart'
     parent_received.wait()
 
 
 def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
-    spawn = DummyNode().spawn
-
     class MyActor(Actor):
         def receive(self, _):
             received.set()
-
     received = Event()
-    a = spawn(MyActor)
+    a = DummyNode().spawn(MyActor)
     a << None
-    idle()
     received.wait()
     received.clear()
     a.stop()
+    sleep(.001)
     ok_(not received.is_set(), "the '_stop' message should not be receivable in the actor")
     with assert_one_event(DeadLetter(a, None)):
         a << None
-        idle()
 
 
 def test_stopping_calls_post_stop():
-    spawn = DummyNode().spawn
-
-    post_stop_called = Event()
-
     class MyActor(Actor):
         def post_stop(self):
             post_stop_called.set()
-
-    spawn(MyActor).stop()
+    post_stop_called = Event()
+    DummyNode().spawn(MyActor).stop()
     post_stop_called.wait()
 
 
 def test_stopping_waits_for_post_stop():
-    spawn = DummyNode().spawn
-
     class ChildWithDeferredPostStop(Actor):
         def post_stop(self):
             stop_complete.wait()
-
-    stop_complete = Event()
-    parent_received = Event()
 
     class Parent(Actor):
         def pre_start(self):
@@ -669,9 +635,9 @@ def test_stopping_waits_for_post_stop():
             else:
                 parent_received.set()
 
-    a = spawn(Parent)
-    a << 'stop-child'
-    idle()
+    stop_complete, parent_received = Event(), Event()
+    DummyNode().spawn(Parent) << 'stop-child'
+    sleep(.001)
     ok_(not parent_received.is_set())
     stop_complete.set()
     parent_received.wait()
@@ -702,32 +668,24 @@ def test_parent_is_stopped_before_children():
 
 
 def test_actor_is_not_restarted_until_its_children_are_stopped():
-    spawn = DummyNode().spawn
-    stop_complete = Event()
-    parent_started = Counter()
-
     class Parent(Actor):
         def pre_start(self):
-            parent_started()
+            parent_started.incr()
             self.spawn(Child)
 
     class Child(Actor):
         def post_stop(self):
             stop_complete.wait()
 
-    spawn(Parent) << '_restart'
-    idle()
-    eq_(parent_started, 1)
+    stop_complete = Event()
+    parent_started = obs_count()
+    DummyNode().spawn(Parent) << '_restart'
+    parent_started.wait_eq(1)
     stop_complete.set()
-    idle()
-    eq_(parent_started, 2)
+    parent_started.wait_eq(2)
 
 
 def test_error_reports_to_a_stopping_actor_are_ignored():
-    spawn = DummyNode().spawn
-    child = AsyncResult()
-    child_released = Event()
-
     class Child(Actor):
         def receive(self, _):
             child_released.wait()
@@ -737,41 +695,39 @@ def test_error_reports_to_a_stopping_actor_are_ignored():
         def pre_start(self):
             child.set(self.spawn(Child))
 
-    p = spawn(Parent)
+    child = AsyncResult()
+    child_released = Event()
+    p = DummyNode().spawn(Parent)
     child.get() << 'dummy'
-    idle()
     p.stop()
-    idle()
-    with expect_failure(MockException):
+    with assert_one_event(ErrorIgnored(child.get(), ANY, ANY)):
         child_released.set()
-        idle()
 
 
 def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
-    spawn = DummyNode().spawn
-    message_received = Event()
-
     class MyActor(Actor):
         def pre_start(self):
             self.stop()
 
         def receive(self, message):
-            dbg(message)
             message_received.set()
 
-    a = spawn(MyActor)
+    message_received = Event()
+    a = DummyNode().spawn(MyActor)
     with assert_one_event(DeadLetter(a, 'dummy')):
         a << 'dummy'
-        idle()
     ok_(not message_received.is_set())
 
 
-def test_stop_message_received_twice_is_ignored():
-    spawn = DummyNode().spawn
-    a = spawn(Actor)
+def test_stop_message_received_twice_is_silently_ignored():
+    a = DummyNode().spawn(Actor)
     a.stop()
     a.stop()
-    idle()
+    sleep(.001)
+
+
+# def test_TODO_kill():
+#     pass
 
 
 # def test_TODO_poisonpill():
@@ -1147,13 +1103,13 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 ## SUPERVISION & ERROR HANDLING
 
 def test_supervision_decision_resume():
-    """Child is resumed if `supervise` returns `Resume`"""
+    # Child is resumed if `supervise` returns `Ignore`
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child) << 'raise' << 'other-message'
 
         def supervise(self, _):
-            return Resume
+            return Ignore
 
     class Child(Actor):
         def receive(self, message):
@@ -1168,7 +1124,7 @@ def test_supervision_decision_resume():
 
 
 def test_supervision_decision_restart():
-    """Child is restarted if `supervise` returns `Restart`"""
+    # Child is restarted if `supervise` returns `Restart`
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child) << 'raise'
@@ -1178,19 +1134,18 @@ def test_supervision_decision_restart():
 
     class Child(Actor):
         def pre_start(self):
-            child_started()
+            child_started.incr()
 
         def receive(self, message):
             raise MockException
 
-    child_started = Counter()
+    child_started = obs_count()
     DummyNode().spawn(Parent)
-    idle()
-    eq_(child_started, 2)
+    child_started.wait_eq(2)
 
 
 def test_supervision_decision_stop():
-    """Child is stopped if `supervise` returns `Stop`"""
+    # Child is stopped if `supervise` returns `Stop`
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child) << 'raise'
@@ -1248,7 +1203,7 @@ def test_error_suspends_actor():
             ok_(isinstance(exc, MockException))
             parent_received_error.set()
             parent_supervise_released.wait()
-            return Resume
+            return Ignore
 
     class Child(Actor):
         def receive(self, message):
@@ -1285,7 +1240,6 @@ def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
     spawn = DummyNode().spawn
     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
         spawn(Parent)
-        idle()
 
 
 def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent_as_normal():
@@ -1426,45 +1380,41 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
 
     class ChildWithErrorInInit(Actor):
         def __init__(self):
-            child_created()
+            child_created.incr()
             if not init_already_raised.is_set():  # avoid infinite ping-pong
                 init_already_raised.set()
                 raise MockException
 
     spawn = DummyNode().spawn
     init_already_raised = Event()
-    child_created = Counter()
+    child_created = obs_count()
     spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
-    idle()
-    eq_(child_created, 2)
+    child_created.wait_eq(2)
     #
     init_already_raised = Event()
-    child_created = Counter()
-    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Resume))
-    idle()
-    eq_(child_created, 1, "resuming a tainted actor stops it")
+    child_created = obs_count()
+    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Ignore))
+    child_created.wait_eq(1, message="resuming a tainted actor stops it")
 
     ##
 
     class ChildWithErrorInPreStart(Actor):
         def pre_start(self):
-            child_started()
+            child_started.incr()
             if not pre_start_already_raised.is_set():  # avoid infinite ping-pong
                 pre_start_already_raised.set()
                 raise MockException
 
     spawn = DummyNode().spawn
     pre_start_already_raised = Event()
-    child_started = Counter()
+    child_started = obs_count()
     spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
-    idle()
-    eq_(child_started, 2)
+    child_started.wait_eq(2)
     #
     pre_start_already_raised = Event()
-    child_started = Counter()
-    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Resume))
-    idle()
-    eq_(child_started, 1, "resuming a tainted actor stops it")
+    child_started = obs_count()
+    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Ignore))
+    child_started.wait_eq(1, message="resuming a tainted actor stops it")
 
 
 def test_error_report_after_restart_is_ignored():
@@ -1487,7 +1437,6 @@ def test_error_report_after_restart_is_ignored():
     parent << '_restart'
     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
         child_released.set()
-        idle()
 
 
 def test_default_supervision_stops_for_create_failed():
@@ -1527,15 +1476,14 @@ def test_default_supervision_restarts_by_default():
 
     class Child(Actor):
         def pre_start(self):
-            child_started()
+            child_started.incr()
 
         def receive(self, _):
             raise MockException
 
-    child_started = Counter()
+    child_started = obs_count()
     DummyNode().spawn(Parent)
-    idle()
-    eq_(child_started, 2)
+    child_started.wait_eq(2)
 
 
 def test_supervision_decision_default():
@@ -1551,33 +1499,35 @@ def test_supervision_decision_default():
 
     class Child(Actor):
         def pre_start(self):
-            child_started()
+            child_started.incr()
             raise MockException
+
+        def post_stop(self):
+            post_stop_called.set()
 
     spawn = DummyNode().spawn
 
     #
 
     child = AsyncResult()
-    child_started = Counter()
+    child_started = obs_count()
+    post_stop_called = Event()
     spawn(Parent)
-    idle()
-    eq_(child_started, 1)
-    ok_(child.get().is_stopped)
-
+    child_started.wait_eq(1)
+    wait(lambda: child.get().is_stopped)
+    ok_(not post_stop_called.is_set(), "actors with failing start up should not have their post_stop called")
     #
 
     class Child(Actor):
         def pre_start(self):
-            child_started()
+            child_started.incr()
 
         def receive(self, _):
             raise MockException
 
-    child_started = Counter()
+    child_started = obs_count()
     spawn(Parent)
-    idle()
-    eq_(child_started, 2)
+    child_started.wait_eq(2)
 
 
 # def test_TODO_other_error_escalates():
@@ -1604,16 +1554,12 @@ def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
     supervision_decision = Escalate
     with expect_failure(MockException):
         spawn(Supervisor)
-        idle()
     supervision_decision = None
     with expect_failure(MockException):
         spawn(Supervisor)
-        idle()
 
 
 def test_error_is_escalated_if_supervision_raises_exception():
-    spawn = DummyNode().spawn
-
     class SupervisorException(Exception):
         pass
 
@@ -1631,9 +1577,9 @@ def test_error_is_escalated_if_supervision_raises_exception():
         def receive(self, _):
             raise MockException
 
+    spawn = DummyNode().spawn
     with expect_failure(SupervisorException):
         spawn(Supervisor)
-        idle()
 
 
 def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
@@ -1654,7 +1600,6 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
     spawn = DummyNode().spawn
     with expect_failure(BadSupervision, "Should raise BadSupervision if supervision returns an illegal value") as basket:
         spawn(Supervisor)
-        idle()
     with assert_raises(MockException):
         basket[0].raise_original()
 
@@ -1671,7 +1616,7 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
 #         def pre_start(self):
 #             self.spawn(Child)
 
-#     child_started = Counter()
+#     child_started = obs_count()
 
 #     class Child(Actor):
 #         def pre_start(self):
@@ -1736,7 +1681,7 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
         def supervise(self, exc):
             ok_(isinstance(exc, MockException))
             parent_received_error.set()
-            return Resume  # should resume both Child and SubChild, and allow SubChild to process its message
+            return Ignore  # should resume both Child and SubChild, and allow SubChild to process its message
 
     class Child(Actor):
         def pre_start(self):
@@ -1797,7 +1742,7 @@ def test_stopping_parent_from_child():
 def test_restarting_stops_children():
     class Parent(Actor):
         def pre_start(self):
-            started()
+            started.incr()
             if started == 1:  # only start the first time, so after the restart, there should be no children
                 self.spawn(Child)
             else:
@@ -1808,7 +1753,7 @@ def test_restarting_stops_children():
         def post_stop(self):
             child_stopped.set()
 
-    started = Counter()
+    started = obs_count()
     child_stopped, parent_restarted = Event(), Event()
     DummyNode().spawn(Parent) << '_restart'
     child_stopped.wait()
@@ -1986,7 +1931,6 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
     watchee.stop()
     with expect_failure(UnhandledTermination):
         spawn(Watcher)
-        idle()
 
 
 def test_system_messages_to_dead_actorrefs_are_discarded():
@@ -2517,7 +2461,7 @@ def test_termination_message_to_dead_actor_is_discarded():
 
 
 def test_processes_run_is_called_when_the_process_is_spawned():
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             run_called.set()
     run_called = Event()
@@ -2526,18 +2470,17 @@ def test_processes_run_is_called_when_the_process_is_spawned():
 
 
 def test_warning_is_emitted_if_process_run_returns_a_value():
-    class ProcThatReturnsValue(Process):
+    class ProcThatReturnsValue(Actor):
         def run(self):
             return 'foo'
     spawn = DummyNode().spawn
     with assert_one_warning():
         spawn(ProcThatReturnsValue)
-        idle()
 
 
 def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
     def do():
-        class MyProc(Process):
+        class MyProc(Actor):
             def run(self):
                 released.wait()
                 after_release.set()
@@ -2545,12 +2488,12 @@ def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resume
         released, after_release = Event(), Event()
 
         p = DummyNode().spawn(MyProc)
-        idle()
+        sleep(0.001)
         ok_(not after_release.is_set())
 
         p << '_suspend'
         released.set()
-        idle()
+        sleep(0.001)
         ok_(not after_release.is_set())
 
         p << '_resume'
@@ -2561,7 +2504,7 @@ def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resume
 
 
 def test_process_run_is_cancelled_if_the_actor_is_stopped():
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             try:
                 self.get()
@@ -2569,13 +2512,67 @@ def test_process_run_is_cancelled_if_the_actor_is_stopped():
                 exited.set()
     exited = Event()
     r = DummyNode().spawn(MyProc)
-    idle()  # `run` is not otherwise called if we .stop() immediately
+    idle()
     r.stop()
     exited.wait()
 
 
+def test_stopping_waits_till_process_is_done_handling_a_message():
+    class MyProc(Actor):
+        def run(self):
+            self.get()
+            try:
+                released.wait()
+                self.get()
+            except GreenletExit:
+                exited.set()
+    exited, released = Event(), Event()
+    r = DummyNode().spawn(MyProc)
+    r << 'foo'
+    sleep(.001)
+    r.stop()
+    sleep(.001)
+    ok_(not exited.is_set())
+    released.set()
+    exited.wait()
+
+
+def test_stopping_a_process_that_never_gets_a_message_just_kills_it_immediately():
+    # not the most elegant solution, but there's no other way
+    class MyProc(Actor):
+        def run(self):
+            try:
+                Event().wait()
+            except GreenletExit:
+                exited.set()
+
+        def post_stop(self):
+            exited2.set()
+    exited, exited2 = Event(), Event()
+    a = DummyNode().spawn(MyProc)
+    sleep(.001)
+    a.stop()
+    exited.wait()
+    exited2.wait()
+
+
+def test_error_in_stopping_proc_is_ignored():
+    class MyProc(Actor):
+        def run(self):
+            self.get()
+            released.wait()
+            raise MockException
+    released = Event()
+    a = DummyNode().spawn(MyProc)
+    a << 'dummy'
+    sleep(.001)
+    a.stop()
+    with assert_one_event(ErrorIgnored(a, IS_INSTANCE(MockException), ANY)):
+        released.set()
+
+
 def test_sending_a_message_to_a_process():
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             received_message.set(self.get())
     random_message = random.random()
@@ -2585,7 +2582,7 @@ def test_sending_a_message_to_a_process():
 
 
 def test_sending_2_messages_to_a_process():
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             first_message.set(self.get())
             second_message.set(self.get())
@@ -2600,25 +2597,24 @@ def test_sending_2_messages_to_a_process():
 
 
 def test_errors_in_process_while_processing_a_message_are_reported():
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             self.get()
             raise MockException
     p = DummyNode().spawn(MyProc)
     with expect_failure(MockException):
         p << 'dummy'
-        idle()
 
 
 def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it():
     class Parent(Actor):
         def supervise(self, exc):
-            return Resume
+            return Ignore
 
         def pre_start(self):
             proc.set(self.spawn(MyProc))
 
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
             raise MockException
 
@@ -2632,7 +2628,7 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it():
     stopped.wait()
 
 
-def test_restarting_a_process_reinvokes_its_run_method():
+def test_restarting_a_process():
     class Parent(Actor):
         def supervise(self, exc):
             return Restart
@@ -2640,205 +2636,200 @@ def test_restarting_a_process_reinvokes_its_run_method():
         def pre_start(self):
             proc.set(self.spawn(MyProc))
 
-    class MyProc(Process):
+    class MyProc(Actor):
         def run(self):
-            started()
+            started.incr()
             self.get()
             raise MockException
 
     proc = AsyncResult()
-    started = Counter()
+    started = obs_count()
     DummyNode().spawn(Parent)
-    idle()
-    eq_(started, 1)
+    started.wait_eq(1)
     proc.get() << 'dummy'
-    idle()
-    eq_(started, 2)
+    started.wait_eq(2)
 
 
-# def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
-#     spawn = DummyNode().spawn
-
-#     class MyProc(Process):
-#         def run(self):
-#             try:
-#                 yield self.get()
-#             finally:
-#                 # this also covers the process trying to yield stuff, e.g. for getting another message
-#                 raise MockException
-
-#     with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-#         spawn(MyProc).stop()
+def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
+    class MyProc(Actor):
+        def run(self):
+            try:
+                self.get()
+            finally:
+                raise MockException
+    a = DummyNode().spawn(MyProc)
+    sleep(.001)
+    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        a.stop()
 
 
-# def test_all_queued_messages_are_reported_as_unhandled_on_flush():
-#     spawn = DummyNode().spawn
-
-#     released = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield self.get()
-#             yield released
-#             self.flush()
-
-#     p = spawn(MyProc)
-#     p << 'dummy'
-#     p << 'should-be-reported-as-unhandled'
-#     with assert_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
-#         released()
-
-
-# def test_process_is_stopped_when_the_coroutine_exits():
-#     spawn = DummyNode().spawn
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield self.get()
-
-#     p = spawn(MyProc)
-#     p << 'dummy'
-#     yield p.join()
+def test_all_stashed_messages_are_reported_as_unhandled_on_flush_and_discarded():
+    class MyProc(Actor):
+        def run(self):
+            self.get('dummy')
+            self.flush()
+            self.get('dummy')
+            self.flush()
+    p = DummyNode().spawn(MyProc)
+    p << 'should-be-reported-as-unhandled'
+    with assert_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
+        with assert_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+            p << 'dummy'
+    with assert_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
+        with assert_event_not_emitted(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+            p << 'dummy'
 
 
-# def test_process_is_stopped_when_the_coroutine_exits_during_startup():
-#     spawn = DummyNode().spawn
-
-#     class MyProc(Process):
-#         def run(self):
-#             yield
-
-#     p = spawn(MyProc)
-#     yield p.join()
-
-
-# def test_process_can_get_messages_selectively():
-#     spawn = DummyNode().spawn
-
-#     messages = []
-
-#     release1 = Event()
-#     release2 = Event()
-
-#     class MyProc(Process):
-#         def run(self):
-#             messages.append((yield self.get(ANY)))
-#             messages.append((yield self.get('msg3')))
-#             messages.append((yield self.get(ANY)))
-
-#             yield release1
-
-#             messages.append((yield self.get(IS_INSTANCE(int))))
-
-#             yield release2
-
-#             messages.append((yield self.get(IS_INSTANCE(float))))
-
-#     p = spawn(MyProc)
-#     p << 'msg1'
-#     eq_(messages, ['msg1'])
-
-#     p << 'msg2'
-#     eq_(messages, ['msg1'])
-
-#     p << 'msg3'
-#     eq_(messages, ['msg1', 'msg3', 'msg2'])
-
-#     # (process blocked here)
-
-#     p << 'not-an-int'
-#     release1()
-#     assert 'not-an-int' not in messages
-
-#     p << 123
-#     assert 123 in messages
-
-#     # (process blocked here)
-
-#     p << 321
-#     p << 32.1
-
-#     release2()
-#     assert 321 not in messages and 32.1 in messages
+def test_getting_stashed_message():
+    class MyProc(Actor):
+        def run(self):
+            self.get('dummy1')
+            self.get('dummy2')
+            got_both_messages.set()
+            self.get('dummy2')
+            ok_(False, "should not reach here")
+    got_both_messages = Event()
+    p = DummyNode().spawn(MyProc)
+    p << 'dummy2'
+    p << 'dummy1'
+    got_both_messages.wait()
 
 
-# def test_process_can_delegate_handling_of_caught_exceptions_to_parent():
-#     spawn = DummyNode().spawn
+def test_dead_letters_are_emitted_in_the_order_the_messages_were_sent():
+    a = DummyNode().spawn(Actor)
+    with assert_one_event(DeadLetter(a, 'dummy1')):
+        with assert_one_event(DeadLetter(a, 'dummy2')):
+            a << 'dummy1' << 'dummy2'
+            a.stop()
 
-#     process_continued = Event()
-#     supervision_invoked = Event()
 
+def test_stashed_messages_are_received_in_the_order_they_were_sent():
+    class MyProc(Actor):
+        def run(self):
+            msgs_received.append(self.get(1))
+            msgs_received.append(self.get())
+            msgs_received.append(self.get())
+            done.set()
+    msgs_received = []
+    done = Event()
+    a = DummyNode().spawn(MyProc)
+    a << 3 << 2 << 1
+    done.wait()
+    eq_(msgs_received, [1, 3, 2])
+
+
+def test_process_is_stopped_when_run_returns():
+    class MyProc(Actor):
+        def run(self):
+            self.get()
+
+        def post_stop(self):
+            stopped.set()
+
+    stopped = Event()
+    p = DummyNode().spawn(MyProc)
+    p << 'dummy'
+    stopped.wait()
+
+
+def test_process_is_stopped_when_the_coroutine_exits_during_startup():
+    class MyProc(Actor):
+        def run(self):
+            pass
+
+        def post_stop(self):
+            stopped.set()
+
+    stopped = Event()
+    DummyNode().spawn(MyProc)
+    stopped.wait()
+
+
+def test_process_can_get_messages_selectively():
+    class MyProc(Actor):
+        def run(self):
+            messages.append(self.get(ANY))
+            messages.append(self.get('msg3'))
+            messages.append(self.get(ANY))
+            release1.wait()
+            messages.append(self.get(IS_INSTANCE(int)))
+            release2.wait()
+            messages.append(self.get(IS_INSTANCE(float)))
+    messages = obs_list()
+    release1, release2 = Event(), Event()
+    p = DummyNode().spawn(MyProc)
+    p << 'msg1'
+    messages.wait_eq(['msg1'])
+    p << 'msg2'
+    messages.wait_eq(['msg1'])
+    p << 'msg3'
+    messages.wait_eq(['msg1', 'msg3', 'msg2'])
+    # (process blocked here)
+    p << 'not-an-int'
+    release1.set()
+    sleep(.001)
+    ok_('not-an-int' not in messages)
+    p << 123
+    sleep(.001)
+    ok_(123 in messages)
+    # (process blocked here)
+    p << 321
+    p << 32.1
+    release2.set()
+    sleep(.001)
+    ok_(321 not in messages)
+    ok_(32.1 in messages)
+
+
+# def test_TODO_process_can_delegate_handling_of_caught_exceptions_to_parent():
 #     class Parent(Actor):
 #         def supervise(self, exc):
-#             assert isinstance(exc, MockException)
-#             supervision_invoked()
+#             ok_(isinstance(exc, MockException))
+#             supervision_invoked.set()
 #             return Restart
 
 #         def pre_start(self):
 #             self.spawn(Child) << 'invoke'
 
-#     class Child(Process):
+#     class Child(Actor):
 #         def run(self):
-#             yield self.get()  # put the process into receive mode (i.e. started)
+#             self.get()  # put the process into receive mode (i.e. started)
 #             try:
 #                 raise MockException()
 #             except MockException:
-#                 yield self.escalate()
-#             process_continued()
+#                 self.escalate()
+#             process_continued.set()
 
-#     spawn(Parent)
+#     process_continued, supervision_invoked = Event(), Event()
+#     DummyNode().spawn(Parent)
+#     supervision_invoked.wait()
+#     ok_(not process_continued.is_set())
+#     sleep(.001)
 
-#     yield supervision_invoked
-#     assert not process_continued
-#     yield sleep(0)
 
-
-# def test_calling_escalate_outside_of_error_context_causes_runtime_error():
-#     spawn = DummyNode().spawn
-
-#     exc_raised = Event()
-
-#     class FalseAlarmParent(Actor):
+# def test_TODO_calling_escalate_outside_of_error_context_causes_runtime_error():
+#     class MyProc(Actor):
 #         def supervise(self, exc):
 #             ok_(isinstance(exc, InvalidEscalation))
-#             exc_raised()
+#             exc_raised.set()
 #             return Stop
 
 #         def pre_start(self):
-#             self.spawn(FalseAlarmChild)
+#             self.spawn(MyProcChild)
 
-#     class FalseAlarmChild(Process):
+#     class MyProcChild(Actor):
 #         def run(self):
 #             self << 'foo'
-#             yield self.get()  # put in started-mode
+#             self.get()  # put in started-mode
 #             self.escalate()
 
-#     spawn(FalseAlarmParent)
-#     assert exc_raised
+#     exc_raised = Event()
+#     DummyNode().spawn(MyProc)
+#     exc_raised.wait()
 
 
-# def test_optional_process_high_water_mark_emits_an_event_for_every_multiple_of_that_nr_of_msgs_in_the_queue():
-#     spawn = DummyNode().spawn
-
-#     class MyProc(Process):
-#         hwm = 100  # emit warning every 100 pending messages in the queue
-
-#         def run(self):
-#             yield self.get()  # put in receive mode
-#             yield Deferred()  # queue all further messages
-
-#     p = spawn(MyProc)
-#     p << 'ignore'
-
-#     for _ in range(3):
-#         for _ in range(99):
-#             p << 'dummy'
-#         with assert_one_event(HighWaterMarkReached):
-#             p << 'dummy'
-
-
-# ##
-# ## SUBPROCESS
+##
+## SUBPROCESS
 
 # def test_TODO_spawning_an_actor_in_subprocess_uses_a_special_agent_guardian():
 #     pass  # TODO: subprocess contains another actor system; maybe add a
@@ -2856,8 +2847,8 @@ def test_restarting_a_process_reinvokes_its_run_method():
 #     pass
 
 
-# ##
-# ##  MIGRATION
+##
+##  MIGRATION
 
 # def test_TODO_migrating_an_actor_to_another_host_suspends_serializes_and_deserializes_it_and_makes_it_look_as_if_it_had_been_deployed_remotely():
 #     pass
@@ -2875,34 +2866,15 @@ def test_restarting_a_process_reinvokes_its_run_method():
 #     pass
 
 
-# ##
-# ## TYPED ACTORREFS
+##
+## TYPED ACTORREFS
 
 # def test_TODO_typed_actorrefs():
 #     pass
 
 
-# ##
-# ## HELPFUL & ASSISTIVE TRACEBACKS
-
-# def test_TODO_correct_traceback_is_always_reported():
-#     pass
-
-
-# def test_TODO_assistive_traceback_with_send_and_spawn():
-#     pass
-
-
-# def test_TODO_assistive_traceback_with_recursive_send():
-#     pass
-
-
-# def test_TODO_assistive_traceback_with_async_interaction():
-#     pass
-
-
-# ##
-# ## DISPATCHING
+##
+## DISPATCHING
 
 # def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
 #     pass
