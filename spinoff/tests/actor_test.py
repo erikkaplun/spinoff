@@ -2059,8 +2059,8 @@ def test_termination_message_to_dead_actor_is_discarded():
 #     test_it(packet_loss_src='watcher', packet_loss_dst='watchee')
 
 
-# ##
-# ## REMOTING
+##
+## REMOTING
 
 # @simtime
 # def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node(clock):
