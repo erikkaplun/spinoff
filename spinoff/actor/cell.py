@@ -270,7 +270,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                                 gevent.getcurrent().kill()
                             else:
                                 _resume_children()
-                # process the inbox, until there is something again in the queue, or we get suspended
+                # process the normal letters (i.e. the regular, non-system/non-special messages)
                 while not processing and not suspended and not error and not stopping and self.queue.empty() and self.inbox:
                     m = self.inbox.popleft()
                     if m == ('_error', ANY, ANY, ANY):  # error handling is viewed as user-land logic
@@ -309,8 +309,6 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         try:
             fn(*args, **kwargs)
         except Exception:
-            # self._suspend_children()
-            # self.report()
             self.queue.put(('__error', sys.exc_info()[1], sys.exc_info()[2]))
         else:
             self.queue.put('__done')
@@ -329,10 +327,10 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         return self.ch.get()
 
     def flush(self):
-        # throw away all stashed letters
         while self.stash:
             self.unhandled(self.stash.popleft())
 
+    # TODO: haven't figured out yet how to cleanly fit an implementation of this to the existing state machine
     # def escalate(self):
     #     _, exc, tb = sys.exc_info()
     #     if not (exc and tb):
@@ -358,8 +356,8 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 pre_start(*args, **kwargs)
             except Exception:
                 raise CreateFailed("Actor failed to start", impl)
-        self.ch = gevent.queue.Channel()
         if impl.run:
+            self.ch = gevent.queue.Channel()
             if impl.receive:
                 raise TypeError("actor should implement only run() or receive() but not both")
             self.proc = gevent.spawn(self.wrap_run, impl.run)

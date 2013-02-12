@@ -1,28 +1,19 @@
-# coding: utf8
-from __future__ import print_function, absolute_import
+from __future__ import print_function
 
-import struct
-import traceback
-from cStringIO import StringIO
+import time
+import cPickle as pickle
+from types import GeneratorType
 
-from twisted.internet.defer import inlineCallbacks
-from twisted.internet import reactor
-from txzmq import ZmqEndpoint, ZmqFactory, ZmqPushConnection, ZmqRouterConnection
+import zmq.green as zmq
+from gevent import sleep, spawn
+from gevent.socket import gethostbyname
 
-from spinoff.actor import Ref, Uri
-from spinoff.actor.events import Events, DeadLetter, RemoteDeadLetter
-from spinoff.actor.resolv import resolve
-from spinoff.util.logging import logstring, panic, dbg
-from spinoff.util.pattern_matching import ANY
-from .pickler import IncomingMessageUnpickler
-from .validation import _validate_nodeid, _PROTO_ADDR_RE
+from spinoff.actor.events import Events, DeadLetter
+from spinoff.actor.remoting.hublogic import HubLogic, Connect, Disconnect, SendPacket, Deliver, NotifySendFailed, NotifyNodeDown
+from spinoff.util.logging import dbg
 
-# TODO: use shorter messages outside of testing
-# MUST be a single char
-PING = b'0'
-DISCONNECT = b'1'
 
-PING_VERSION_FORMAT = '!I'
+__all__ = ['Hub']
 
 
 class Hub(object):
@@ -37,157 +28,111 @@ class Hub(object):
     HEARTBEAT_INTERVAL = 1.0
     ALLOWED_HEARTBEAT_DELAY = HEARTBEAT_INTERVAL * 0.2
 
-    HEARTBEAT_MAX_SILENCE = 15.0
+    HEARTBEAT_MAX_SILENCE = 3.0
 
-    nodeid = None
+    def __init__(self, node_id, node_down_fn=lambda ref, node_id: ref << ('_node_down', node_id),
+                 deliver_fn=lambda msg_bytes, sender_node_id: print("deliver", msg_bytes, "from", sender_node_id)):
+        self._node_down_fn = node_down_fn
+        self._deliver_fn = deliver_fn
+        self._logic = HubLogic(heartbeat_interval=self.HEARTBEAT_INTERVAL,
+                               heartbeat_max_silence=self.HEARTBEAT_MAX_SILENCE)
+        self._ctx = zmq.Context()
+        self._ctx.linger = 0
+        self._sock = self._ctx.socket(zmq.ROUTER)
+        self._sock.identity = node_id
+        self._sock.bind(node_id_to_zmq_endpoint(node_id))
+        self._listener = spawn(self._listen)
+        self._hearbeater = spawn(self._send_recv_heartbeat)
+        self._watched_nodes = {}
 
-    def __init__(self, nodeid, reactor=reactor):
-        if not nodeid or not isinstance(nodeid, str):  # pragma: no cover
-            raise TypeError("The 'nodeid' argument to Hub must be a str")
-        _validate_nodeid(nodeid)
+    def _listen(self):
+        recv, message_received, execute, t = self._sock.recv_multipart, self._logic.message_received, self._execute, time.time
+        while True:
+            sender_node_id, msg_bytes = recv()
+            execute(message_received(sender_node_id, msg_bytes, t()))
 
-        self.reactor = reactor
-        self.nodeid = nodeid
+    def _send_recv_heartbeat(self):
+        interval, heartbeat, execute, t = self.HEARTBEAT_INTERVAL, self._logic.heartbeat, self._execute, time.time
+        while True:
+            execute(heartbeat(t()))
+            sleep(interval)
 
-        self.addr = 'tcp://' + nodeid if nodeid else None
+    def send_message(self, node_id, msg_handle):
+        self._execute(self._logic.send_message(node_id, msg_handle, time.time()))
 
-        # guarantees that terminations will not go unnoticed and that termination messages won't arrive out of order
-        self.version = 0
+    def watch_node(self, node_id, watcher):
+        if node_id not in self._watched_nodes:
+            self._watched_nodes[node_id] = set([watcher])
+            self._execute(self._logic.watch_new_node(node_id, time.time()))
+        else:
+            self._watched_nodes[node_id].add(watcher)
 
-        zf = ZmqFactory()
-
-        self.insock = ZmqRouterConnection(zf)
-        self.insock.gotMultipart = self._got_message
-        self.insock.addEndpoints([ZmqEndpoint('bind', _resolve_addr(self.addr))])
-
-        self.outsock_factory = lambda: ZmqPushConnection(zf, linger=0)
-        self.connections = {}
-
-        self._next_heartbeat = reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
-        self._next_heartbeat_t = reactor.seconds() + self.HEARTBEAT_INTERVAL
-
-    def _eval_actions(self, actions):
-        for x in actions:
-            action, params = x[0], x[1:]
-            dbg("ACTION: %s(%s)" % (action, ", ".join(repr(x) for x in params)))
-
-    @logstring(u"⇜")
-    def _got_message(self, (sender_addr, msg)):
-        t = self.reactor.seconds()
-        if t > self._next_heartbeat_t + self.ALLOWED_HEARTBEAT_DELAY / 2.0:
-            self._next_heartbeat.cancel()
-            self._manage_heartbeat_and_visibility()
-
-        self._logic.message_received(self.reverse_dns[sender_addr], msg, t)
-
-    @logstring(u"❤")
-    def _manage_heartbeat_and_visibility(self):
-        t = self.reactor.seconds()
-        self._next_heartbeat_t = t + self.HEARTBEAT_INTERVAL
+    def unwatch_node(self, node_id, watcher):
         try:
-            self._eval_actions(self._logic.heartbeat(current_time=self.reactor.seconds()))
-        except Exception:  # pragma: no cover
-            panic("heartbeat logic failed:\n", traceback.format_exc())
-        finally:
-            self._next_heartbeat = self.reactor.callLater(self.HEARTBEAT_INTERVAL, self._manage_heartbeat_and_visibility)
+            self._watched_nodes[node_id].discard(watcher)
+        except IndexError:
+            pass
 
-    @logstring(u"⇝")
-    def send(self, msg, to_remote_actor_pointed_to_by):
-        ref = to_remote_actor_pointed_to_by
-        # dbg(u"%r → %r" % (msg, ref))
-
-        t = self.reactor.seconds()
-        if t > self._next_heartbeat_t + self.ALLOWED_HEARTBEAT_DELAY / 2.0:
-            if self._next_heartbeat:
-                self._next_heartbeat.cancel()
-                self._manage_heartbeat_and_visibility()
-
-        nodeid = ref.uri.node
-
-        if nodeid and nodeid != self.nodeid:
-            addr = ref.uri.root.url
-            conn = self.connections.get(addr)
-            if not conn:
-                conn = self._connect(addr)
-            conn.send(ref, msg)
-        else:
-            self._send_local(msg, ref)
-
-    def watch_node(self, nodeid, report_to):
-        node_addr = 'tcp://' + nodeid
-        conn = self.connections.get(node_addr)
-        if not conn:
-            conn = self._connect(node_addr)
-        conn.watch(report_to)
-
-    def unwatch_node(self, nodeid, report_to):
-        node_addr = 'tcp://' + nodeid
-        conn = self.connections.get(node_addr)
-        if conn:
-            conn.unwatch(report_to)
-
-    def _send_local(self, msg, ref):
-        cell = self.guardian.lookup_cell(ref.uri)
-        if cell:
-            ref._cell = cell
-            ref.is_local = True
-            ref << msg
-        else:
-            ref.is_local = True  # next time, just put it straight to DeadLetters
-            if msg not in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
-                Events.log(DeadLetter(ref, msg))
-
-    def _deliver_local(self, path, msg, sender_addr):
-        cell = self.guardian.lookup_cell(Uri.parse(path))
-        if not cell:
-            if ('_watched', ANY) == msg:
-                watched_ref = Ref(cell=None, is_local=True, uri=Uri.parse(self.nodeid + path))
-                _, watcher = msg
-                watcher << ('terminated', watched_ref)
-            else:
-                if msg not in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
-                    self._remote_dead_letter(path, msg, sender_addr)
-        else:
-            cell.receive(msg)  # XXX: force_async=True perhaps?
-
-    @inlineCallbacks
     def stop(self):
-        self._next_heartbeat.cancel()
-        self._next_heartbeat = None
-        self.insock.shutdown()
-        for _, conn in self.connections.items():
-            yield conn.close()
+        self._listener.kill()
+        self._execute(self._logic.shutdown())
+        sleep(.01)  # XXX: needed?
+        self._sock.shutdown()
+        self._ctx.shutdown()
 
-    def _loads(self, data):
-        return IncomingMessageUnpickler(self, StringIO(data)).load()
-
-    def _remote_dead_letter(self, path, msg, from_):
-        uri = Uri.parse(self.nodeid + path)
-        ref = Ref(cell=self.guardian.lookup_cell(uri), uri=uri, is_local=True)
-        Events.log(RemoteDeadLetter(ref, msg, from_))
-
-    def _get_guardian(self):
-        return self._guardian
-
-    def _set_guardian(self, guardian):
-        if self._guardian:  # pragma: no cover
-            raise RuntimeError("Hub already bound to a Guardian")
-        self._guardian = guardian
-    _guardian = None
-    guardian = property(_get_guardian, _set_guardian)
+    def _execute(self, actions):
+        for action in flatten(actions):
+            cmd = action[0]
+            dbg("%s: %s" % (cmd, ", ".join(repr(x) for x in action[1:])))
+            if cmd is SendPacket:
+                _, node_id, data = action
+                self._sock.send_multipart([node_id, data])
+            elif cmd is Connect:
+                _, node_id = action
+                self._sock.connect(node_id_to_zmq_endpoint(node_id))
+            elif cmd is Disconnect:
+                _, node_id = action
+                try:
+                    self._sock.disconnect(node_id_to_zmq_endpoint(node_id))
+                except zmq.ZMQError:
+                    pass
+            elif cmd is Deliver:
+                _, msg_bytes, sender_node_id = action
+                self._deliver_fn(msg_bytes, sender_node_id)
+            elif cmd is NotifySendFailed:
+                _, msg_handle = action
+                msg_handle.send_failed()
+            elif cmd is NotifyNodeDown:
+                _, node_id = action
+                for watcher in self._watched_nodes.pop(node_id, []):
+                    self._node_down_fn(watcher, node_id)
+            else:
+                assert False, "unknown command: %r" % (cmd,)
 
     def __repr__(self):
-        return '<remoting:%s>' % (self.nodeid,)
+        return "Hub(%s)" % (self._sock.identity,)
 
 
-_dumpmsg = lambda msg: msg[:20] + (msg[20:] and '...')  # pragma: no cover
+def node_id_to_zmq_endpoint(node_id):
+    host, port = node_id.split(':')
+    return 'tcp://%s:%s' % (gethostbyname(host), port)
 
 
-def _resolve_addr(addr):
-    m = _PROTO_ADDR_RE.match(addr)
-    proto, nodeid = m.groups()[0:2]
+def flatten(gen):
+    for x in gen:
+        if isinstance(x, GeneratorType):
+            for y in x:
+                yield y
+        else:
+            yield x
 
-    if nodeid:
-        host, port = nodeid.split(':')
-        return '%s%s:%s' % (proto, resolve(host), port)
-    return addr
+
+class Msg(object):
+    def __init__(self, ref, msg):
+        self.ref, self.msg = ref, msg
+
+    def serialise(self):
+        return pickle.dumps((self.ref.uri.path, self.msg), protocol=2)
+
+    def send_failed(self):
+        Events.log(DeadLetter(self.ref, self.msg))

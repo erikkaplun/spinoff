@@ -1,7 +1,6 @@
 # coding: utf8
 from __future__ import print_function, absolute_import
 
-import inspect
 import random
 from decimal import Decimal
 
@@ -12,12 +11,9 @@ from .remoting import Hub
 
 
 class MockNetwork(object):  # pragma: no cover
-    """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
-
     def __init__(self, clock):
         self.listeners = {}
         self.queue = []
-        self.test_context = inspect.stack()[1][3]
         self.connections = set()
         self.clock = clock
 
@@ -31,11 +27,11 @@ class MockNetwork(object):  # pragma: no cover
 
         """
         _assert_valid_nodeid(nodeid)
-        addr = 'tcp://' + nodeid
-        insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
-        outsock = lambda: MockOutSocket(addr, self)
+        # addr = 'tcp://' + nodeid
+        # insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
+        # outsock = lambda: MockOutSocket(addr, self)
 
-        return Node(hub=Hub(insock, outsock, nodeid=nodeid, reactor=self.clock))
+        return Node(hub=Hub(nodeid=nod1eid, reactor=self.clock))
 
     # def mapperdaemon(self, addr):
     #     pass
