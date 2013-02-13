@@ -39,7 +39,7 @@ class EnumValue(object):
         return str(self.name)
 
     def __repr__(self):
-        return '<EnumValue %s%s>' % (self.name, ':%s' % self.order if self.order is not None else '')
+        return '<%s%s>' % (self.name, ':%s' % self.order if self.order is not None else '')
 
 
 def enums(*names):
