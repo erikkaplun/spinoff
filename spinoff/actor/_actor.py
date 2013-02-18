@@ -15,17 +15,9 @@ class Actor(object):
     initialized actor instance. If your initialization routine depends on either of those, use `pre_start` instead.
 
     """
-    SPAWNING_IS_ASYNC = _DEFAULT_SPAWNING_IS_ASYNC = True
-    SENDING_IS_ASYNC = _DEFAULT_SENDING_IS_ASYNC = False
-
     @classmethod
     def using(cls, *args, **kwargs):
         return Props(cls, *args, **kwargs)
-
-    @classmethod
-    def reset_flags(cls, debug=False):
-        cls.SPAWNING_IS_ASYNC = False if debug else cls._DEFAULT_SPAWNING_IS_ASYNC
-        cls.SENDING_IS_ASYNC = cls._DEFAULT_SENDING_IS_ASYNC
 
     __cell = None  # make it really private so it's hard and unpleasant to access the cell
     args, kwargs = (), {}

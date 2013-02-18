@@ -25,6 +25,7 @@ from spinoff.util.testing import (
     EVENT, NEXT, expect_failure, simtime, MockActor, assert_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
+from spinoff.actor.remoting.hublogic import HubLogic, Connect
 
 
 def wait(fn):
@@ -2062,47 +2063,47 @@ def test_termination_message_to_dead_actor_is_discarded():
 ##
 ## REMOTING
 
-def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
-    # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
+# def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
+#     # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
 
-    # emulate a scenario in which a single node sends many messages to other nodes;
-    # a total of NUM_NODES * NUM_ACTORS messages will be sent out.
-    NUM_NODES = 3
-    NUM_ACTORS_PER_NODE = 20
+#     # emulate a scenario in which a single node sends many messages to other nodes;
+#     # a total of NUM_NODES * NUM_ACTORS messages will be sent out.
+#     NUM_NODES = 3
+#     NUM_ACTORS_PER_NODE = 20
 
-    network = MockNetwork(clock)
+#     network = MockNetwork(clock)
 
-    sender_node = network.node('senderhost:123')
-    ok_(not network.queue)
+#     sender_node = network.node('senderhost:123')
+#     ok_(not network.queue)
 
-    recipient_nodes = []
+#     recipient_nodes = []
 
-    for node_num in range(1, NUM_NODES + 1):
-        nodeaddr = 'recphost%d:123' % node_num
-        remote_node = network.node(nodeaddr)
+#     for node_num in range(1, NUM_NODES + 1):
+#         nodeaddr = 'recphost%d:123' % node_num
+#         remote_node = network.node(nodeaddr)
 
-        receive_boxes = []
-        sent_msgs = []
+#         receive_boxes = []
+#         sent_msgs = []
 
-        for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
-            actor_box = []  # collects whatever the MockActor receives
-            actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num)
-            # we only care about the messages received, not the ref itself
-            receive_boxes.append(actor_box)
+#         for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
+#             actor_box = []  # collects whatever the MockActor receives
+#             actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num)
+#             # we only care about the messages received, not the ref itself
+#             receive_boxes.append(actor_box)
 
-            # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure> (just for debuggability)
-            msg = 'dummy-%s-%s-%s' % (nodeaddr, actor.uri.name, random.randint(1, 10000000))
-            sender_node.lookup(actor.uri) << msg
-            sent_msgs.append(msg)
+#             # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure> (just for debuggability)
+#             msg = 'dummy-%s-%s-%s' % (nodeaddr, actor.uri.name, random.randint(1, 10000000))
+#             sender_node.lookup(actor.uri) << msg
+#             sent_msgs.append(msg)
 
-        recipient_nodes.append((sent_msgs, receive_boxes))
+#         recipient_nodes.append((sent_msgs, receive_boxes))
 
-    random.shuffle(network.queue)  # for good measure
-    network.simulate(duration=3.0)
+#     random.shuffle(network.queue)  # for good measure
+#     network.simulate(duration=3.0)
 
-    for sent_msgs, receive_boxes in recipient_nodes:
-        all(eq_(receive_box, [sent_msg])
-            for sent_msg, receive_box in zip(sent_msgs, receive_boxes))
+#     for sent_msgs, receive_boxes in recipient_nodes:
+#         all(eq_(receive_box, [sent_msg])
+#             for sent_msg, receive_box in zip(sent_msgs, receive_boxes))
 
 
 # def test_transmitting_refs_and_sending_to_received_refs():

@@ -1,22 +1,27 @@
 from __future__ import print_function
 
+import sys
 import random
+from types import GeneratorType
 
 from spinoff.util.python import enumrange
-from spinoff.util.logging import dbg, err
 
 
-# signals from HubLogic to Hub or test code
 (
     Connect, Disconnect, SigDisconnect, Send, Ping,
     RelaySigNew, RelayConnect, RelaySigConnected, RelaySend, RelayForward, RelaySigNodeDown, RelayNvm,
-    Receive, SendFailed, NodeDown
+    Receive, SendFailed, NodeDown, NextBeat
 ) = enumrange(
     'Connect', 'Disconnect', 'SigDisconnect', 'Send', 'Ping',
     'RelaySigNew', 'RelayConnect', 'RelaySigConnected', 'RelaySend', 'RelayForward', 'RelaySigNodeDown', 'RelayNvm',
-    'Receive', 'SendFailed', 'NodeDown'
+    'Receive', 'SendFailed', 'NodeDown', 'NextBeat'
 )
 IN, OUT = enumrange('IN', 'OUT')
+BIG_BANG_T = -sys.maxint
+
+
+def nid2addr(nid):
+    return nid[:-8]
 
 
 def FLUSH(self, nid):
@@ -30,18 +35,17 @@ def NODEDOWN(self, nid):
     yield NodeDown, nid
 
 
-def RELAY_CHECKS(self, nid):
-    if nid in self.rl_relayed:
-        for requestor_nid in self.rl_relayed.pop(nid):
-            requestors_proxied_nids = self.rl_requestors[requestor_nid]
+def RELAY_NODEDOWN_CHECKS(self, nid):
+    if nid in self.rl_relayers:
+        for x in self.rl_relayers.pop(nid):
+            del self.rl_relayees[x]
+    if nid in self.rl_relayees:
+        for relayer_nid in self.rl_relayees.pop(nid):
+            requestors_proxied_nids = self.rl_relayers[relayer_nid]
             requestors_proxied_nids.remove(nid)
             if not requestors_proxied_nids:
-                del self.rl_requestors[requestor_nid]
-            yield RelaySigNodeDown, IN, requestor_nid, nid
-    elif nid in self.rl_requestors:
-        requestors_proxied_nids = self.rl_requestors.pop(nid)
-        for x in requestors_proxied_nids:
-            del self.rl_relayed[x]
+                del self.rl_relayers[relayer_nid]
+            yield RelaySigNodeDown, IN, relayer_nid, nid
 
 
 class HubLogic(object):
@@ -55,7 +59,7 @@ class HubLogic(object):
     initialization.
 
     """
-    def __init__(self, is_relay, heartbeat_interval, heartbeat_max_silence):
+    def __init__(self, heartbeat_interval, heartbeat_max_silence, is_relay=False):
         self.is_relay = is_relay
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_max_silence = heartbeat_max_silence
@@ -65,66 +69,64 @@ class HubLogic(object):
         self.last_sent = {}
         self.versions = {}
         self.queues = {}
-        self.rl_relayed = {}     # proxied_nid => requestor_nid
-        self.rl_requestors = {}  # requestor_nid => [proxied_nid]
-        self.cl_avail_relays = {}      # relay_nid => [proxied_nid]
-        self.cl_proxied = {}     # proxied_nid => relay_nid
-        # self.seen_nodes = set() if is_relay else None
-        # self.siblings = set()  # this handles NAT/subnet as well as firewall
+        self.rl_relayees = {}      # relayee_nid => relayer_nid
+        self.rl_relayers = {}      # relayer_nid => [relayee_nid]
+        self.cl_avail_relays = {}  # relay_nid => [relayee_nid]
+        self.cl_relayees = {}       # relayee_nid => relay_nid
         # this gets incremented before being used, so we actually start from 0 not -1
         self.version = -1
 
-    def send_message(self, recp_nid, msg_h, current_time):
+    def send_message(self, rcpt_nid, msg_h, t):
         # is it a new connection, or an existing but not yet active connection?
-        if recp_nid in self.channels_in:
-            yield Send, IN, recp_nid, self._next_version(), msg_h
-        elif recp_nid in self.channels_out:
-            if recp_nid not in self.queues:
-                yield Send, OUT, recp_nid, self._next_version(), msg_h
+        if rcpt_nid in self.channels_in:
+            yield Send, IN, rcpt_nid, self._next_version(), msg_h
+        elif rcpt_nid in self.channels_out:
+            if rcpt_nid not in self.queues:
+                yield Send, OUT, rcpt_nid, self._next_version(), msg_h
             else:
-                self.queues[recp_nid].append(msg_h)
-        elif recp_nid in self.queues:
-            self.queues[recp_nid].append(msg_h)
-        elif recp_nid in self.cl_proxied:
-            relay_nid = self.cl_proxied[recp_nid]
-            yield RelaySend, (IN if relay_nid in self.channels_in else OUT), relay_nid, recp_nid, msg_h
+                self.queues[rcpt_nid].append(msg_h)
+        elif rcpt_nid in self.queues:
+            self.queues[rcpt_nid].append(msg_h)
+        elif rcpt_nid in self.cl_relayees:
+            relay_nid = self.cl_relayees[rcpt_nid]
+            yield RelaySend, (IN if relay_nid in self.channels_in else OUT), relay_nid, rcpt_nid, msg_h
         else:
-            yield Connect, recp_nid
-            if self._needs_ping(recp_nid, current_time):
-                yield Ping, OUT, recp_nid, self._next_version()
-            self.channels_out.add(recp_nid)
-            self.last_seen[recp_nid] = current_time
-            self.queues.setdefault(recp_nid, []).append(msg_h)
+            self.last_sent[rcpt_nid] = t
+            self.channels_out.add(rcpt_nid)
+            self.last_seen[rcpt_nid] = t
+            self.queues.setdefault(rcpt_nid, []).append(msg_h)
+            yield Connect, nid2addr(rcpt_nid)
+            yield Ping, OUT, rcpt_nid, self._next_version()
+            if self.is_relay:
+                yield RelaySigNew, OUT, rcpt_nid
 
     def sig_disconnect_received(self, sender_nid):
         if sender_nid in self.channels_in:
             self.channels_in.remove(sender_nid)
         elif sender_nid in self.channels_out:
             self.channels_out.remove(sender_nid)
-            yield Disconnect, sender_nid
+            yield Disconnect, nid2addr(sender_nid)
         else:
             return
         if sender_nid in self.cl_avail_relays:
             yield self._handle_relay_down(sender_nid)
         else:
-            yield RELAY_CHECKS(self, sender_nid)
+            yield RELAY_NODEDOWN_CHECKS(self, sender_nid)
         yield NODEDOWN(self, sender_nid)
 
-    def ping_received(self, on_sock, sender_nid, version, current_time):
-        self.last_seen[sender_nid] = current_time
+    def ping_received(self, on_sock, sender_nid, version, t):
+        if on_sock == OUT and sender_nid not in self.channels_out:
+            return
+        self.last_seen[sender_nid] = t
         if on_sock == IN and sender_nid not in self.channels_in:
             self.channels_in.add(sender_nid)
             if self.is_relay:
                 yield RelaySigNew, IN, sender_nid
-            elif sender_nid in self.cl_proxied:
-                relay_nid = self.cl_proxied.pop(sender_nid)
+            elif sender_nid in self.cl_relayees:
+                relay_nid = self.cl_relayees.pop(sender_nid)
                 yield RelayNvm, (IN if relay_nid in self.channels_in else OUT), relay_nid, sender_nid
-        if on_sock == OUT and sender_nid not in self.channels_out:
-            self.channels_out.add(sender_nid)
-            if self.is_relay:
-                yield RelaySigNew, OUT, sender_nid
         inout = (IN if sender_nid in self.channels_in else OUT)
-        if self._needs_ping(sender_nid, current_time):
+        if self._needs_ping(sender_nid, t):
             yield Ping, inout, sender_nid, self._next_version()
         if sender_nid in self.queues:
             for msg_h in self.queues.pop(sender_nid):
@@ -139,21 +141,21 @@ class HubLogic(object):
                 yield NodeDown, sender_nid
         self.versions[sender_nid] = version
 
-    def message_received(self, on_sock, sender_nid, version, msg_body_bytes, current_time):
-        yield self.ping_received(on_sock, sender_nid, version, current_time)
+    def message_received(self, on_sock, sender_nid, version, msg_body_bytes, t):
+        yield self.ping_received(on_sock, sender_nid, version, t)
         if msg_body_bytes:
             yield Receive, sender_nid, msg_body_bytes
 
-    def heartbeat(self, current_time):
-        t_gone = current_time - self.heartbeat_max_silence
+    def heartbeat(self, t):
+        t_gone = t - self.heartbeat_max_silence
         for nid in (self.channels_in | self.channels_out):
-            if self.last_seen[nid] < t_gone:
+            if self.last_seen[nid] <= t_gone:
                 if nid in self.channels_out:
                     self.channels_out.remove(nid)
-                    yield Disconnect, nid
+                    yield Disconnect, nid2addr(nid)
                 else:
                     self.channels_in.remove(nid)
-                RELAY_CHECKS(self, nid)
+                yield RELAY_NODEDOWN_CHECKS(self, nid)
                 if self.is_relay or not self.cl_avail_relays:
                     yield NODEDOWN(self, nid)
                 elif nid in self.cl_avail_relays:
@@ -162,54 +164,63 @@ class HubLogic(object):
                 else:
                     relay_nid = random.choice(self.cl_avail_relays.keys())
                     self.cl_avail_relays[relay_nid].add(nid)
-                    self.cl_proxied[nid] = relay_nid
+                    self.cl_relayees[nid] = relay_nid
                     yield RelayConnect, (IN if relay_nid in self.channels_in else OUT), relay_nid, nid
             else:
-                if self._needs_ping(nid, current_time):
+                if self._needs_ping(nid, t):
                     yield Ping, (IN if nid in self.channels_in else OUT), nid, self._next_version()
+        yield NextBeat, self.heartbeat_interval
 
     def new_relay_received(self, nid):
         self.cl_avail_relays[nid] = set()
 
-    def relay_connect_received(self, requestor_nid, proxied_nid):
-        if proxied_nid in self.channels_in:
-            self.rl_relayed.setdefault(proxied_nid, set()).add(requestor_nid)
-            yield RelaySigConnected, IN, requestor_nid, proxied_nid
-        else:
-            yield RelaySigNodeDown, IN, requestor_nid, proxied_nid
+    def relay_connect_received(self, on_sock, relayer_nid, relayee_nid):
+        if on_sock == IN and relayer_nid in self.channels_in or on_sock == OUT and relayer_nid in self.channels_out:
+            if relayee_nid in self.channels_in:
+                self.rl_relayees.setdefault(relayee_nid, set()).add(relayer_nid)
+                self.rl_relayers.setdefault(relayer_nid, set()).add(relayee_nid)
+                yield RelaySigConnected, on_sock, relayer_nid, relayee_nid
+            else:
+                yield RelaySigNodeDown, on_sock, relayer_nid, relayee_nid
 
-    def relay_connected_received(self, proxied_nid):
-        relay_nid = self.cl_proxied[proxied_nid]
-        for msg_h in self.queues.pop(proxied_nid):
-            yield RelaySend, (IN if relay_nid in self.channels_in else OUT), relay_nid, proxied_nid, msg_h
+    def relay_connected_received(self, relayee_nid):
+        if relayee_nid in self.cl_relayees:
+            relay_nid = self.cl_relayees[relayee_nid]
+            for msg_h in self.queues.pop(relayee_nid):
+                yield RelaySend, (IN if relay_nid in self.channels_in else OUT), relay_nid, relayee_nid, msg_h
 
-    def relay_nodedown_received(self, relay_nid, proxied_nid):
-        if proxied_nid in self.cl_avail_relays.get(relay_nid, set()):
-            self.cl_avail_relays[relay_nid].remove(proxied_nid)
-            del self.cl_proxied[proxied_nid]
-            yield NODEDOWN(self, proxied_nid)
+    def relay_nodedown_received(self, relay_nid, relayee_nid):
+        if relayee_nid in self.cl_avail_relays.get(relay_nid, set()):
+            self.cl_avail_relays[relay_nid].remove(relayee_nid)
+            del self.cl_relayees[relayee_nid]
+            yield NODEDOWN(self, relayee_nid)
 
-    def relay_send_received(self, requestor_nid, actual_recipient_nid, actual_msg_bytes):
-        if actual_recipient_nid not in self.rl_requestors.get(requestor_nid, set()):
-            self.rl_requestors.setdefault(requestor_nid, set()).add(actual_recipient_nid)
-            self.rl_relayed.setdefault(actual_recipient_nid, set()).add(requestor_nid)
-        yield RelayForward, IN, actual_recipient_nid, requestor_nid, actual_msg_bytes
+    def relay_send_received(self, relayer_nid, relayee_nid, relayed_bytes):
+        if relayee_nid not in self.channels_in:
+            return
+        if relayee_nid not in self.rl_relayers.get(relayer_nid, set()):
+            self.rl_relayers.setdefault(relayer_nid, set()).add(relayee_nid)
+            self.rl_relayees.setdefault(relayee_nid, set()).add(relayer_nid)
+        yield RelayForward, IN, relayee_nid, relayer_nid, relayed_bytes
 
-    def relay_forwarded_received(self, actual_sender_nid, actual_msg_bytes):
-        yield Receive, actual_sender_nid, actual_msg_bytes
+    def relay_forwarded_received(self, actual_sender_nid, relayed_bytes):
+        yield Receive, actual_sender_nid, relayed_bytes
 
-    def relay_nvm_received(self, sender_nid, proxied_nid):
-        self.rl_relayed.get(proxied_nid, set()).discard(sender_nid)
-        self.rl_requestors.get(sender_nid, set()).discard(proxied_nid)
+    def relay_nvm_received(self, sender_nid, relayee_nid):
+        self.rl_relayees.get(relayee_nid, set()).discard(sender_nid)
+        self.rl_relayers.get(sender_nid, set()).discard(relayee_nid)
 
-    def ensure_connected(self, nid, current_time):
+    def ensure_connected(self, nid, t):
         # open fresh channel
-        if nid not in self.channels_in and nid not in self.channels_out and nid not in self.cl_proxied:
-            self.last_seen[nid] = current_time
+        if nid not in self.channels_in and nid not in self.channels_out and nid not in self.cl_relayees:
+            self.last_seen[nid] = t
             self.channels_out.add(nid)
             self.queues[nid] = []
-            yield Connect, nid
+            yield Connect, nid2addr(nid)
+            self.last_sent[nid] = t
             yield Ping, OUT, nid, self._next_version()
+            if self.is_relay:
+                yield RelaySigNew, OUT, nid
 
     def shutdown(self):
         for nid in (self.channels_in | self.channels_out):
@@ -220,12 +231,12 @@ class HubLogic(object):
     # private:
 
     def _handle_relay_down(self, relay_nid):
-        for proxied_nid in self.cl_avail_relays.pop(relay_nid):
-            del self.cl_proxied[proxied_nid]
-            yield NODEDOWN(self, proxied_nid)
+        for relayee_nid in self.cl_avail_relays.pop(relay_nid):
+            del self.cl_relayees[relayee_nid]
+            yield NODEDOWN(self, relayee_nid)
 
     def _needs_ping(self, nid, t):
-        ret = self.last_sent.get(nid, 0) <= t - self.heartbeat_interval
+        ret = self.last_sent.get(nid, BIG_BANG_T) <= t - self.heartbeat_interval
         if ret:
             self.last_sent[nid] = t
         return ret
@@ -236,3 +247,12 @@ class HubLogic(object):
 
     def __repr__(self):
         return "HubLogic()"
+
+
+def flatten(gen):
+    for x in gen:
+        if isinstance(x, GeneratorType):
+            for y in flatten(x):
+                yield y
+        else:
+            yield x

@@ -221,13 +221,11 @@ def wrap_globals(globals):
 
     def wrap(fn):
         @functools.wraps(fn)
-        def ret():
+        def ret(*args, **kwargs):
             # dbg("\n============================================\n")
 
             import spinoff.actor._actor
             spinoff.actor._actor.TESTING = True
-
-            Actor.reset_flags(debug=True)
 
             # TODO: once the above TODO (fresh Node for each test fn) is complete, consider making Events non-global by
             # having each Node have its own Events instance.
@@ -268,7 +266,7 @@ def wrap_globals(globals):
 
             try:
                 with ErrorCollector():
-                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 0.25, fn)
+                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 0.25, fn, *args, **kwargs)
                     idle()
                 return ret
             finally:
