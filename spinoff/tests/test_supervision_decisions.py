@@ -1,4 +1,4 @@
-from spinoff.actor.supervision import Restart, _Restart, Resume, Stop, Escalate, Default, Decision
+from spinoff.actor.supervision import Restart, _Restart, Ignore, Stop, Escalate, Default, Decision
 from spinoff.util.pattern_matching import ANY
 
 
@@ -30,7 +30,7 @@ def test():
 
     assert Restart != 'foo'
 
-    for decision in [Resume, Restart, Stop, Escalate, Default, None]:
+    for decision in [Ignore, Restart, Stop, Escalate, Default, None]:
         assert isinstance(decision, Decision), decision
 
     assert not isinstance(None, _Restart)
