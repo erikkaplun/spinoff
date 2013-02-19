@@ -43,27 +43,15 @@ class Node(object):
             raise TypeError("Node instances must be bound to a Hub")
         self._uri = Uri(name=None, parent=None, node=hub.nodeid if hub else None)
         self.guardian = Guardian(uri=self._uri, node=self, hub=hub, supervision=root_supervision)
-        self.set_hub(hub)
+        if hub:
+            from spinoff.remoting.hub import IHub
+            self.hub = IHub(hub)
         Node._all.append(self)
 
-    def set_hub(self, hub):
-        if hub:
-            from spinoff.remoting import Hub, HubWithNoRemoting
-            if not isinstance(hub, (Hub, HubWithNoRemoting)):  # pragma: no cover
-                raise TypeError("hub parameter to Guardian must be a %s.%s or a %s.%s" %
-                                (Hub.__module__, Hub.__name__,
-                                 HubWithNoRemoting.__module__, HubWithNoRemoting.__name__))
-            if hub.guardian:  # pragma: no cover
-                raise RuntimeError("Can't bind Guardian to a Hub that is already bound to another Guardian")
-            hub.guardian = self.guardian
-            self.hub = hub
+    def lookup_addr(self, addr):
+        return self.lookup(Uri.parse(addr))
 
-    def lookup(self, uri_or_addr):
-        if not isinstance(uri_or_addr, (Uri, str)):  # pragma: no cover
-            raise TypeError("Node.lookup expects a non-empty str or Uri")
-
-        uri = uri_or_addr if isinstance(uri_or_addr, Uri) else Uri.parse(uri_or_addr)
-
+    def lookup(self, uri):
         if not uri.node or uri.node == self._uri.node:
             try:
                 return self.guardian.lookup_ref(uri)
@@ -73,7 +61,7 @@ class Node(object):
                 # return a mere dead ref:
                 return Ref(cell=None, uri=uri, is_local=True)
         elif not uri.root:  # pragma: no cover
-            raise TypeError("Node can't look up a relative Uri; did you mean Node.guardian.lookup(%r)?" % (uri_or_addr,))
+            raise TypeError("Node can't look up a relative Uri; did you mean Node.guardian.lookup(%r)?" % (uri,))
         else:
             return Ref(cell=None, uri=uri, is_local=False, hub=self.hub)
 

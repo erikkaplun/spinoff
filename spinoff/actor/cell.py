@@ -24,10 +24,6 @@ from spinoff.util.pattern_matching import ANY
 from spinoff.util.pattern_matching import OR
 
 
-def _do_spawn(parent, factory, uri, hub):
-    return Cell(parent=parent, factory=factory, uri=uri, hub=hub).ref
-
-
 class _BaseCell(object):
     __metaclass__ = abc.ABCMeta
 
@@ -66,10 +62,7 @@ class _BaseCell(object):
             name = self._generate_name(factory)
             uri = self.uri / name
         assert name not in self._children  # XXX: ordering??
-        child = self._children[name] = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub)
-        # child = _do_spawn(parent=self.ref, factory=factory, uri=uri, hub=self.hub)
-        # if name in self._children:  # it might have been removed already
-        #     self._children[name] = child
+        child = self._children[name] = Cell(parent=self.ref, factory=factory, uri=uri, hub=self.hub).ref
         return child
 
     @abc.abstractmethod
