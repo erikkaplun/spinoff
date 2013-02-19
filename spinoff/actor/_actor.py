@@ -1,7 +1,6 @@
 # coding: utf-8
 from __future__ import print_function
 
-from spinoff.actor.exceptions import Unhandled
 from spinoff.actor.props import Props
 
 

@@ -7,14 +7,14 @@ import traceback
 import warnings
 import weakref
 from collections import deque
-from itertools import count, chain
+from itertools import count
 
 import gevent
 import gevent.event
 import gevent.queue
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, Error
-from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException, InvalidEscalation
+from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException
 from spinoff.actor.props import Props
 from spinoff.actor.ref import Ref
 from spinoff.actor.supervision import Decision, Ignore, Restart, Stop, Default, Escalate
