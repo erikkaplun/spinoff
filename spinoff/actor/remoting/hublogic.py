@@ -5,14 +5,15 @@ import random
 from types import GeneratorType
 
 from spinoff.util.python import enumrange
+from spinoff.util.logging import dbg
 
 
 (
-    Connect, Disconnect, SigDisconnect, Send, Ping,
+    Bind, Connect, Disconnect, SigDisconnect, Send, Ping,
     RelaySigNew, RelayConnect, RelaySigConnected, RelaySend, RelayForward, RelaySigNodeDown, RelayNvm,
     Receive, SendFailed, NodeDown, NextBeat
 ) = enumrange(
-    'Connect', 'Disconnect', 'SigDisconnect', 'Send', 'Ping',
+    'Bind', 'Connect', 'Disconnect', 'SigDisconnect', 'Send', 'Ping',
     'RelaySigNew', 'RelayConnect', 'RelaySigConnected', 'RelaySend', 'RelayForward', 'RelaySigNodeDown', 'RelayNvm',
     'Receive', 'SendFailed', 'NodeDown', 'NextBeat'
 )
@@ -21,7 +22,7 @@ BIG_BANG_T = -sys.maxint
 
 
 def nid2addr(nid):
-    return nid[:-8]
+    return nid.rsplit('|', 1)[0]
 
 
 def FLUSH(self, nid):
@@ -30,22 +31,24 @@ def FLUSH(self, nid):
 
 
 def NODEDOWN(self, nid):
-    for x in FLUSH(self, nid):
-        yield x
+    yield FLUSH(self, nid)
     yield NodeDown, nid
+    for x in [self.last_seen, self.last_sent, self.versions]:
+        x.pop(nid, None)
 
 
 def RELAY_NODEDOWN_CHECKS(self, nid):
-    if nid in self.rl_relayers:
-        for x in self.rl_relayers.pop(nid):
-            del self.rl_relayees[x]
-    if nid in self.rl_relayees:
-        for relayer_nid in self.rl_relayees.pop(nid):
-            requestors_proxied_nids = self.rl_relayers[relayer_nid]
-            requestors_proxied_nids.remove(nid)
-            if not requestors_proxied_nids:
-                del self.rl_relayers[relayer_nid]
-            yield RelaySigNodeDown, IN, relayer_nid, nid
+    for relayee_nid in self.rl_relayers.pop(nid, set()):
+        relayees_relayers = self.rl_relayees[relayee_nid]
+        relayees_relayers.remove(nid)
+        if not relayees_relayers:
+            del self.rl_relayees[relayee_nid]
+    for relayer_nid in self.rl_relayees.pop(nid, set()):
+        relayers_relayees = self.rl_relayers[relayer_nid]
+        relayers_relayees.remove(nid)
+        if not relayers_relayees:
+            del self.rl_relayers[relayer_nid]
+        yield RelaySigNodeDown, IN, relayer_nid, nid
 
 
 class HubLogic(object):
@@ -59,10 +62,11 @@ class HubLogic(object):
     initialization.
 
     """
-    def __init__(self, heartbeat_interval, heartbeat_max_silence, is_relay=False):
-        self.is_relay = is_relay
+    def __init__(self, nid, heartbeat_interval, heartbeat_max_silence, is_relay=False):
+        self.nid = nid
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_max_silence = heartbeat_max_silence
+        self.is_relay = is_relay
         self.channels_in = set()
         self.channels_out = set()
         self.last_seen = {}
@@ -72,9 +76,13 @@ class HubLogic(object):
         self.rl_relayees = {}      # relayee_nid => relayer_nid
         self.rl_relayers = {}      # relayer_nid => [relayee_nid]
         self.cl_avail_relays = {}  # relay_nid => [relayee_nid]
-        self.cl_relayees = {}       # relayee_nid => relay_nid
+        self.cl_relayees = {}      # relayee_nid => relay_nid
         # this gets incremented before being used, so we actually start from 0 not -1
         self.version = -1
+
+    def start(self):
+        yield Bind, nid2addr(self.nid)
+        yield NextBeat, self.heartbeat_interval
 
     def send_message(self, rcpt_nid, msg_h, t):
         # is it a new connection, or an existing but not yet active connection?
@@ -101,11 +109,12 @@ class HubLogic(object):
                 yield RelaySigNew, OUT, rcpt_nid
 
     def sig_disconnect_received(self, sender_nid):
-        if sender_nid in self.channels_in:
-            self.channels_in.remove(sender_nid)
-        elif sender_nid in self.channels_out:
-            self.channels_out.remove(sender_nid)
-            yield Disconnect, nid2addr(sender_nid)
+        if sender_nid in self.channels_in or sender_nid in self.channels_out:
+            if sender_nid in self.channels_in:
+                self.channels_in.remove(sender_nid)
+            if sender_nid in self.channels_out:
+                self.channels_out.remove(sender_nid)
+                yield Disconnect, nid2addr(sender_nid)
         else:
             return
         if sender_nid in self.cl_avail_relays:
@@ -124,6 +133,7 @@ class HubLogic(object):
                 yield RelaySigNew, IN, sender_nid
             elif sender_nid in self.cl_relayees:
                 relay_nid = self.cl_relayees.pop(sender_nid)
+                self.cl_avail_relays[relay_nid].remove(sender_nid)
                 yield RelayNvm, (IN if relay_nid in self.channels_in else OUT), relay_nid, sender_nid
         inout = (IN if sender_nid in self.channels_in else OUT)
         if self._needs_ping(sender_nid, t):
@@ -132,7 +142,7 @@ class HubLogic(object):
             for msg_h in self.queues.pop(sender_nid):
                 yield Send, inout, sender_nid, self._next_version(), msg_h
         else:
-            if not (version > self.versions.get(sender_nid, 0)):
+            if not (version > self.versions.get(sender_nid, -1)):
                 # version has been reset--he has restarted, so emulate a node-down-node-back-up event pair:
                 self.versions[sender_nid] = version
                 assert sender_nid not in self.queues
@@ -153,7 +163,7 @@ class HubLogic(object):
                 if nid in self.channels_out:
                     self.channels_out.remove(nid)
                     yield Disconnect, nid2addr(nid)
-                else:
+                if nid in self.channels_in:
                     self.channels_in.remove(nid)
                 yield RELAY_NODEDOWN_CHECKS(self, nid)
                 if self.is_relay or not self.cl_avail_relays:

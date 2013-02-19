@@ -9,6 +9,7 @@ from zope.interface import Interface, implements
 from zope.interface.verify import verifyClass
 from gevent import sleep, spawn, spawn_later
 from gevent.socket import gethostbyname
+from gevent.lock import RLock
 
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.remoting.hublogic import (
@@ -69,9 +70,11 @@ class Hub(object):
         self.is_relay = is_relay
         self._on_node_down = on_node_down
         self._on_receive = on_receive
-        self._logic = HubLogic(is_relay=is_relay,
+        self._lock = RLock()
+        self._logic = HubLogic(nid,
                                heartbeat_interval=self.HEARTBEAT_INTERVAL,
-                               heartbeat_max_silence=self.HEARTBEAT_MAX_SILENCE)
+                               heartbeat_max_silence=self.HEARTBEAT_MAX_SILENCE,
+                               is_relay=is_relay)
         self._ctx = zmq.Context()
         self._ctx.linger = 0
         self._insock = self._ctx.socket(zmq.ROUTER)
@@ -84,9 +87,10 @@ class Hub(object):
         self._heartbeater = None
         self._watched_nodes = {}
         self._initialized = True
+        self._start()
 
-    def start(self, nid):
-        self._execute(self._logic.start, nid)
+    def _start(self):
+        self._execute(self._logic.start)
 
     def send_message(self, nid, msg_h):
         self._execute(self._logic.send_message, nid, msg_h, time.time())
@@ -105,7 +109,7 @@ class Hub(object):
             pass
 
     def stop(self):
-        if getattr(self, '_heartbeater', None):
+        if getattr(self, '_heartbeater', _DELETED) is not _DELETED:
             self._heartbeater.kill()
             self._heartbeater = _DELETED
         if getattr(self, '_listener_out', None):
@@ -145,7 +149,7 @@ class Hub(object):
             elif msg_header == SIG_RELAY_CONNECT:
                 execute(self._logic.relay_connect_received, on_sock, relayer_nid=sender_nid, relayee_nid=msg_bytes)
             elif msg_header == SIG_RELAY_CONNECTED:
-                execute(self._logic.relay_connected_received, on_sock, relayee_nid=msg_bytes)
+                execute(self._logic.relay_connected_received, relayee_nid=msg_bytes)
             elif msg_header == SIG_RELAY_NODEDOWN:
                 execute(self._logic.relay_nodedown_received, relay_nid=sender_nid, relayee_nid=msg_bytes)
             elif msg_header == SIG_RELAY_SEND:
@@ -159,75 +163,80 @@ class Hub(object):
             elif msg_header < MIN_VERSION_BITS:
                 raise NotImplementedError("don't know how to handle signal: %r" % (msg_header,))
             else:
-                version = struct.unpack(MSG_HEADER_FORMAT, msg_header) - MIN_VERSION_VALUE
+                version = struct.unpack(MSG_HEADER_FORMAT, msg_header)[0] - MIN_VERSION_VALUE
                 if msg_bytes:
                     execute(message_received, on_sock, sender_nid, version, msg_bytes, t())
                 else:
                     execute(ping_received, on_sock, sender_nid, version, t())
 
     def _execute(self, fn, *args, **kwargs):
-        for action in flatten(fn(*args, **kwargs)):
-            cmd = action[0]
-            if cmd not in (Ping, NextBeat):
-                dbg("%s -> %s: %s" % (fn.__name__.ljust(25), cmd, ", ".join(repr(x) for x in action[1:])))
-            if cmd is Send:
-                _, use_sock, nid, version, msg_h = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version) + msg_h.serialize()])
-            elif cmd is Receive:
-                _, sender_nid, msg_h = action
-                self._on_receive(sender_nid, msg_h)
-            elif cmd is RelaySend:
-                _, use_sock, relay_nid, relayee_nid, msg_h = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([relay_nid, SIG_RELAY_SEND + relayee_nid + '\0' + msg_h.serialize()])
-            elif cmd is RelayForward:
-                _, use_sock, recipient_nid, relayer_nid, relayed_bytes = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([recipient_nid, SIG_RELAY_FORWARDED + relayer_nid + '\0' + relayed_bytes])
-            elif cmd is Ping:
-                _, use_sock, nid, version = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version)])
-            elif cmd is NextBeat:
-                _, time_to_next = action
-                if self._heartbeater is not _DELETED:
-                    self._heartbeater = spawn_later(time_to_next, self._heartbeat)
-            elif cmd is RelaySigNew:
-                _, use_sock, nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([nid, SIG_NEW_RELAY])
-            elif cmd is RelayConnect:
-                _, use_sock, relay_nid, relayee_nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([relay_nid, SIG_RELAY_CONNECT + relayee_nid])
-            elif cmd is RelaySigConnected:
-                _, use_sock, relayer_nid, relayee_nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([relayer_nid, SIG_RELAY_CONNECTED + relayee_nid])
-            elif cmd is RelaySigNodeDown:
-                _, use_sock, relayer_nid, relayee_nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([relayer_nid, SIG_RELAY_NODEDOWN + relayee_nid])
-            elif cmd is RelayNvm:
-                _, use_sock, relay_nid, relayee_nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([relay_nid, SIG_RELAY_NVM + relayee_nid])
-            elif cmd is SendFailed:
-                _, msg_h = action
-                msg_h.send_failed()
-            elif cmd is SigDisconnect:
-                _, use_sock, nid = action
-                (self._outsock if use_sock == OUT else self._insock).send_multipart([nid, SIG_DISCONNECT])
-            elif cmd is NodeDown:
-                _, nid = action
-                for watch_handle in self._watched_nodes.pop(nid, []):
-                    self._on_node_down(watch_handle, nid)
-            elif cmd is Connect:
-                _, naddr = action
-                if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
-                    self._outsock.connect(naddr_to_zmq_endpoint(naddr))
-                    sleep(.01)
-            elif cmd is Disconnect:
-                _, naddr = action
-                if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
-                    self._outsock.disconnect(naddr_to_zmq_endpoint(naddr))
-            elif cmd is Bind:
-                _, naddr = action
-                self._insock.bind(naddr_to_zmq_endpoint(naddr))
-            else:
-                assert False, "unknown command: %r" % (cmd,)
+        g = fn(*args, **kwargs)
+        if g is None:
+            return
+        with self._lock:
+            insock_send, outsock_send, on_receive = self._insock.send_multipart, self._outsock.send_multipart, self._on_receive
+            for action in flatten(g):
+                cmd = action[0]
+                if cmd not in (Ping, NextBeat):
+                    dbg("%s -> %s: %s" % (fn.__name__.ljust(25), cmd, ", ".join(repr(x) for x in action[1:])))
+                if cmd is Send:
+                    _, use_sock, nid, version, msg_h = action
+                    (outsock_send if use_sock == OUT else insock_send)((nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version) + msg_h.serialize()))
+                elif cmd is Receive:
+                    _, sender_nid, msg_h = action
+                    on_receive(sender_nid, msg_h)
+                elif cmd is RelaySend:
+                    _, use_sock, relay_nid, relayee_nid, msg_h = action
+                    (outsock_send if use_sock == OUT else insock_send)((relay_nid, SIG_RELAY_SEND + relayee_nid + '\0' + msg_h.serialize()))
+                elif cmd is RelayForward:
+                    _, use_sock, recipient_nid, relayer_nid, relayed_bytes = action
+                    (outsock_send if use_sock == OUT else insock_send)((recipient_nid, SIG_RELAY_FORWARDED + relayer_nid + '\0' + relayed_bytes))
+                elif cmd is Ping:
+                    _, use_sock, nid, version = action
+                    (outsock_send if use_sock == OUT else insock_send)((nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version)))
+                elif cmd is NextBeat:
+                    _, time_to_next = action
+                    if self._heartbeater is not _DELETED:
+                        self._heartbeater = spawn_later(time_to_next, self._heartbeat)
+                elif cmd is RelaySigNew:
+                    _, use_sock, nid = action
+                    (outsock_send if use_sock == OUT else insock_send)((nid, SIG_NEW_RELAY))
+                elif cmd is RelayConnect:
+                    _, use_sock, relay_nid, relayee_nid = action
+                    (outsock_send if use_sock == OUT else insock_send)((relay_nid, SIG_RELAY_CONNECT + relayee_nid))
+                elif cmd is RelaySigConnected:
+                    _, use_sock, relayer_nid, relayee_nid = action
+                    (outsock_send if use_sock == OUT else insock_send)((relayer_nid, SIG_RELAY_CONNECTED + relayee_nid))
+                elif cmd is RelaySigNodeDown:
+                    _, use_sock, relayer_nid, relayee_nid = action
+                    (outsock_send if use_sock == OUT else insock_send)((relayer_nid, SIG_RELAY_NODEDOWN + relayee_nid))
+                elif cmd is RelayNvm:
+                    _, use_sock, relay_nid, relayee_nid = action
+                    (outsock_send if use_sock == OUT else insock_send)((relay_nid, SIG_RELAY_NVM + relayee_nid))
+                elif cmd is SendFailed:
+                    _, msg_h = action
+                    msg_h.send_failed()
+                elif cmd is SigDisconnect:
+                    _, use_sock, nid = action
+                    (outsock_send if use_sock == OUT else insock_send)([nid, SIG_DISCONNECT])
+                elif cmd is NodeDown:
+                    _, nid = action
+                    for watch_handle in self._watched_nodes.pop(nid, []):
+                        self._on_node_down(watch_handle, nid)
+                elif cmd is Connect:
+                    _, naddr = action
+                    if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
+                        self._outsock.connect(naddr_to_zmq_endpoint(naddr))
+                        sleep(.01)
+                elif cmd is Disconnect:
+                    _, naddr = action
+                    if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
+                        self._outsock.disconnect(naddr_to_zmq_endpoint(naddr))
+                elif cmd is Bind:
+                    _, naddr = action
+                    self._insock.bind(naddr_to_zmq_endpoint(naddr))
+                else:
+                    assert False, "unknown command: %r" % (cmd,)
 
     def _heartbeat(self):
         self._execute(self._logic.heartbeat, time.time())

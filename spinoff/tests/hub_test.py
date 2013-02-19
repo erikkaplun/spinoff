@@ -30,10 +30,10 @@ def random_bytes():
     return 'random' + str(random.randint(0, 100000))
 
 
-DEFAULT_LOGIC = lambda: HubLogic(1.0, 3.0)
-RELAY_LOGIC = lambda: HubLogic(1.0, 3.0, is_relay=True)
-NID = lambda addr: addr + '\0\0\0\0\0\0\0\0'
-UNIQUE_NID = lambda addr: addr + uuid.uudi4().bytes[:8]
+DEFAULT_LOGIC = lambda: HubLogic('me:123', 1.0, 3.0)
+RELAY_LOGIC = lambda: HubLogic('me:123', 1.0, 3.0, is_relay=True)
+NID = lambda addr: addr
+UNIQUE_NID = lambda addr: addr + '|' + uuid.uudi4().bytes[:8]
 
 
 def test_empty(t=Time, logic=DEFAULT_LOGIC):
