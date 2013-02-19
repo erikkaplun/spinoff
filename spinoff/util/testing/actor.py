@@ -14,7 +14,7 @@ from twisted.internet.defer import CancelledError, DebugInfo
 from spinoff.actor import Actor, Node
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
 from spinoff.actor.exceptions import WrappingException
-from spinoff.actor.remoting import HubWithNoRemoting
+from spinoff.remoting import HubWithNoRemoting
 from spinoff.util.async import _process_idle_calls, deferred_with
 
 from .common import deferred_result, assert_raises

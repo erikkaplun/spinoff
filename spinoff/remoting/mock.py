@@ -9,8 +9,8 @@ from zope.interface.verify import verifyClass
 
 from spinoff.actor import Node
 from spinoff.util.logging import logstring, dbg
-from spinoff.actor.remoting.hub import IHub
-from spinoff.actor.remoting.validation import _assert_valid_nodeid, _assert_valid_addr
+from spinoff.remoting.hub import IHub
+from spinoff.remoting.validation import _assert_valid_nodeid, _assert_valid_addr
 
 
 class Hub(object):

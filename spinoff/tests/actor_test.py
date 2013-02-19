@@ -16,8 +16,9 @@ from nose.tools import eq_, ok_
 from spinoff.actor import Actor, Props, Node, Ref, Uri
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
-from spinoff.actor.remoting import Hub, HubWithNoRemoting
-from spinoff.actor.remoting.mock import MockNetwork
+from spinoff.remoting import Hub, HubWithNoRemoting
+from spinoff.remoting.mock import MockNetwork
+from spinoff.remoting.hublogic import HubLogic, Connect
 from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
@@ -25,7 +26,6 @@ from spinoff.util.testing import (
     EVENT, NEXT, expect_failure, simtime, MockActor, assert_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
-from spinoff.actor.remoting.hublogic import HubLogic, Connect
 
 
 def wait(fn):

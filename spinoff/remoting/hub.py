@@ -12,7 +12,7 @@ from gevent.socket import gethostbyname
 from gevent.lock import RLock
 
 from spinoff.actor.events import Events, DeadLetter
-from spinoff.actor.remoting.hublogic import (
+from spinoff.remoting.hublogic import (
     HubLogic, Connect, Disconnect, SigDisconnect, Send, Ping,
     RelaySigNew, RelayConnect, RelaySigConnected, RelaySend, RelayForward, RelaySigNodeDown, RelayNvm,
     Receive, SendFailed, NodeDown, NextBeat, Bind, IN, OUT, flatten)

@@ -12,7 +12,7 @@ from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
 from spinoff.actor._actor import _validate_nodeid
-from spinoff.actor.remoting import Hub, HubWithNoRemoting
+from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic, dbg
 from spinoff.util.async import after
 from spinoff.util.pattern_matching import ANY

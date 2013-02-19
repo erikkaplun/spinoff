@@ -18,7 +18,7 @@ class Node(object):
     """`Node` is both a singleton instance and a class lookalike, there is thus always available a default global
     `Node` instance but it is possible to create more, non-default, instances of `Node` by simply calling it as if it
     were a class, i.e. using it as a class. This is mainly useful for testing multi-node scenarios without any network
-    involved by setting a custom `actor.remoting.Hub` to the `Node`.
+    involved by setting a custom `remoting.Hub` to the `Node`.
 
     """
     hub = None
@@ -35,7 +35,7 @@ class Node(object):
 
     @classmethod
     def make_local(cls):
-        from .remoting import HubWithNoRemoting
+        from spinoff.remoting import HubWithNoRemoting
         return cls(hub=HubWithNoRemoting())
 
     def __init__(self, hub, root_supervision=Stop):
@@ -48,7 +48,7 @@ class Node(object):
 
     def set_hub(self, hub):
         if hub:
-            from .remoting import Hub, HubWithNoRemoting
+            from spinoff.remoting import Hub, HubWithNoRemoting
             if not isinstance(hub, (Hub, HubWithNoRemoting)):  # pragma: no cover
                 raise TypeError("hub parameter to Guardian must be a %s.%s or a %s.%s" %
                                 (Hub.__module__, Hub.__name__,

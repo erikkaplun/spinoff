@@ -4,7 +4,7 @@ import random
 from nose.tools import ok_
 
 from spinoff.util.testing.actor import wrap_globals
-from spinoff.actor.remoting.hublogic import (
+from spinoff.remoting.hublogic import (
     HubLogic, Connect, Disconnect, NodeDown, Ping, Send, Receive, SendFailed, SigDisconnect,
     RelayConnect, RelaySend, RelaySigNodeDown, RelaySigConnected, RelayForward, RelaySigNew, RelayNvm,
     NextBeat, IN, OUT, flatten, nid2addr)
