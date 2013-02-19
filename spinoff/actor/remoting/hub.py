@@ -170,11 +170,13 @@ class Hub(object):
                     execute(ping_received, on_sock, sender_nid, version, t())
 
     def _execute(self, fn, *args, **kwargs):
+        sleep_amount = None
         g = fn(*args, **kwargs)
         if g is None:
             return
-        with self._lock:
-            insock_send, outsock_send, on_receive = self._insock.send_multipart, self._outsock.send_multipart, self._on_receive
+        insock_send, outsock_send, on_receive = self._insock.send_multipart, self._outsock.send_multipart, self._on_receive
+        assert self._lock.acquire(blocking=False)  # no locking with -O
+        try:
             for action in flatten(g):
                 cmd = action[0]
                 if cmd not in (Ping, NextBeat):
@@ -227,7 +229,7 @@ class Hub(object):
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
                         self._outsock.connect(naddr_to_zmq_endpoint(naddr))
-                        sleep(.01)
+                        sleep_amount = .01  # if we avoid context switches inside the loop, we don't need to use locks
                 elif cmd is Disconnect:
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
@@ -237,6 +239,10 @@ class Hub(object):
                     self._insock.bind(naddr_to_zmq_endpoint(naddr))
                 else:
                     assert False, "unknown command: %r" % (cmd,)
+        finally:
+            assert self._lock.release() or True  # no locking with -O
+        if sleep_amount:
+            sleep(sleep_amount)
 
     def _heartbeat(self):
         self._execute(self._logic.heartbeat, time.time())
