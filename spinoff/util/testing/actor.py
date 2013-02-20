@@ -164,7 +164,7 @@ def test_errorcollector_can_be_used_with_assert_raises():
 
 
 @contextmanager
-def expect_failure(exc, message=None, timeout=0.1):
+def expect_failure(exc, message=None, timeout=None):
     with assert_raises(exc, message=message, timeout=timeout) as basket:
         with ErrorCollector():
             yield basket
@@ -182,7 +182,7 @@ class DebugActor(object):
 
 
 @contextmanager
-def assert_one_event(ev, timeout=0.1):
+def assert_one_event(ev, timeout=None):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     try:
         yield
