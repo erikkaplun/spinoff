@@ -270,7 +270,6 @@ def wrap_globals(globals):
                     idle()
                 return ret
             finally:
-                Node.stop_all()
                 _process_idle_calls()
                 check_memleaks()
         return ret
