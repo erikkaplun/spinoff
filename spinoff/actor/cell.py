@@ -62,7 +62,7 @@ class _BaseCell(object):
             name = self._generate_name(factory)
             uri = self.uri / name
         assert name not in self._children  # XXX: ordering??
-        child = self._children[name] = Cell(parent=self.ref, factory=factory, uri=uri, hub=self.hub).ref
+        child = self._children[name] = Cell(parent=self.ref, factory=factory, uri=uri, node=self.node).ref
         return child
 
     @abc.abstractmethod
@@ -117,7 +117,7 @@ class _BaseCell(object):
 
 class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     uri = None
-    hub = None
+    node = None
     impl = None
     proc = None
     stash = None
@@ -131,13 +131,13 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     watchers = None
     watchees = None
 
-    def __init__(self, parent, factory, uri, hub):
+    def __init__(self, parent, factory, uri, node):
         if not callable(factory):  # pragma: no cover
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.factory = factory
         self.parent = parent
         self.uri = uri
-        self.hub = hub
+        self.node = node
         self.queue = gevent.queue.Queue()
         self.inbox = deque()
         self.worker = gevent.spawn(self.work)
@@ -480,7 +480,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 if other not in self.watchees:
                     self.watchees.add(other)
                     if not other.is_local:
-                        self.hub.watch_node(other.uri.node, report_to=self.ref)
+                        self.node.watch_node(other.uri.node, self.ref)
                     other << ('_watched', self.ref)
         return actors[0] if len(actors) == 1 else actors
 
@@ -499,7 +499,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         if not silent:
             other << ('_unwatched', self.ref)
         if not other.is_local:
-            self.hub.unwatch_node(other.uri.node, report_to=self.ref)
+            self.node.unwatch_node(other.uri.node, report_to=self.ref)
 
     def _watched(self, other):
         if not self.watchers:

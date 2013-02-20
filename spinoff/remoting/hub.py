@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import time
 import struct
-import cPickle as pickle
 
 import zmq.green as zmq
 from zope.interface import Interface, implements
@@ -11,7 +10,6 @@ from gevent import sleep, spawn, spawn_later
 from gevent.socket import gethostbyname
 from gevent.lock import RLock
 
-from spinoff.actor.events import Events, DeadLetter
 from spinoff.remoting.hublogic import (
     HubLogic, Connect, Disconnect, SigDisconnect, Send, Ping,
     RelaySigNew, RelayConnect, RelaySigConnected, RelaySend, RelayForward, RelaySigNodeDown, RelayNvm,
@@ -57,24 +55,19 @@ class Hub(object):
     """
     implements(IHub)
 
-    __doc_HEARTBEAT_INTERVAL__ = (
-        "Time on seconds after which to send out a heartbeat signal to all known nodes. Regular messages can be "
-        "subsituted by the framework for heartbeats to save network bandwidth.")
-    HEARTBEAT_INTERVAL = 1.0
-    HEARTBEAT_MAX_SILENCE = 3.0
-
     FAKE_INACCESSIBLE_NADDRS = set()
 
     def __init__(self, nid, is_relay=False, on_node_down=lambda ref, nid: ref << ('_node_down', nid),
-                 on_receive=lambda sender_nid, msg_h: print("deliver", msg_h, "from", sender_nid)):
+                 on_receive=lambda sender_nid, msg_h: print("deliver", msg_h, "from", sender_nid),
+                 heartbeat_interval=1.0, heartbeat_max_silence=3.0):
+        self.nid = nid
         self.is_relay = is_relay
         self._on_node_down = on_node_down
         self._on_receive = on_receive
         self._lock = RLock()
-        self._logic = HubLogic(nid,
-                               heartbeat_interval=self.HEARTBEAT_INTERVAL,
-                               heartbeat_max_silence=self.HEARTBEAT_MAX_SILENCE,
-                               is_relay=is_relay)
+        self._logic = HubLogic(nid, is_relay=is_relay,
+                               heartbeat_interval=heartbeat_interval,
+                               heartbeat_max_silence=heartbeat_max_silence)
         self._ctx = zmq.Context()
         self._ctx.linger = 0
         self._insock = self._ctx.socket(zmq.ROUTER)
@@ -131,7 +124,7 @@ class Hub(object):
         self.stop()
 
     def __repr__(self):
-        return "Hub(%s)" % (self._insock.identity,)
+        return "Hub(%s)" % (self.nid,)
 
     def _listen(self, sock, on_sock):
         recv, t, execute, message_received, ping_received, sig_disconnect_received = (
@@ -170,23 +163,21 @@ class Hub(object):
                     execute(ping_received, on_sock, sender_nid, version, t())
 
     def _execute(self, fn, *args, **kwargs):
-        sleep_amount = None
         g = fn(*args, **kwargs)
         if g is None:
             return
         insock_send, outsock_send, on_receive = self._insock.send_multipart, self._outsock.send_multipart, self._on_receive
-        assert self._lock.acquire(blocking=False)  # no locking with -O
-        try:
+        with self._lock:
             for action in flatten(g):
                 cmd = action[0]
-                if cmd not in (Ping, NextBeat):
+                if cmd not in (NextBeat,):
                     dbg("%s -> %s: %s" % (fn.__name__.ljust(25), cmd, ", ".join(repr(x) for x in action[1:])))
                 if cmd is Send:
                     _, use_sock, nid, version, msg_h = action
                     (outsock_send if use_sock == OUT else insock_send)((nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version) + msg_h.serialize()))
                 elif cmd is Receive:
-                    _, sender_nid, msg_h = action
-                    on_receive(sender_nid, msg_h)
+                    _, sender_nid, msg_bytes = action
+                    on_receive(sender_nid, msg_bytes)
                 elif cmd is RelaySend:
                     _, use_sock, relay_nid, relayee_nid, msg_h = action
                     (outsock_send if use_sock == OUT else insock_send)((relay_nid, SIG_RELAY_SEND + relayee_nid + '\0' + msg_h.serialize()))
@@ -229,7 +220,7 @@ class Hub(object):
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
                         self._outsock.connect(naddr_to_zmq_endpoint(naddr))
-                        sleep_amount = .01  # if we avoid context switches inside the loop, we don't need to use locks
+                    sleep(0.001)
                 elif cmd is Disconnect:
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
@@ -239,10 +230,6 @@ class Hub(object):
                     self._insock.bind(naddr_to_zmq_endpoint(naddr))
                 else:
                     assert False, "unknown command: %r" % (cmd,)
-        finally:
-            assert self._lock.release() or True  # no locking with -O
-        if sleep_amount:
-            sleep(sleep_amount)
 
     def _heartbeat(self):
         self._execute(self._logic.heartbeat, time.time())
@@ -252,14 +239,3 @@ verifyClass(IHub, Hub)
 def naddr_to_zmq_endpoint(nid):
     host, port = nid.split(':')
     return 'tcp://%s:%s' % (gethostbyname(host), port)
-
-
-class Msg(object):
-    def __init__(self, ref, msg):
-        self.ref, self.msg = ref, msg
-
-    def serialize(self):
-        return pickle.dumps((self.ref.uri.path, self.msg), protocol=2)
-
-    def send_failed(self):
-        Events.log(DeadLetter(self.ref, self.msg))

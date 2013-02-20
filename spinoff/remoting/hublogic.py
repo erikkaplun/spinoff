@@ -246,7 +246,7 @@ class HubLogic(object):
             yield NODEDOWN(self, relayee_nid)
 
     def _needs_ping(self, nid, t):
-        ret = self.last_sent.get(nid, BIG_BANG_T) <= t - self.heartbeat_interval
+        ret = self.last_sent.get(nid, BIG_BANG_T) <= t - self.heartbeat_interval / 3.0
         if ret:
             self.last_sent[nid] = t
         return ret

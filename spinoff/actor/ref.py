@@ -37,7 +37,7 @@ class _BaseRef(object):
         # non-local or dead
         else:
             return Ref(cell=None, uri=self.uri / next, is_local=self.is_local,
-                       hub=None if self.is_local else self.hub)
+                       node=None if self.is_local else self.node)
 
     def __lshift__(self, message):
         """A fancy looking alias to `_BaseRef.stop`, which in addition also supports chaining.
@@ -109,17 +109,17 @@ class Ref(_BaseRef):
     # currently dead refs are just Refs with no cell and is_local=True
     is_local = True
     uri = None
-    hub = None
+    node = None
 
-    def __init__(self, cell, uri, is_local=True, hub=None):
+    def __init__(self, cell, uri, is_local=True, node=None):
         assert is_local or not cell
-        assert not hub if is_local else hub, "remote refs must have a hub"
+        assert not node if is_local else node, "remote refs must have a node"
         assert uri is None or isinstance(uri, Uri)
         if cell:
-            assert not hub
+            assert not node
             self._cell = cell
         self.uri = uri
-        self.hub = hub
+        self.node = node
         self.is_local = is_local
 
     def send(self, message):
@@ -127,7 +127,7 @@ class Ref(_BaseRef):
         if self._cell:
             self._cell.receive(message)
         elif not self.is_local:
-            self.hub.send(message, to_remote_actor_pointed_to_by=self)
+            self.node.send_message(message, remote_ref=self)
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
@@ -173,12 +173,12 @@ class Ref(_BaseRef):
     def __getstate__(self):
         # assert self._cell or not self.is_local, "TODO: if there is no cell and we're local, we should be returning a state that indicates a dead ref"
         # assert self.uri.node, "does not make sense to serialize a ref with no node: %r" % (self,)
-        return str(self.uri)  # if self.is_local else (str(self.uri), self.hub)
+        return str(self.uri)  # if self.is_local else (str(self.uri), self.node)
 
     def __setstate__(self, uri):
         # if it's a tuple, it's a remote `Ref` and the tuple origates from IncomingMessageUnpickler,
         # otherwise it must be just a local `Ref` being pickled and unpickled for whatever reason:
         if isinstance(uri, tuple):
             self.is_local = False
-            uri, self.hub = uri
+            uri, self.node = uri
         self.uri = Uri.parse(uri)

@@ -8,16 +8,15 @@ import weakref
 import time
 import sys
 
-from gevent import idle, sleep, GreenletExit, with_timeout, Timeout
+from gevent import idle, sleep, GreenletExit, with_timeout, Timeout, spawn
 from gevent.event import Event, AsyncResult
 from gevent.queue import Channel, Empty
 from nose.tools import eq_, ok_
 
-from spinoff.actor import Actor, Props, Node, Ref, Uri
+from spinoff.actor import Actor, Props, Node, Uri
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
 from spinoff.remoting import Hub, HubWithNoRemoting
-from spinoff.remoting.mock import MockNetwork
 from spinoff.remoting.hublogic import HubLogic, Connect
 from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
@@ -26,6 +25,7 @@ from spinoff.util.testing import (
     EVENT, NEXT, expect_failure, simtime, MockActor, assert_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
+from spinoff.util.logging import dbg
 
 
 def wait(fn):
@@ -42,7 +42,9 @@ class Observable(object):
     def __init__(self):
         self.done = Channel()
 
-    def wait_eq(self, terminator, timeout=0.1, message=None):
+    def wait_eq(self, terminator, message=None, timeout=None):
+        if self.value == terminator:
+            return
         self.terminator = terminator
         try:
             with_timeout(timeout, self.done.get)
@@ -1026,21 +1028,21 @@ def test_uri_hash():
 def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference_to_it():
     node = DummyNode()
     toplevel_actor = node.spawn(Actor, name='toplevel')
-    ok_(node.lookup('/toplevel') is toplevel_actor)
+    ok_(node.lookup_str('/toplevel') is toplevel_actor)
     ok_(node.lookup(Uri.parse('/toplevel')) is toplevel_actor)
 
     child_actor = toplevel_actor._cell.spawn(Actor, name='child')
-    ok_(node.lookup('/toplevel/child') is child_actor)
+    ok_(node.lookup_str('/toplevel/child') is child_actor)
     ok_(node.lookup(Uri.parse('/toplevel/child')) is child_actor)
 
 
 def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_to_it():
     node = DummyNode()
     toplevel_actor = node.spawn(Actor, name='toplevel')
-    ok_(node.lookup('toplevel') is toplevel_actor)
+    ok_(node.lookup_str('toplevel') is toplevel_actor)
 
     child_actor = toplevel_actor._cell.spawn(Actor, name='child')
-    ok_(node.lookup('toplevel/child') is child_actor)
+    ok_(node.lookup_str('toplevel/child') is child_actor)
     ok_(toplevel_actor / 'child' is child_actor)
 
 
@@ -2060,198 +2062,192 @@ def test_termination_message_to_dead_actor_is_discarded():
 #     test_it(packet_loss_src='watcher', packet_loss_dst='watchee')
 
 
+def deferred_cleanup(fn):
+    @functools.wraps(fn)
+    def ret(*args, **kwargs):
+        defers = []
+        try:
+            ret = fn(lambda *args: defers.extend(args), *args, **kwargs)
+        finally:
+            for defer in reversed(defers):
+                defer()
+        return ret
+    return ret
+
+
 ##
 ## REMOTING
 
-# def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node():
-#     # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
+@deferred_cleanup
+def test_actorref_remote_returns_a_ref_that_when_sent_a_message_delivers_it_on_another_node(defer):
+    # This just tests the routing logic and not heartbeat or reliability or deadletters or anything.
 
-#     # emulate a scenario in which a single node sends many messages to other nodes;
-#     # a total of NUM_NODES * NUM_ACTORS messages will be sent out.
-#     NUM_NODES = 3
-#     NUM_ACTORS_PER_NODE = 20
+    # emulate a scenario in which a single node sends many messages to other nodes;
+    # a total of NUM_NODES * NUM_ACTORS messages will be sent out.
+    NUM_NODES = 1
+    NUM_ACTORS_PER_NODE = 2
 
-#     network = MockNetwork(clock)
+    sender_node = Node(nid='localhost:20000', enable_remoting=True)
+    defer(sender_node.stop)
 
-#     sender_node = network.node('senderhost:123')
-#     ok_(not network.queue)
+    recipient_nodes = []
 
-#     recipient_nodes = []
+    for node_ix in range(NUM_NODES):
+        nid = 'localhost:2000%d' % (node_ix + 1,)
+        remote_node = Node(nid=nid, enable_remoting=True)
+        defer(remote_node.stop)
 
-#     for node_num in range(1, NUM_NODES + 1):
-#         nodeaddr = 'recphost%d:123' % node_num
-#         remote_node = network.node(nodeaddr)
+        receive_boxes = []
+        sent_msgs = []
 
-#         receive_boxes = []
-#         sent_msgs = []
+        for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
+            actor_box = obs_list()  # collects whatever the MockActor receives
+            actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num)
+            # we only care about the messages received, not the ref itself
+            receive_boxes.append(actor_box)
 
-#         for actor_num in range(1, NUM_ACTORS_PER_NODE + 1):
-#             actor_box = []  # collects whatever the MockActor receives
-#             actor = remote_node.spawn(Props(MockActor, actor_box), name='actor%d' % actor_num)
-#             # we only care about the messages received, not the ref itself
-#             receive_boxes.append(actor_box)
+            # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure> (just for debuggability)
+            msg = 'dummy-%s-%s-%s' % (nid, actor.uri.name, random.randint(1, 10000000))
+            sender_node.lookup(actor.uri) << msg
+            sent_msgs.append(msg)
 
-#             # format: dummy-<nodename>-<actorname>-<random-stuff-for-good-measure> (just for debuggability)
-#             msg = 'dummy-%s-%s-%s' % (nodeaddr, actor.uri.name, random.randint(1, 10000000))
-#             sender_node.lookup(actor.uri) << msg
-#             sent_msgs.append(msg)
+        recipient_nodes.append((sent_msgs, receive_boxes))
 
-#         recipient_nodes.append((sent_msgs, receive_boxes))
-
-#     random.shuffle(network.queue)  # for good measure
-#     network.simulate(duration=3.0)
-
-#     for sent_msgs, receive_boxes in recipient_nodes:
-#         all(eq_(receive_box, [sent_msg])
-#             for sent_msg, receive_box in zip(sent_msgs, receive_boxes))
+    for sent_msgs, receive_boxes in recipient_nodes:
+        for sent_msg, receive_box in zip(sent_msgs, receive_boxes):
+            receive_box.wait_eq(terminator=[sent_msg], timeout=None)
 
 
-# def test_transmitting_refs_and_sending_to_received_refs():
-#     # This just tests the Ref serialisation and deserialization logic.
+def test_transmitting_refs_and_sending_to_received_refs():
+    # This just tests the Ref serialisation and deserialization logic.
 
-#     @simtime
-#     def test_it(clock, make_actor1):
-#         network = MockNetwork(clock)
+    @deferred_cleanup
+    def test_it(defer, make_actor1):
+        node1 = Node(nid='localhost:20001', enable_remoting=True)
+        defer(node1.stop)
 
-#         #
-#         node1 = network.node('host1:123')
+        actor1_msgs = obs_list()
+        actor1 = make_actor1(node1, Props(MockActor, actor1_msgs))
 
-#         actor1_msgs = MockMessages()
-#         actor1 = make_actor1(node1, Props(MockActor, actor1_msgs))
+        #
+        node2 = Node(nid='localhost:20002', enable_remoting=True)
+        defer(node2.stop)
 
-#         #
-#         node2 = network.node('host2:123')
+        actor2_msgs = obs_list()
+        node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
 
-#         actor2_msgs = []
-#         node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
+        # send: node1 -> node2:
+        node1.lookup_str('localhost:20002/actor2') << ('msg-with-ref', actor1)
 
-#         # send: node1 -> node2:
-#         node1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)
+        # reply: node2 -> node1:
+        actor2_msgs.wait_eq([ANY], "should be able to send messages to explicitly constructed remote refs")
+        _, received_ref = actor2_msgs[0]
+        received_ref << ('hello', received_ref)
 
-#         network.simulate(duration=2.0)
+        actor1_msgs.wait_eq([('hello', received_ref)], "should be able to send messages to received remote refs")
 
-#         # reply: node2 -> node1:
-#         assert actor2_msgs == [ANY], "should be able to send messages to explicitly constructed remote refs"
-#         _, received_ref = actor2_msgs[0]
-#         received_ref << ('hello', received_ref)
+        # send to self without knowing it
+        (_, re_received_ref), = actor1_msgs
+        del actor1_msgs[:]
+        re_received_ref << 'to-myself'
 
-#         network.simulate(duration=2.0)
-#         assert actor1_msgs == [('hello', received_ref)], "should be able to send messages to received remote refs"
+        actor1_msgs.wait_eq(['to-myself'])
 
-#         # send to self without knowing it
-#         (_, re_received_ref), = actor1_msgs
-#         del actor1_msgs[:]
-#         re_received_ref << 'to-myself'
+    @test_it
+    def make_toplevel(node, factory):
+        return node.spawn(factory, name='actor1')
 
-#         assert actor1_msgs == ['to-myself']
+    @test_it
+    def make_non_toplevel(node, factory):
+        class Parent(Actor):
+            def pre_start(self):
+                child.set(self.spawn(factory, name='actor1'))
 
-#     @test_it
-#     def make_toplevel(node, factory):
-#         return node.spawn(factory, name='actor1')
-
-#     @test_it
-#     def make_non_toplevel(node, factory):
-#         class Parent(Actor):
-#             def pre_start(self):
-#                 child << self.spawn(factory, name='actor1')
-
-#         child = AsyncResult()
-#         node.spawn(Parent, name='parent')
-#         return child()
+        child = AsyncResult()
+        node.spawn(Parent, name='parent')
+        return child.get()
+test_transmitting_refs_and_sending_to_received_refs.timeout = 10
 
 
-# @simtime
-# def test_sending_remote_refs(clock):
-#     """Sending remote refs.
+@deferred_cleanup
+def test_sending_remote_refs(defer):
+    """Sending remote refs.
 
-#     The sender acquires a remote ref to an actor on the target and sends it to the sender, who then sends a message.
-#     to the target. It forms a triangle where 1) M obtains a reference to T, 2) sends it over to S, and then 3) S uses it
-#     to start communication with T.
+    The sender acquires a remote ref to an actor on the target and sends it to the sender, who then sends a message.
+    to the target. It forms a triangle where 1) M obtains a reference to T, 2) sends it over to S, and then 3) S uses it
+    to start communication with T.
 
-#     T ---- S
-#      \   /
-#       \ /
-#        M
+    T ---- S
+     \   /
+      \ /
+       M
 
-#     """
-#     network = MockNetwork(clock)
+    """
+    target_node = Node('localhost:20003', enable_remoting=True)
+    defer(target_node.stop)
 
-#     #
-#     target_node = network.node('target:123')
-#     target_msgs = []
-#     target_node.spawn(Props(MockActor, target_msgs), name='T')
+    target_msgs = obs_list()
+    target_node.spawn(Props(MockActor, target_msgs), name='T')
 
-#     #
-#     sender_node = network.node('sender:123')
+    #
+    sender_node = Node('localhost:20001', enable_remoting=True)
+    defer(sender_node.stop)
 
-#     class SenderActor(Actor):
-#         def receive(self, msg):
-#             assert msg == ('send-msg-to', ANY)
-#             _, target = msg
-#             target << 'helo'
-#     sender_node.spawn(SenderActor, name='S')
+    class SenderActor(Actor):
+        def receive(self, msg):
+            eq_(msg, ('send-msg-to', ANY))
+            _, target = msg
+            target << 'helo'
+    sender_node.spawn(SenderActor, name='S')
 
-#     #
-#     middle_node = network.node('middle:123')
-#     ref_to_sender = middle_node.lookup('sender:123/S')
-#     ref_to_target = middle_node.lookup('target:123/T')
-#     ref_to_sender << ('send-msg-to', ref_to_target)
+    #
+    middle_node = Node('localhost:20002', enable_remoting=True)
+    defer(middle_node.stop)
 
-#     network.simulate(duration=1.0)
+    ref_to_sender = middle_node.lookup_str('localhost:20001/S')
+    ref_to_target = middle_node.lookup_str('localhost:20003/T')
+    ref_to_sender << ('send-msg-to', ref_to_target)
 
-#     eq_(target_msgs, ['helo'])
-
-
-# @simtime
-# def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(clock):
-#     network = MockNetwork(clock)
-
-#     sender_node, _ = network.node('sendernode:123'), network.node('receivernode:123')
-
-#     noexist = sender_node.lookup('receivernode:123/non-existent-actor')
-#     noexist << 'straight-down-the-drain'
-#     with assert_one_event(RemoteDeadLetter):
-#         network.simulate(0.2)
+    target_msgs.wait_eq(['helo'])
 
 
-# ## HEARTBEAT
+@deferred_cleanup
+def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(defer):
+    sender_node, receiver_node = Node('localhost:20001', enable_remoting=True), Node('localhost:20002', enable_remoting=True)
+    defer(sender_node.stop, receiver_node.stop)
 
-# @simtime
-# def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped(clock):
-#     network = MockNetwork(clock)
-
-#     sender_node = network.node('sender:123')
-
-#     # recipient host not reachable within time limit--message dropped after `QUEUE_ITEM_LIFETIME`
-
-#     ref = sender_node.lookup('nonexistenthost:123/actor2')
-#     ref << 'bar'
-
-#     with assert_one_event(DeadLetter(ref, 'bar')):
-#         network.simulate(sender_node.hub.HEARTBEAT_MAX_SILENCE + 1.0)
+    noexist = sender_node.lookup_str('localhost:20002/non-existent-actor')
+    with assert_one_event(RemoteDeadLetter):
+        noexist << 'straight-down-the-drain'
+test_messages_sent_to_nonexistent_remote_actors_are_deadlettered.timeout = 3.0
 
 
-# @simtime
-# def test_sending_to_an_unknown_host_that_becomes_visible_in_time(clock):
-#     network = MockNetwork(clock)
+## HEARTBEAT
 
-#     node1 = network.node('host1:123')
-#     node1.hub.QUEUE_ITEM_LIFETIME = 10.0
+@deferred_cleanup
+def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped(defer):
+    sender_node = Node('localhost:20001', enable_remoting=True, hub_kwargs={'heartbeat_interval': 0.05, 'heartbeat_max_silence': 0.1})
+    defer(sender_node.stop)
+    ref = sender_node.lookup_str('localhost:23456/actor2')
+    with assert_one_event(DeadLetter(ref, 'bar')):
+        ref << 'bar'
+test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped.timeout = 40.0
 
-#     # recipient host reachable within time limit
 
-#     ref = node1.lookup('host2:123/actor1')
-#     ref << 'foo'
-#     with assert_event_not_emitted(DeadLetter):
-#         network.simulate(duration=1.0)
+def test_sending_to_an_unknown_host_that_becomes_visible_in_time():
+    # spawn(timeprinter, resolution=0.005)
+    node1 = Node('localhost:20001', enable_remoting=True, hub_kwargs={'heartbeat_interval': 0.05, 'heartbeat_max_silence': 0.5})
 
-#     node2 = network.node('host2:123')
-#     actor2_msgs = []
-#     node2.spawn(Props(MockActor, actor2_msgs), name='actor1')
+    ref = node1.lookup_str('localhost:20002/actor1')
+    with assert_event_not_emitted(DeadLetter):
+        ref << 'foo'
 
-#     network.simulate(duration=3.0)
+    sleep(0.1)
+    node2 = Node('localhost:20002', enable_remoting=True)
+    actor2_msgs = obs_list()
+    node2.spawn(Props(MockActor, actor2_msgs), name='actor1')
 
-#     assert actor2_msgs == ['foo']
+    actor2_msgs.wait_eq(['foo'])
 
 
 # @simtime
@@ -2887,7 +2883,13 @@ class MockException(Exception):
 
 
 def DummyNode():
-    return Node(hub=HubWithNoRemoting())
+    return Node('dummynode:123')
 
 
 wrap_globals(globals())
+
+
+def timeprinter(resolution=0.1):
+    while True:
+        print("*")
+        sleep(resolutionu)

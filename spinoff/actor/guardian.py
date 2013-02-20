@@ -30,16 +30,14 @@ class Guardian(_BaseCell, _BaseRef):
     node = None
     uri = None
     cell = None
-    hub = None
 
-    def __init__(self, uri, node, hub, supervision=Stop):
+    def __init__(self, uri, node, supervision=Stop):
         if supervision not in (Stop, Restart, Ignore):
             raise TypeError("Invalid supervision specified for Guardian")
         self.uri = uri
         self.node = node
         self.root = self
         self._cell = self  # for _BaseCell
-        self.hub = hub
         self.supervision = supervision
         self.all_children_stopped = None
 
