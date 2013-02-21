@@ -229,10 +229,6 @@ def wrap_globals(globals):
                     #     import os
 
                     #     def dump_chain(g_):
-                    #         def calling_test(x):
-                    #             if not isframework(x):
-                    #                 return None
-                    #         import spinoff
                     #         isframework = lambda x: type(x).__module__.startswith(spinoff.__name__)
                     #         ob.show_backrefs([g_], filename='backrefs.png', max_depth=100, highlight=isframework)
 
