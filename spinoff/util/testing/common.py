@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import types
 import warnings
 from contextlib import contextmanager
 
@@ -9,8 +10,7 @@ from nose.tools import eq_
 
 @contextmanager
 def assert_not_raises(exc_class=Exception, message=None):
-    if isinstance(exc_class, basestring):
-        message, exc_class = exc_class, Exception
+    assert issubclass(exc_class, BaseException) or isinstance(exc_class, types.ClassType)
     try:
         yield
     except exc_class as e:
@@ -19,8 +19,7 @@ def assert_not_raises(exc_class=Exception, message=None):
 
 @contextmanager
 def assert_raises(exc_class=Exception, message=None, timeout=0.1):
-    if isinstance(exc_class, basestring):
-        message, exc_class = exc_class, Exception
+    assert issubclass(exc_class, BaseException) or isinstance(exc_class, types.ClassType)
     basket = [None]
     try:
         yield basket
