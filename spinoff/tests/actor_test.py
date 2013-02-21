@@ -14,6 +14,7 @@ from gevent.queue import Channel, Empty
 from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Uri
+from spinoff.actor.ref import Ref
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
 from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
 from spinoff.remoting import Hub, HubWithNoRemoting
@@ -1976,12 +1977,12 @@ def test_termination_message_to_dead_actor_is_discarded():
 #     remote_watchee = node2.spawn(Actor, name='remote-watchee')
 
 #     network.simulate(duration=1.0)
-#     assert not received
+#     ok_(not received)
 
 #     remote_watchee.stop()
 
 #     network.simulate(duration=1.0)
-#     assert received
+#     ok_(received)
 
 
 # @simtime
@@ -2003,12 +2004,12 @@ def test_termination_message_to_dead_actor_is_discarded():
 #     remote_watchee = node2.spawn(Actor, name='remote-watchee')
 
 #     network.simulate(duration=1.0)
-#     assert not received
+#     ok_(not received)
 
 #     remote_watchee << '_restart'
 
 #     network.simulate(duration=1.0)
-#     assert not received
+#     ok_(not received)
 
 
 # @simtime
@@ -2028,7 +2029,7 @@ def test_termination_message_to_dead_actor_is_discarded():
 #     node1.spawn(Watcher)
 
 #     network.simulate(duration=2.0)
-#     assert received
+#     ok_(received)
 
 
 # @simtime
@@ -2051,13 +2052,13 @@ def test_termination_message_to_dead_actor_is_discarded():
 #         node2.spawn(Actor, name='remote-watchee')
 
 #         network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE / 2.0)
-#         assert not received
+#         ok_(not received)
 
 #         network.packet_loss(100.0,
 #                             src='tcp://' + packet_loss_src + '-host:123',
 #                             dst='tcp://' + packet_loss_dst + '-host:123')
 #         network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
-#         assert received
+#         ok_(received)
 
 #     test_it(packet_loss_src='watchee', packet_loss_dst='watcher')
 #     test_it(packet_loss_src='watcher', packet_loss_dst='watchee')
@@ -2251,30 +2252,28 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time():
     actor2_msgs.wait_eq(['foo'])
 
 
-# @simtime
-# def test_sending_stops_if_visibility_is_lost(clock):
-#     network = MockNetwork(clock)
+@deferred_cleanup
+def test_sending_stops_if_visibility_is_lost(defer):
+    node1 = Node('host1:123')
+    node2 = Node('host2:123')
+    defer(node1.stop, node2.stop)
 
-#     node1 = network.node('host1:123')
+    # set up a normal sending state first
 
-#     network.node('host2:123')
+    ref = node1.lookup_str('host2:123/actor2')
+    ref << 'foo'  # causes host2 to also start the heartbeat
 
-#     # set up a normal sending state first
+    sleep(1.0)
 
-#     ref = node1.lookup('host2:123/actor2')
-#     ref << 'foo'  # causes host2 to also start the heartbeat
+    # ok, now they both know/have seen each other; let's change that:
+    network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
+    network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
-#     network.simulate(duration=1.0)
+    # the next message should fail after 5 seconds
+    ref << 'bar'
 
-#     # ok, now they both know/have seen each other; let's change that:
-#     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-#     network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
-
-#     # the next message should fail after 5 seconds
-#     ref << 'bar'
-
-#     with assert_one_event(DeadLetter(ref, 'bar')):
-#         network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
+    with assert_one_event(DeadLetter(ref, 'bar')):
+        network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
 
 # @simtime
@@ -2304,7 +2303,7 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time():
 #         network.simulate(duration=2.0)
 
 
-# ## REMOTE NAME-TO-PORT MAPPING
+## REMOTE NAME-TO-PORT MAPPING
 
 # def test_TODO_node_identifiers_are_mapped_to_addresses_on_the_network():
 #     pass  # nodes connect to remote mappers on demand
@@ -2322,140 +2321,62 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time():
 #     pass
 
 
-# ## OPTIMIZATIONS
+## OPTIMIZATIONS
 
-# @simtime
-# def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(clock):
-#     network = MockNetwork(clock)
+@deferred_cleanup
+def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(defer):
+    # node1:
+    node1 = Node('localhost:20001', enable_remoting=True)
+    defer(node1.stop)
 
-#     # node1:
+    actor1_msgs = obs_list()
+    actor1 = node1.spawn(Props(MockActor, actor1_msgs), name='actor1')
 
-#     node1 = network.node('host1:123')
+    # node2:
+    node2 = Node('localhost:20002', enable_remoting=True)
+    defer(node2.stop)
 
-#     actor1_msgs = MockMessages()
-#     actor1 = node1.spawn(Props(MockActor, actor1_msgs), name='actor1')
+    actor2_msgs = obs_list()
+    node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
 
-#     # node2:
+    # send from node1 -> node2:
+    node1.lookup_str('localhost:20002/actor2') << ('msg-with-ref', actor1)
 
-#     node2 = network.node('host2:123')
-#     # guardian2 = Guardian(hub=hub2)
+    # reply from node2 -> node1:
+    _, received_ref = actor2_msgs.wait_eq([ANY])[0]
+    received_ref << ('msg-with-ref', received_ref)
 
-#     actor2_msgs = []
-#     node2.spawn(Props(MockActor, actor2_msgs), name='actor2')
-
-#     # send from node1 -> node2:
-#     node1.lookup('host2:123/actor2') << ('msg-with-ref', actor1)
-#     network.simulate(duration=2.0)
-
-#     # reply from node2 -> node1:
-#     _, received_ref = actor2_msgs[0]
-#     received_ref << ('msg-with-ref', received_ref)
-
-#     network.simulate(duration=2.0)
-#     (_, remote_local_ref), = actor1_msgs
-#     assert remote_local_ref.is_local
+    (_, remote_local_ref), = actor1_msgs.wait_eq([ANY])
+    ok_(remote_local_ref.is_local)
 
 
-# @simtime
-# def test_looking_up_addresses_that_actually_point_to_the_local_node_return_a_local_ref(clock):
-#     node = MockNetwork(clock).node('localhost:123')
-#     node.spawn(Actor, name='localactor')
-#     ref = node.lookup('localhost:123/localactor')
-#     assert ref.is_local
+@deferred_cleanup
+def test_looking_up_addresses_that_actually_point_to_the_local_node_return_a_local_ref(defer):
+    node = Node('localhost:20000', enable_remoting=True)
+    node.spawn(Actor, name='localactor')
+    ref = node.lookup_str('localhost:20000/localactor')
+    ok_(ref.is_local)
 
 
-# @simtime
-# def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(clock):
-#     network = MockNetwork(clock)
-#     node = network.node('localhost:123')
+@deferred_cleanup
+def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(defer):
+    node = Node('localhost:20000', enable_remoting=True)
 
-#     msgs = []
-#     node.spawn(Props(MockActor, msgs), name='localactor')
+    msgs = obs_list()
+    node.spawn(Props(MockActor, msgs), name='localactor')
 
-#     ref = Ref(cell=None, uri=Uri.parse('localhost:123/localactor'), is_local=False, hub=node.hub)
-#     ref << 'foo'
+    ref = Ref(cell=None, uri=Uri.parse('localhost:20000/localactor'), is_local=False, node=node)
+    ref << 'foo'
 
-#     network.simulate(5.0)
-#     assert msgs == ['foo']
-#     assert ref.is_local
+    msgs.wait_eq(['foo'])
+    ok_(ref.is_local)
 
-#     ref << 'bar'
-#     # no network.simulate should be needed
-#     assert msgs == ['foo', 'bar']
-
-
-# # ZMQ
-
-# def test_remoting_with_real_zeromq():
-#     from nose.twistedtools import reactor
-#     from txzmq import ZmqFactory, ZmqPushConnection, ZmqPullConnection
-
-#     class MyActor(Actor):
-#         def __init__(self, msgs, triggers):
-#             self.msgs = msgs
-#             self.triggers = triggers
-
-#         def receive(self, msg):
-#             self.msgs.append(msg)
-#             self.triggers.pop(0)()
-
-#     f1 = ZmqFactory()
-#     insock = ZmqPullConnection(f1)
-#     outsock_factory = lambda: ZmqPushConnection(f1, linger=0)
-#     node1 = Node(hub=Hub(insock, outsock_factory, '127.0.0.1:19501'))
-
-#     f2 = ZmqFactory()
-#     insock = ZmqPullConnection(f2, linger=0)
-#     outsock_factory = lambda: ZmqPushConnection(f2, linger=0)
-#     node2 = Node(hub=Hub(insock, outsock_factory, '127.0.0.1:19502'))
-
-#     yield sleep(0.001)
-
-#     actor1_msgs, actor1_triggers = MockMessages(), [Barrier(), Barrier(), Barrier()]
-#     actor1 = node1.spawn(Props(MyActor, actor1_msgs, actor1_triggers), 'actor1')
-
-#     actor2_msgs, actor2_triggers = MockMessages(), [Barrier(), Barrier(), Barrier()]
-#     node2.spawn(Props(MyActor, actor2_msgs, actor2_triggers), 'actor2')
-
-#     # simple message: @node1 => actor2@node2
-#     actor2_from_node1 = node1.lookup('127.0.0.1:19502/actor2')
-
-#     actor2_from_node1 << 'helloo!'
-#     yield actor2_triggers[0]
-#     eq_(actor2_msgs.clear(), ['helloo!'])
-
-#     # message containing actor1's ref: @node1 => actor2@node2
-#     actor2_from_node1 << actor1
-
-#     yield actor2_triggers[0]
-#     tmp = actor2_msgs.clear()
-#     eq_(tmp, [actor1])
-#     actor1_from_node2 = tmp[0]
-
-#     # message to received actor1's ref: @node2 => actor1@node1
-#     actor1_from_node2 << 'helloo2!'
-
-#     yield actor1_triggers[0]
-#     eq_(actor1_msgs.clear(), ['helloo2!'])
-
-#     # message containing the received actor1's ref to actor1 (via the same ref): @node2 => actor1@node1
-#     actor1_from_node2 << ('msg-with-ref', actor1_from_node2)
-
-#     yield actor1_triggers[0]
-#     tmp = actor1_msgs.clear()
-#     eq_(tmp, [('msg-with-ref', actor1)])
-#     _, self_ref = tmp[0]
-#     ok_(self_ref.is_local)
-#     ok_(self_ref, actor1)
-
-#     self_ref << 'hello, stranger!'
-#     eq_(actor1_msgs.clear(), ['hello, stranger!'])
-# test_remoting_with_real_zeromq.timeout = 2.0
+    ref << 'bar'
+    msgs.wait_eq(['foo', 'bar'])
 
 
 ##
 ## PROCESSES
-
 
 def test_processes_run_is_called_when_the_process_is_spawned():
     class MyProc(Actor):
