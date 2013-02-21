@@ -132,7 +132,7 @@ class Unclean(Exception):
 
 
 def test_errorcollector_can_be_used_with_assert_raises():
-    spawn = Node(hub=HubWithNoRemoting()).spawn
+    node = Node('foo:123')
 
     class MockException(Exception):
         pass
@@ -144,13 +144,16 @@ def test_errorcollector_can_be_used_with_assert_raises():
             message_received[0] = True
             raise MockException
 
-    a = spawn(MyActor)
-    with ErrorCollector():  # emulate a real actor test case
-        with assert_raises(MockException):
-            with ErrorCollector():
-                a << None
-                idle()
-                assert message_received[0]
+    try:
+        a = node.spawn(MyActor)
+        with ErrorCollector():  # emulate a real actor test case
+            with assert_raises(MockException):
+                with ErrorCollector():
+                    a << None
+                    idle()
+                    assert message_received[0]
+    finally:
+        node.stop()
 
 
 @contextmanager
