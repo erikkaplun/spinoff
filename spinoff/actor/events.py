@@ -84,10 +84,6 @@ class ErrorIgnored(Error, fields('actor', 'exc', 'tb')):
     """
 
 
-class ErrorReportingFailure(Error, fields('actor', 'exc', 'tb')):
-    """Logged when reporting an exception fails (due to what might be a bug in the framework)."""
-
-
 class _SupressedBase(LifecycleEvent):
     """Internal base class that implements the logic shared by the Suspended and Terminated events."""
     def __new__(cls, actor, reason=None):

@@ -12,7 +12,7 @@ from nose.tools import ok_, eq_
 from twisted.internet.defer import DebugInfo
 
 from spinoff.actor import Actor, Node
-from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
+from spinoff.actor.events import Events, ErrorIgnored, UnhandledError
 from spinoff.actor.exceptions import WrappingException
 from spinoff.remoting import HubWithNoRemoting
 from spinoff.util.async import _process_idle_calls
@@ -28,7 +28,7 @@ class MockActor(Actor):
 @contextmanager
 def await_failure(exc, message=None, timeout=None):
     with assert_raises(exc, message=message, timeout=timeout) as basket:
-        err = Events.consume_one((UnhandledError, ErrorIgnored, ErrorReportingFailure))
+        err = Events.consume_one((UnhandledError, ErrorIgnored))
         yield basket
         _, exc, tb = err.get()
         raise exc, None, tb
@@ -71,7 +71,7 @@ def assert_event_not_emitted(ev, during=0.001):
 
 
 class ErrorCollector(object):
-    ERROR_EVENTS = [UnhandledError, ErrorIgnored, ErrorReportingFailure]
+    ERROR_EVENTS = [UnhandledError, ErrorIgnored]
 
     stack = []
 
