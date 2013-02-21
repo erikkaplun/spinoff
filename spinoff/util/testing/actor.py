@@ -27,12 +27,15 @@ class MockActor(Actor):
 
 @contextmanager
 def expect_failure(exc, message=None, timeout=None):
-    with assert_raises(exc, message=message, timeout=timeout) as basket:
-        with ErrorCollector():
-            yield basket
-            with Timeout(timeout, exception=False):
-                while True:
-                    idle()
+    with assert_raises(exc, message=message) as basket:
+        err = Events.consume_one(UnhandledError)
+        yield basket
+        try:
+            _, exc, tb = err.get(timeout=timeout)
+        except Timeout:
+            pass
+        else:
+            raise exc, None, tb
 
 
 @contextmanager
