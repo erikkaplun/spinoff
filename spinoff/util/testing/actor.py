@@ -29,10 +29,7 @@ class MockMessages(list):
 
 class MockActor(Actor):
     def __init__(self, messages):
-        self.messages = messages
-
-    def receive(self, message):
-        self.messages.append(message)
+        self.receive = messages.append
 
 
 _ERROR_EVENTS = [UnhandledError, ErrorIgnored, ErrorReportingFailure]
