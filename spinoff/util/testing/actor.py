@@ -166,14 +166,6 @@ def expect_failure(exc, message=None, timeout=None):
                     idle()
 
 
-class DebugActor(object):
-    def __init__(self, name):
-        self.name = name
-
-    def receive(self, message):
-        print("%s: received %s" % (self.name, message))
-
-
 @contextmanager
 def assert_one_event(ev, timeout=None):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
