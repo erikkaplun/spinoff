@@ -18,18 +18,15 @@ def assert_not_raises(exc_class=Exception, message=None):
 
 
 @contextmanager
-def assert_raises(exc_class=Exception, message=None, timeout=0.1):
+def assert_raises(exc_class=Exception, message=None):
     assert issubclass(exc_class, BaseException) or isinstance(exc_class, types.ClassType)
     basket = [None]
     try:
         yield basket
-        with Timeout(timeout):
-            while True:
-                idle()
-    except Timeout:
-        raise AssertionError(message or "An exception should have been raised")
     except exc_class as e:
         basket[0] = e
+    else:
+        raise AssertionError(message or "An exception should have been raised")
 
 
 @contextmanager
