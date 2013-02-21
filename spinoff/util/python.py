@@ -116,3 +116,17 @@ def dump_method_call(name, args, kwargs):
 
 def dump_dict(d):
     return '{' + ', '.join('%r: %r' % (k, v) for k, v in d.items()) + '}'
+
+
+def deferred_cleanup(fn):
+    """Go defer style cleanups--in reality, just a convenience wrapper over try-finally"""
+    @functools.wraps(fn)
+    def ret(*args, **kwargs):
+        defers = []
+        try:
+            ret = fn(lambda *args: defers.extend(args), *args, **kwargs)
+        finally:
+            for defer in reversed(defers):
+                defer()
+        return ret
+    return ret
