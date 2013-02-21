@@ -259,7 +259,7 @@ def wrap_globals(globals):
 
             try:
                 with ErrorCollector():
-                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 0.25, fn, *args, **kwargs)
+                    ret = with_timeout(fn.timeout if hasattr(fn, 'timeout') else 0.5, fn, *args, **kwargs)
                     idle()
                 return ret
             finally:
