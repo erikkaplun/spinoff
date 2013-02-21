@@ -44,10 +44,11 @@ class Observable(object):
 
     def wait_eq(self, terminator, message=None, timeout=None):
         if self.value == terminator:
-            return
+            return self.value
         self.terminator = terminator
         try:
             with_timeout(timeout, self.done.get)
+            return self.value
         except Timeout:
             eq_(self.value, terminator, message)
 
