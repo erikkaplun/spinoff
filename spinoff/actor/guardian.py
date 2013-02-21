@@ -45,7 +45,7 @@ class Guardian(_BaseCell, _BaseRef):
     def ref(self):
         return self
 
-    def send(self, message, force_async=False):
+    def send(self, message):
         if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
             _, sender, exc, tb = message
             Events.log(UnhandledError(sender, exc, tb))
