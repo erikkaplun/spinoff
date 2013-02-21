@@ -9,15 +9,15 @@ from contextlib import contextmanager
 
 from gevent import idle, with_timeout, Timeout, sleep
 from nose.tools import ok_, eq_
-from twisted.internet.defer import CancelledError, DebugInfo
+from twisted.internet.defer import DebugInfo
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError, ErrorReportingFailure
 from spinoff.actor.exceptions import WrappingException
 from spinoff.remoting import HubWithNoRemoting
-from spinoff.util.async import _process_idle_calls, deferred_with
+from spinoff.util.async import _process_idle_calls
 
-from .common import deferred_result, assert_raises
+from .common import assert_raises
 
 
 class MockMessages(list):
