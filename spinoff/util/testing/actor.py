@@ -20,13 +20,6 @@ from spinoff.util.async import _process_idle_calls
 from .common import assert_raises
 
 
-class MockMessages(list):
-    def clear(self):
-        ret = self[:]
-        self[:] = []
-        return ret
-
-
 class MockActor(Actor):
     def __init__(self, messages):
         self.receive = messages.append
