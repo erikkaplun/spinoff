@@ -149,9 +149,13 @@ class Events(object):
             subscribers.remove(fn)
 
     def consume_one(self, event_type):
-        assert isinstance(event_type, type)
+        assert isinstance(event_type, type) or all(isinstance(x, type) for x in event_type)
         ret = AsyncResult()
-        self.consumers.setdefault(event_type, []).append(ret)
+        if hasattr(event_type, '__iter__'):
+            for x in event_type:
+                self.consumers.setdefault(x, []).append(ret)
+        else:
+            self.consumers.setdefault(event_type, []).append(ret)
         return ret
 
     def reset(self):
