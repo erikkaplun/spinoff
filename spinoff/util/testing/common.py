@@ -30,7 +30,7 @@ def assert_raises(exc_class=Exception, message=None):
 
 
 @contextmanager
-def assert_num_warnings(n, message=None, timeout=0.1):
+def expect_num_warnings(n, message=None, timeout=None):
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         yield
