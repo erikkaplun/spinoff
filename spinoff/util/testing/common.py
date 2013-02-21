@@ -40,15 +40,15 @@ def expect_num_warnings(n, message=None, timeout=None):
         eq_(len(w), n, message or "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w))))
 
 
-def assert_no_warnings(message=None):
-    return assert_num_warnings(0, message)
+def expect_no_warnings(message=None):
+    return expect_num_warnings(0, message)
 
 
-def assert_one_warning(message=None):
-    return assert_num_warnings(1, message)
+def expect_one_warning(message=None):
+    return expect_num_warnings(1, message)
 
 
-swallow_one_warning = assert_one_warning
+swallow_one_warning = expect_one_warning
 
 
 class MockFunction(object):
