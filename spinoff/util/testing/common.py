@@ -4,7 +4,7 @@ import types
 import warnings
 from contextlib import contextmanager
 
-from gevent import idle, Timeout
+from gevent import idle, Timeout, sleep
 from nose.tools import eq_
 
 
@@ -40,8 +40,13 @@ def expect_num_warnings(n, message=None, timeout=None):
         eq_(len(w), n, message or "expected %s warnings but found %s: %s" % (n, len(w), ', '.join(map(str, w))))
 
 
-def expect_no_warnings(message=None):
-    return expect_num_warnings(0, message)
+@contextmanager
+def expect_no_warnings(during, message=None):
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        yield
+        sleep(during + 0.001)  # + 0.001 so that warnings occuring exactly in `during` seconds would be noticed
+        eq_(len(w), 0, message or "expected no warnings but found %s: %s" % (len(w), ', '.join(map(str, w))))
 
 
 def expect_one_warning(message=None):
