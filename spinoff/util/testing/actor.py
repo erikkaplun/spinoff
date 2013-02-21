@@ -39,7 +39,7 @@ def expect_failure(exc, message=None, timeout=None):
 
 
 @contextmanager
-def assert_one_event(ev, timeout=None):
+def expect_one_event(ev, timeout=None):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     yield
     try:
@@ -56,11 +56,11 @@ def assert_one_event(ev, timeout=None):
 
 
 @contextmanager
-def assert_event_not_emitted(ev, during=0.001):
+def expect_event_not_emitted(ev, during=0.001):
     result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
     yield
     sleep(during)
-    ok_(not result.ready() or result.get() != ev,
+    ok_(not result.ready() or (not isinstance(result.get(), ev) if isinstance(ev, type) else result.get() != ev),
         "Event %s should not have been emitted" % (" of type %s" % (ev.__name__,) if isinstance(ev, type) else ev,))
 
 
