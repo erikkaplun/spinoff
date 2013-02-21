@@ -1,85 +1,10 @@
 from __future__ import print_function
 
-import time
 import warnings
 from contextlib import contextmanager
-from functools import wraps
 
 from gevent import idle, Timeout
 from nose.tools import eq_
-from twisted.internet.defer import Deferred
-from twisted.internet.task import Clock
-
-from spinoff.util.async import CancelledError
-
-
-def simtime(fn):
-    @wraps(fn)
-    def wrap(*args, **kwargs):
-        clock = Clock()
-        from twisted import internet
-        oldreactor = internet.reactor
-        internet.reactor = clock
-        try:
-            fn(clock, *args, **kwargs)
-        finally:
-            internet.reactor = oldreactor
-    return wrap
-
-
-def deferred(f):
-    """This is almost exactly the same as nose.twistedtools.deferred, except it allows one to have simulated time in
-    their test code by passing in a `Clock` instance. That `Clock` instance will be `advance`d as long as there are
-    any deferred calls bound to it.
-
-    """
-    @wraps(f)
-    def ret():
-        error = [None]
-
-        clock = Clock()
-
-        d = f(clock)
-
-        @d.addErrback
-        def on_error(f):
-            error[0] = f
-
-        while True:
-            time_to_wait = max([0] + [call.getTime() - clock.seconds() for call in clock.getDelayedCalls()])
-            if time_to_wait == 0:
-                break
-            else:
-                clock.advance(time_to_wait)
-
-        if error[0]:
-            error[0].raiseException()
-
-    return ret
-
-
-def immediate(d):
-    assert d.called
-    return d
-
-
-def deferred_result(d):
-    ret = [None]
-    exc = [None]
-    if isinstance(d, Deferred):
-        d = immediate(d)
-        d.addCallback(lambda result: ret.__setitem__(0, result))
-        d.addErrback(lambda f: exc.__setitem__(0, f))
-        if exc[0]:
-            exc[0].raiseException()
-        return ret[0]
-    else:
-        return d
-
-
-def cancel_deferred(d):
-    d.addErrback(lambda f: f.trap(CancelledError))
-    d.cancel()
 
 
 @contextmanager

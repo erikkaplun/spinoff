@@ -25,10 +25,54 @@ class MockActor(Actor):
         self.receive = messages.append
 
 
-_ERROR_EVENTS = [UnhandledError, ErrorIgnored, ErrorReportingFailure]
+@contextmanager
+def await_failure(exc, message=None, timeout=None):
+    with assert_raises(exc, message=message, timeout=timeout) as basket:
+        err = Events.consume_one((UnhandledError, ErrorIgnored, ErrorReportingFailure))
+        yield basket
+        _, exc, tb = err.get()
+        raise exc, None, tb
+
+
+@contextmanager
+def expect_failure(exc, message=None, timeout=None):
+    with assert_raises(exc, message=message, timeout=timeout) as basket:
+        with ErrorCollector():
+            yield basket
+            with Timeout(timeout, exception=False):
+                while True:
+                    idle()
+
+
+@contextmanager
+def assert_one_event(ev, timeout=None):
+    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
+    yield
+    try:
+        result = result.get(timeout=timeout)
+    except Timeout:
+        ok_(False,
+            "Event %r should have been emitted but was not" % (ev,)
+            if not isinstance(ev, type) else
+            "Event of type %s should have been emitted but was not" % (ev.__name__,))
+    if isinstance(ev, type):
+        ok_(isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__))
+    else:
+        eq_(result, ev, "Event %r should have been emitted but %s was" % (ev, result))
+
+
+@contextmanager
+def assert_event_not_emitted(ev, during=0.001):
+    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
+    yield
+    sleep(during)
+    ok_(not result.ready() or result.get() != ev,
+        "Event %s should not have been emitted" % (" of type %s" % (ev.__name__,) if isinstance(ev, type) else ev,))
 
 
 class ErrorCollector(object):
+    ERROR_EVENTS = [UnhandledError, ErrorIgnored, ErrorReportingFailure]
+
     stack = []
 
     def __init__(self):
@@ -40,12 +84,12 @@ class ErrorCollector(object):
 
     @classmethod
     def subscribe(cls):
-        for event_type in _ERROR_EVENTS:
+        for event_type in ErrorCollector.ERROR_EVENTS:
             Events.subscribe(event_type, ErrorCollector.collect)
 
     @classmethod
     def unsubscribe(cls):
-        for event_type in _ERROR_EVENTS:
+        for event_type in ErrorCollector.ERROR_EVENTS:
             Events.unsubscribe(event_type, ErrorCollector.collect)
 
     def on_event(self, event):
@@ -154,42 +198,6 @@ def test_errorcollector_can_be_used_with_assert_raises():
                     assert message_received[0]
     finally:
         node.stop()
-
-
-@contextmanager
-def expect_failure(exc, message=None, timeout=None):
-    with assert_raises(exc, message=message, timeout=timeout) as basket:
-        with ErrorCollector():
-            yield basket
-            with Timeout(timeout, exception=False):
-                while True:
-                    idle()
-
-
-@contextmanager
-def assert_one_event(ev, timeout=None):
-    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
-    yield
-    try:
-        result = result.get(timeout=timeout)
-    except Timeout:
-        ok_(False,
-            "Event %r should have been emitted but was not" % (ev,)
-            if not isinstance(ev, type) else
-            "Event of type %s should have been emitted but was not" % (ev.__name__,))
-    if isinstance(ev, type):
-        ok_(isinstance(result, ev), "Event of type %s.%s should have been emitted but was not" % (ev.__module__, ev.__name__))
-    else:
-        eq_(result, ev, "Event %r should have been emitted but %s was" % (ev, result))
-
-
-@contextmanager
-def assert_event_not_emitted(ev, during=0.001):
-    result = Events.consume_one(type(ev) if not isinstance(ev, type) else ev)
-    yield
-    sleep(during)
-    ok_(not result.ready() or result.get() != ev,
-        "Event %s should not have been emitted" % (" of type %s" % (ev.__name__,) if isinstance(ev, type) else ev,))
 
 
 def wrap_globals(globals):
