@@ -89,13 +89,16 @@ class Node(object):
         Events.log(RemoteDeadLetter(ref, msg, from_))
 
     def stop(self):
-        self.guardian.stop()
+        if getattr(self, 'guardian', None):
+            self.guardian.stop()
+            self.guardian = None
         # TODO: just make the node send a special notification to other nodes, so as to avoid needless sending of many
         # small termination messages:
         # if not _actor.TESTING:  # XXX: this might break some (future) tests that test termination messaging
             # gevent.sleep(.1)  # let actors send termination messages
-        self._hub.stop()
-        self._hub = None
+        if getattr(self, '_hub', None):
+            self._hub.stop()
+            self._hub = None
 
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Node cannot be serialized")
