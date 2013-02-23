@@ -63,6 +63,12 @@ class Node(object):
         # dbg(repr(message), "->", remote_path, "@", rcpt_nid)
         self._hub.send_message(remote_ref.uri.node, _Msg(remote_ref, message))
 
+    def watch_node(self, nid, watcher):
+        self._hub.watch_node(nid, watcher)
+
+    def unwatch_node(self, nid, watcher):
+        self._hub.unwatch_node(nid, watcher)
+
     def _on_receive(self, sender_nid, msg_bytes):
         local_path, message = IncomingMessageUnpickler(self, StringIO(msg_bytes)).load()
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
