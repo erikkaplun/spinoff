@@ -547,9 +547,6 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         return "<cell:%s@%s>" % (type(self.impl).__name__ if self.impl else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__), self.uri.path,)
 
 
-# TODO: replace _resume with _ignore in supervision
-
-
 def default_supervise(exc):
     if isinstance(exc, CreateFailed):
         return Stop
