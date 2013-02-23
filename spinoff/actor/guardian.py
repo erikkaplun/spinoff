@@ -81,7 +81,7 @@ class Guardian(_BaseCell, _BaseRef):
             try:
                 self.all_children_stopped.get(timeout=3.0)
             except gevent.Timeout:  # pragma: no cover
-                assert False, "actors %r refused to stop" % (self.children,)
+                raise RuntimeError("actors %r refused to stop" % (self.children,))
                 # TODO: force-stop
 
     def __getstate__(self):  # pragma: no cover
