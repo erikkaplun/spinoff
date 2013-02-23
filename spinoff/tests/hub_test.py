@@ -85,15 +85,15 @@ def test_sig_disconnect_while_still_connecting(t=Time, logic=DEFAULT_LOGIC, nid=
 def test_sending_heartbeat(t=Time, logic=DEFAULT_LOGIC, nid=NID('kaamel:123')):
     t, logic = test_successful_connect(t, logic)
     # unndeeded heartbeat not emitted
-    emits_(logic.heartbeat(t=t.advance(by=.5)), [(NextBeat, 1.0)])
+    emits_(logic.heartbeat(t=t.advance(by=.2)), [(NextBeat, 1.0)])
     # heartbeat received
     emits_(logic.ping_received(OUT, nid, 1, t=t.advance(by=.5)), [(Ping, OUT, nid, ANY)])
     # heartbeat not needed
-    emits_(logic.heartbeat(t=t.advance(by=.5)), [(NextBeat, 1.0)])
+    emits_(logic.heartbeat(t=t.advance(by=.2)), [(NextBeat, 1.0)])
     # heartbeat received
     emits_(logic.ping_received(OUT, nid, 2, t=t.advance(by=.5)), [(Ping, OUT, nid, ANY)])
     # heartbeat not needed
-    emits_(logic.heartbeat(t=t.advance(by=.5)), [(NextBeat, 1.0)])
+    emits_(logic.heartbeat(t=t.advance(by=.2)), [(NextBeat, 1.0)])
     # heartbeat needed
     emits_(logic.heartbeat(t=t.advance(by=1.0)), [(Ping, OUT, nid, ANY), (NextBeat, 1.0)])
     return t, logic
