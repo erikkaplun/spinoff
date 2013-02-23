@@ -8,9 +8,9 @@ import weakref
 import time
 import sys
 
-from gevent import idle, sleep, GreenletExit, with_timeout, Timeout, spawn
+from gevent import idle, sleep, GreenletExit, with_timeout, Timeout
 from gevent.event import Event, AsyncResult
-from gevent.queue import Channel, Empty
+from gevent.queue import Channel, Empty, Queue
 from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Uri
@@ -22,11 +22,12 @@ from spinoff.remoting.hublogic import HubLogic, Connect
 from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import (
-    assert_raises, assert_one_warning, swallow_one_warning, MockMessages, assert_one_event, EvSeq,
-    EVENT, NEXT, expect_failure, simtime, MockActor, assert_event_not_emitted,)
+    assert_raises, expect_one_warning, expect_one_event,
+    expect_failure, MockActor, expect_event_not_emitted,)
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
 from spinoff.util.logging import dbg
+from spinoff.util.python import deferred_cleanup
 
 
 def wait(fn):
@@ -95,25 +96,51 @@ class obs_count(Observable):
 
 
 ##
+## GC
+
+def test_node_gc():
+    node1 = Node(nid='localhost:20001', enable_remoting=False)
+    ref = weakref.ref(node1)
+    node1.stop()
+    node1 = None
+    gc.collect()
+    ok_(not ref())
+
+    node2 = Node(nid='localhost:20002', enable_remoting=True)
+    ref = weakref.ref(node2)
+    node2.stop()
+    node2 = None
+    gc.collect()
+    ok_(not ref())
+
+
+##
 ## SENDING & RECEIVING
 
-def test_sent_message_is_received():
+@deferred_cleanup
+def test_sent_message_is_received(defer):
     # Trivial send and receive.
     messages = obs_list()
-    a = DummyNode().spawn(Props(MockActor, messages))
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Props(MockActor, messages))
     a << 'foo'
     messages.wait_eq(['foo'])
 
 
-def test_sending_operator_is_chainable():
+@deferred_cleanup
+def test_sending_operator_is_chainable(defer):
     # Trivial send and receive using the << operator.
     messages = obs_list()
-    a = DummyNode().spawn(Props(MockActor, messages))
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Props(MockActor, messages))
     a << 'foo' << 'bar'
     messages.wait_eq(['foo', 'bar'])
 
 
-def test_receive_of_the_same_actor_never_executes_concurrently():
+@deferred_cleanup
+def test_receive_of_the_same_actor_never_executes_concurrently(defer):
     # Receive of the same actor is never concurrent.
     #
     # It is guaranteed that an actor that is processing
@@ -129,8 +156,10 @@ def test_receive_of_the_same_actor_never_executes_concurrently():
             else:
                 receive_called.incr()
 
+    node = DummyNode()
+    defer(node.stop)
     receive_called = obs_count()
-    DummyNode().spawn(MyActor) << 'init'
+    node.spawn(MyActor) << 'init'
     receive_called.wait_eq(2)
 
     #
@@ -142,40 +171,51 @@ def test_receive_of_the_same_actor_never_executes_concurrently():
 
     receive_called = obs_count()
     unblocked = Event()
-    DummyNode().spawn(MyActor2) << None << None
+    node = DummyNode()
+    node.spawn(MyActor2) << None << None
     receive_called.wait_eq(1)
     unblocked.set()
     receive_called.wait_eq(2)
 
 
-def test_unhandled_message_is_reported():
+@deferred_cleanup
+def test_unhandled_message_is_reported(defer):
     # Unhandled messages are reported to Events
     class MyActor(Actor):
         def receive(self, _):
             raise Unhandled
-    a = DummyNode().spawn(MyActor)
-    with assert_one_event(UnhandledMessage(a, 'foo')):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyActor)
+    with expect_one_event(UnhandledMessage(a, 'foo')):
         a << 'foo'
 
 
-def test_unhandled_message_to_guardian_is_also_reported():
-    guardian = DummyNode().guardian
-    with assert_one_event(UnhandledMessage(guardian, 'foo')):
+@deferred_cleanup
+def test_unhandled_message_to_guardian_is_also_reported(defer):
+    node = DummyNode()
+    defer(node.stop)
+    guardian = node.guardian
+    with expect_one_event(UnhandledMessage(guardian, 'foo')):
         guardian << 'foo'
 
 
-def test_with_no_receive_method_all_messages_are_unhandled():
-    spawn = DummyNode().spawn
-    a = spawn(Actor)
-    with assert_one_event(UnhandledMessage(a, 'dummy')):
+@deferred_cleanup
+def test_with_no_receive_method_all_messages_are_unhandled(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
+    with expect_one_event(UnhandledMessage(a, 'dummy')):
         a << 'dummy'
 
 
 ##
 ## SPAWNING
 
-def test_spawning():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_spawning(defer):
+    node = DummyNode()
+    defer(node.stop)
     init_called, actor_spawned = Event(), Event()
 
     class MyActor(Actor):
@@ -185,15 +225,17 @@ def test_spawning():
         def pre_start(self):
             actor_spawned.set()
 
-    spawn(MyActor)
+    node.spawn(MyActor)
     ok_(not init_called.is_set())
     ok_(not actor_spawned.is_set())
     actor_spawned.wait()
     ok_(init_called.is_set())
 
 
-def test_spawning_a_toplevel_actor_assigns_guardian_as_its_parent():
+@deferred_cleanup
+def test_spawning_a_toplevel_actor_assigns_guardian_as_its_parent(defer):
     node = DummyNode()
+    defer(node.stop)
     spawn = node.spawn
     pre_start_called = Event()
 
@@ -206,8 +248,10 @@ def test_spawning_a_toplevel_actor_assigns_guardian_as_its_parent():
     pre_start_called.wait()
 
 
-def test_spawning_child_actor_assigns_the_spawner_as_parent():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_spawning_child_actor_assigns_the_spawner_as_parent(defer):
+    node = DummyNode()
+    defer(node.stop)
     childs_parent = AsyncResult()
 
     class MyActor(Actor):
@@ -218,29 +262,33 @@ def test_spawning_child_actor_assigns_the_spawner_as_parent():
         def receive(self, _):
             childs_parent.set(self._parent)
 
-    a = spawn(MyActor)
+    a = node.spawn(MyActor)
     a << None
     ok_(childs_parent.get() is a)
 
 
-def test_spawning_returns_an_immediately_usable_ref():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_spawning_returns_an_immediately_usable_ref(defer):
+    node = DummyNode()
+    defer(node.stop)
     other_receive_called = Event()
 
     class MyActor(Actor):
         def receive(self, _):
-            spawn(Other) << 'foo'
+            node.spawn(Other) << 'foo'
 
     class Other(Actor):
         def receive(self, _):
             other_receive_called.set()
 
-    spawn(MyActor) << None
+    node.spawn(MyActor) << None
     other_receive_called.wait(), "Spawned actor should have received a message"
 
 
-def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available():
+@deferred_cleanup
+def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(defer):
     node = DummyNode()
+    defer(node.stop)
     message_received = Event()
 
     class MyActor(Actor):
@@ -259,17 +307,21 @@ def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(
     message_received.wait()
 
 
-def test_errors_in_pre_start_are_reported_as_create_failed():
+@deferred_cleanup
+def test_errors_in_pre_start_are_reported_as_create_failed(defer):
     class MyActor(Actor):
         def pre_start(self):
             raise MockException()
+    node = DummyNode()
+    defer(node.stop)
     with expect_failure(CreateFailed) as basket:
-        DummyNode().spawn(MyActor)
+        node.spawn(MyActor)
     with assert_raises(MockException):
         basket[0].raise_original()
 
 
-def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_started():
+@deferred_cleanup
+def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_started(defer):
     class MyActor(Actor):
         def pre_start(self):
             self.ref << 'dummy'
@@ -278,8 +330,10 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
         def receive(self, message):
             message_received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     message_received = Event()
-    DummyNode().spawn(MyActor)
+    node.spawn(MyActor)
     message_received.wait()
 
 
@@ -316,8 +370,10 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
 ##
 ## LIFECYCLE
 
-def test_suspending():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_suspending(defer):
+    node = DummyNode()
+    defer(node.stop)
 
     message_received = Event()
 
@@ -325,7 +381,7 @@ def test_suspending():
         def receive(self, message):
             message_received.set()
 
-    a = spawn(MyActor)
+    a = node.spawn(MyActor)
     a << 'foo'
     message_received.wait()
     message_received.clear()
@@ -335,17 +391,19 @@ def test_suspending():
 
 
 def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
-    def do():
+    @deferred_cleanup
+    def do(defer):
         class MyActor(Actor):
             def pre_start(self):
                 released.wait()
                 after_release.set()
 
-        spawn = DummyNode().spawn
+        node = DummyNode()
+        defer(node.stop)
         released = Event()
         after_release = Event()
 
-        a = spawn(MyActor)
+        a = node.spawn(MyActor)
         sleep(.001)
         ok_(not after_release.is_set())
         a << '_suspend'
@@ -360,17 +418,20 @@ def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
         do()
 
 
-def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
+@deferred_cleanup
+def test_suspending_with_nonempty_inbox_while_receive_is_blocked(defer):
     class MyActor(Actor):
         def receive(self, message):
             message_received.incr()
             if not released.is_set():  # only yield the first time for correctness
                 released.wait()
 
+    node = DummyNode()
+    defer(node.stop)
     released = Event()
     message_received = obs_count()
 
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a << None
     message_received.wait_eq(1)
 
@@ -383,14 +444,17 @@ def test_suspending_with_nonempty_inbox_while_receive_is_blocked():
 
 
 def test_suspending_while_receive_is_blocked_pauses_the_receive():
-    def do():
+    @deferred_cleanup
+    def do(defer):
         class MyActor(Actor):
             def receive(self, _):
                 child_released.wait()
                 after_release_reached.set()
 
+        node = DummyNode()
+        defer(node.stop)
         child_released, after_release_reached = Event(), Event()
-        a = DummyNode().spawn(MyActor)
+        a = node.spawn(MyActor)
         a << 'dummy'
         sleep(.001)
         a << '_suspend'
@@ -406,13 +470,16 @@ def test_suspending_while_receive_is_blocked_pauses_the_receive():
         do()
 
 
-def test_suspending_while_already_suspended():
+@deferred_cleanup
+def test_suspending_while_already_suspended(defer):
     # This can happen when an actor is suspended and then its parent gets suspended.
     class DoubleSuspendingActor(Actor):
         def receive(self, msg):
             message_received.set()
+    node = DummyNode()
+    defer(node.stop)
     message_received = Event()
-    DummyNode().spawn(DoubleSuspendingActor) << '_suspend' << '_suspend' << '_resume' << 'dummy'
+    node.spawn(DoubleSuspendingActor) << '_suspend' << '_suspend' << '_resume' << 'dummy'
     message_received.wait()
 
 
@@ -424,18 +491,22 @@ def test_suspending_while_already_suspended():
 #     pass
 
 
-def test_resuming():
+@deferred_cleanup
+def test_resuming(defer):
     class MyActor(Actor):
         def receive(self, message):
             message_received.incr()
-    a = DummyNode().spawn(MyActor)
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyActor)
     a << '_suspend'
     message_received = obs_count()
     a << 'foo' << 'foo' << '_resume'
     message_received.wait_eq(2)
 
 
-def test_restarting():
+@deferred_cleanup
+def test_restarting(defer):
     class MyActor(Actor):
         def pre_start(self):
             actor_started.incr()
@@ -449,7 +520,9 @@ def test_restarting():
     actor_started = obs_count()
     message_received, post_stop_called = Event(), Event()
 
-    a = DummyNode().spawn(MyActor)
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyActor)
     actor_started.wait_eq(1)
     a << '_restart'
     idle()
@@ -458,20 +531,24 @@ def test_restarting():
     post_stop_called.wait()
 
 
-def test_restarting_stopped_actor_has_no_effect():
+@deferred_cleanup
+def test_restarting_stopped_actor_has_no_effect(defer):
     class MyActor(Actor):
         def pre_start(self):
             actor_started.incr()
 
+    node = DummyNode()
+    defer(node.stop)
     actor_started = obs_count()
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a.stop()
     a << '_restart'
     sleep(.001)
     eq_(actor_started, 1)
 
 
-def test_restarting_doesnt_destroy_the_inbox():
+@deferred_cleanup
+def test_restarting_doesnt_destroy_the_inbox(defer):
     class MyActor(Actor):
         def pre_start(self):
             started.incr()
@@ -479,14 +556,17 @@ def test_restarting_doesnt_destroy_the_inbox():
         def receive(self, message):
             messages_received.append(message)
 
+    node = DummyNode()
+    defer(node.stop)
     messages_received = obs_list()
     started = obs_count()
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a << 'foo' << '_restart' << 'bar'
     messages_received.wait_eq(['foo', 'bar'])
 
 
-def test_restarting_waits_till_the_ongoing_receive_is_complete():
+@deferred_cleanup
+def test_restarting_waits_till_the_ongoing_receive_is_complete(defer):
     # Restarts are not carried out until the current receive finishes.
     class MyActor(Actor):
         def pre_start(self):
@@ -497,9 +577,11 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
             if started == 1:
                 released.wait()
 
+    node = DummyNode()
+    defer(node.stop)
     started = obs_count()
     receive_started, released = Event(), Event()
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a << 'foo'
     receive_started.wait()
     a << '_restart'
@@ -509,7 +591,8 @@ def test_restarting_waits_till_the_ongoing_receive_is_complete():
     started.wait_eq(2)
 
 
-def test_restarting_does_not_complete_until_pre_start_completes():
+@deferred_cleanup
+def test_restarting_does_not_complete_until_pre_start_completes(defer):
     class MyActor(Actor):
         def pre_start(self):
             if not started:
@@ -520,9 +603,11 @@ def test_restarting_does_not_complete_until_pre_start_completes():
         def receive(self, message):
             received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     released, received, started = Event(), Event(), Event()
 
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a << '_restart' << 'dummy'
     sleep(.001)
     ok_(not received.is_set())
@@ -530,7 +615,8 @@ def test_restarting_does_not_complete_until_pre_start_completes():
     received.wait()
 
 
-def test_actor_is_untainted_after_a_restart():
+@deferred_cleanup
+def test_actor_is_untainted_after_a_restart(defer):
     class Parent(Actor):
         def pre_start(self):
             child.set(self.spawn(Child))
@@ -553,16 +639,19 @@ def test_actor_is_untainted_after_a_restart():
             else:
                 message_received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     started_once, received_once, message_received = Event(), Event(), Event()
     child = AsyncResult()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     child.get() << 'dummy1'
     received_once.wait()
     child.get() << 'dummy'
     message_received.wait()
 
 
-def test_stopping_waits_till_the_ongoing_receive_is_complete():
+@deferred_cleanup
+def test_stopping_waits_till_the_ongoing_receive_is_complete(defer):
     class MyActor(Actor):
         def receive(self, message):
             released.wait()
@@ -570,8 +659,10 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete():
         def post_stop(self):
             stopped.set()
 
+    node = DummyNode()
+    defer(node.stop)
     stopped, released = Event(), Event()
-    a = DummyNode().spawn(MyActor) << 'foo'
+    a = node.spawn(MyActor) << 'foo'
     sleep(.001)
     a.stop()
     ok_(not stopped.is_set())
@@ -579,7 +670,8 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete():
     stopped.wait()
 
 
-def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart():
+@deferred_cleanup
+def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart(defer):
     class Parent(Actor):
         def pre_start(self):
             parent_started.incr()
@@ -594,38 +686,47 @@ def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_aft
         def post_stop(self):
             self._parent << 'should-be-received-after-restart'
 
+    node = DummyNode()
+    defer(node.stop)
     parent_started = obs_count()
     parent_received = Event()
-    DummyNode().spawn(Parent) << '_restart'
+    node.spawn(Parent) << '_restart'
     parent_received.wait()
 
 
-def test_stopping_an_actor_prevents_it_from_processing_any_more_messages():
+@deferred_cleanup
+def test_stopping_an_actor_prevents_it_from_processing_any_more_messages(defer):
     class MyActor(Actor):
         def receive(self, _):
             received.set()
+    node = DummyNode()
+    defer(node.stop)
     received = Event()
-    a = DummyNode().spawn(MyActor)
+    a = node.spawn(MyActor)
     a << None
     received.wait()
     received.clear()
     a.stop()
     sleep(.001)
     ok_(not received.is_set(), "the '_stop' message should not be receivable in the actor")
-    with assert_one_event(DeadLetter(a, None)):
+    with expect_one_event(DeadLetter(a, None)):
         a << None
 
 
-def test_stopping_calls_post_stop():
+@deferred_cleanup
+def test_stopping_calls_post_stop(defer):
     class MyActor(Actor):
         def post_stop(self):
             post_stop_called.set()
+    node = DummyNode()
+    defer(node.stop)
     post_stop_called = Event()
-    DummyNode().spawn(MyActor).stop()
+    node.spawn(MyActor).stop()
     post_stop_called.wait()
 
 
-def test_stopping_waits_for_post_stop():
+@deferred_cleanup
+def test_stopping_waits_for_post_stop(defer):
     class ChildWithDeferredPostStop(Actor):
         def post_stop(self):
             stop_complete.wait()
@@ -640,18 +741,18 @@ def test_stopping_waits_for_post_stop():
             else:
                 parent_received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     stop_complete, parent_received = Event(), Event()
-    DummyNode().spawn(Parent) << 'stop-child'
+    node.spawn(Parent) << 'stop-child'
     sleep(.001)
     ok_(not parent_received.is_set())
     stop_complete.set()
     parent_received.wait()
 
 
-def test_parent_is_stopped_before_children():
-    spawn = DummyNode().spawn
-    parent_stopping, unblocked, child_stopped = Event(), Event(), Event()
-
+@deferred_cleanup
+def test_parent_is_stopped_before_children(defer):
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -664,7 +765,10 @@ def test_parent_is_stopped_before_children():
         def post_stop(self):
             child_stopped.set()
 
-    a = spawn(Parent)
+    node = DummyNode()
+    defer(node.stop)
+    parent_stopping, unblocked, child_stopped = Event(), Event(), Event()
+    a = node.spawn(Parent)
     a.stop()
     parent_stopping.wait()
     ok_(not child_stopped.is_set())
@@ -672,7 +776,8 @@ def test_parent_is_stopped_before_children():
     child_stopped.wait()
 
 
-def test_actor_is_not_restarted_until_its_children_are_stopped():
+@deferred_cleanup
+def test_actor_is_not_restarted_until_its_children_are_stopped(defer):
     class Parent(Actor):
         def pre_start(self):
             parent_started.incr()
@@ -682,15 +787,18 @@ def test_actor_is_not_restarted_until_its_children_are_stopped():
         def post_stop(self):
             stop_complete.wait()
 
+    node = DummyNode()
+    defer(node.stop)
     stop_complete = Event()
     parent_started = obs_count()
-    DummyNode().spawn(Parent) << '_restart'
+    node.spawn(Parent) << '_restart'
     parent_started.wait_eq(1)
     stop_complete.set()
     parent_started.wait_eq(2)
 
 
-def test_error_reports_to_a_stopping_actor_are_ignored():
+@deferred_cleanup
+def test_error_reports_to_a_stopping_actor_are_ignored(defer):
     class Child(Actor):
         def receive(self, _):
             child_released.wait()
@@ -700,16 +808,19 @@ def test_error_reports_to_a_stopping_actor_are_ignored():
         def pre_start(self):
             child.set(self.spawn(Child))
 
+    node = DummyNode()
+    defer(node.stop)
     child = AsyncResult()
     child_released = Event()
-    p = DummyNode().spawn(Parent)
+    p = node.spawn(Parent)
     child.get() << 'dummy'
     p.stop()
-    with assert_one_event(ErrorIgnored(child.get(), ANY, ANY)):
+    with expect_one_event(ErrorIgnored(child.get(), ANY, ANY)):
         child_released.set()
 
 
-def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
+@deferred_cleanup
+def test_stopping_in_pre_start_directs_any_refs_to_deadletters(defer):
     class MyActor(Actor):
         def pre_start(self):
             self.stop()
@@ -717,15 +828,20 @@ def test_stopping_in_pre_start_directs_any_refs_to_deadletters():
         def receive(self, message):
             message_received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     message_received = Event()
-    a = DummyNode().spawn(MyActor)
-    with assert_one_event(DeadLetter(a, 'dummy')):
+    a = node.spawn(MyActor)
+    with expect_one_event(DeadLetter(a, 'dummy')):
         a << 'dummy'
     ok_(not message_received.is_set())
 
 
-def test_stop_message_received_twice_is_silently_ignored():
-    a = DummyNode().spawn(Actor)
+@deferred_cleanup
+def test_stop_message_received_twice_is_silently_ignored(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
     a.stop()
     a.stop()
     sleep(.001)
@@ -765,23 +881,26 @@ def test_stop_message_received_twice_is_silently_ignored():
 #     assert Ref(None, path='123') == Ref(None, path='123')
 
 
-def test_actors_are_garbage_collected_on_termination():
-    spawn = DummyNode().spawn
-    del_called = Event()
-
+@deferred_cleanup
+def test_actors_are_garbage_collected_on_termination(defer):
     class MyActor(Actor):
         def __del__(self):
             del_called.set()
 
-    spawn(MyActor).stop()
+    node = DummyNode()
+    defer(node.stop)
+    del_called = Event()
+    node.spawn(MyActor).stop()
     idle()
     gc.collect()
     ok_(del_called.is_set())
 
 
-def test_cells_are_garbage_collected_on_termination():
-    spawn = DummyNode().spawn
-    ac = spawn(Actor)
+@deferred_cleanup
+def test_cells_are_garbage_collected_on_termination(defer):
+    node = DummyNode()
+    defer(node.stop)
+    ac = node.spawn(Actor)
     cell = weakref.ref(ac._cell)
     ok_(cell())
     ac.stop()
@@ -790,38 +909,51 @@ def test_cells_are_garbage_collected_on_termination():
     ok_(not cell())
 
 
-def test_messages_to_dead_actors_are_sent_to_dead_letters():
-    a = DummyNode().spawn(Actor)
+@deferred_cleanup
+def test_messages_to_dead_actors_are_sent_to_dead_letters(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
     a.stop()
-    with assert_one_event(DeadLetter(a, 'should-end-up-as-letter')):
+    with expect_one_event(DeadLetter(a, 'should-end-up-as-letter')):
         a << 'should-end-up-as-letter'
         idle()
 
 
-def test_guardians_path_is_the_root_uri():
-    eq_(DummyNode().guardian.uri.path, '')
+@deferred_cleanup
+def test_guardians_path_is_the_root_uri(defer):
+    node = DummyNode()
+    defer(node.stop)
+    eq_(node.guardian.uri.path, '')
 
 
-def test_toplevel_actorrefs_paths_are_prefixed_with_guardians_path():
-    spawn = DummyNode().spawn
-    eq_(spawn(Actor, name='a').uri.path, '/a')
-    eq_(spawn(Actor, name='b').uri.path, '/b')
+@deferred_cleanup
+def test_toplevel_actorrefs_paths_are_prefixed_with_guardians_path(defer):
+    node = DummyNode()
+    defer(node.stop)
+    eq_(node.spawn(Actor, name='a').uri.path, '/a')
+    eq_(node.spawn(Actor, name='b').uri.path, '/b')
 
 
-def test_non_toplevel_actorrefs_are_prefixed_with_their_parents_path():
+@deferred_cleanup
+def test_non_toplevel_actorrefs_are_prefixed_with_their_parents_path(defer):
     class MyActor(Actor):
         def pre_start(self):
             child_ref.set(self.spawn(Actor, name='child'))
+    node = DummyNode()
+    defer(node.stop)
     child_ref = AsyncResult()
-    a = DummyNode().spawn(MyActor, name='parent')
+    a = node.spawn(MyActor, name='parent')
     eq_(child_ref.get().uri.path, a.uri.path + '/child')
 
 
-def test_toplevel_actor_paths_must_be_unique():
-    spawn = DummyNode().spawn
-    spawn(Actor, name='a')
+@deferred_cleanup
+def test_toplevel_actor_paths_must_be_unique(defer):
+    node = DummyNode()
+    defer(node.stop)
+    node.spawn(Actor, name='a')
     with assert_raises(NameConflict):
-        spawn(Actor, name='a')
+        node.spawn(Actor, name='a')
 
 
 def test_non_toplevel_actor_paths_must_be_unique():
@@ -831,21 +963,25 @@ def test_non_toplevel_actor_paths_must_be_unique():
             with assert_raises(NameConflict):
                 self.spawn(Actor, name='a')
             spawned.set()
+    node = DummyNode()
     spawned = Event()
-    DummyNode().spawn(MyActor, name='a')
+    node.spawn(MyActor, name='a')
     spawned.wait()
 
 
-def test_spawning_toplevel_actors_without_name_assigns_autogenerated_names():
-    spawn = DummyNode().spawn
-    a = spawn(Actor)
+@deferred_cleanup
+def test_spawning_toplevel_actors_without_name_assigns_autogenerated_names(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
     ok_(re.match(r'/[^/]+$', a.uri.path))
-    b = spawn(Actor)
+    b = node.spawn(Actor)
     ok_(re.match(r'/[^/]+$', b.uri.path))
     ok_(b.uri.path != a.uri.path)
 
 
-def test_spawning_non_toplevel_actors_without_name_assigns_autogenerated_names_with_prefixed_parent_path():
+@deferred_cleanup
+def test_spawning_non_toplevel_actors_without_name_assigns_autogenerated_names_with_prefixed_parent_path(defer):
     class MyActor(Actor):
         def pre_start(self):
             l = len(self.ref.uri.path)
@@ -856,15 +992,19 @@ def test_spawning_non_toplevel_actors_without_name_assigns_autogenerated_names_w
             ok_(b.uri.path[l:])
             ok_(a.uri.path != b.uri.path)
             started.set()
+    node = DummyNode()
+    defer(node.stop)
     started = Event()
-    DummyNode().spawn(MyActor)
+    node.spawn(MyActor)
     started.wait()
 
 
-def test_spawning_with_autogenerated_looking_name_raises_an_exception():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_spawning_with_autogenerated_looking_name_raises_an_exception(defer):
+    node = DummyNode()
+    defer(node.stop)
     with assert_raises(ValueError):
-        spawn(Actor, name='$1')
+        node.spawn(Actor, name='$1')
 
 
 ## URIs
@@ -1027,8 +1167,10 @@ def test_uri_hash():
 
 ## LOOKUP
 
-def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference_to_it():
+@deferred_cleanup
+def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference_to_it(defer):
     node = DummyNode()
+    defer(node.stop)
     toplevel_actor = node.spawn(Actor, name='toplevel')
     ok_(node.lookup_str('/toplevel') is toplevel_actor)
     ok_(node.lookup(Uri.parse('/toplevel')) is toplevel_actor)
@@ -1038,8 +1180,10 @@ def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference
     ok_(node.lookup(Uri.parse('/toplevel/child')) is child_actor)
 
 
-def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_to_it():
+@deferred_cleanup
+def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_to_it(defer):
     node = DummyNode()
+    defer(node.stop)
     toplevel_actor = node.spawn(Actor, name='toplevel')
     ok_(node.lookup_str('toplevel') is toplevel_actor)
 
@@ -1048,8 +1192,10 @@ def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_t
     ok_(toplevel_actor / 'child' is child_actor)
 
 
-def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_reference_to_it():
+@deferred_cleanup
+def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_reference_to_it(defer):
     node = DummyNode()
+    defer(node.stop)
 
     a = node.spawn(Actor, name='a')
     ok_(node.guardian / 'a' is a)
@@ -1059,8 +1205,10 @@ def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_refe
     ok_(node.guardian / 'a/b' is b)
 
 
-def test_looking_up_an_absolute_path_as_if_it_were_relative_just_does_an_absolute_lookup():
+@deferred_cleanup
+def test_looking_up_an_absolute_path_as_if_it_were_relative_just_does_an_absolute_lookup(defer):
     node = DummyNode()
+    defer(node.stop)
 
     a = node.spawn(Actor, name='a')
     a._cell.spawn(Actor, name='b')
@@ -1069,8 +1217,10 @@ def test_looking_up_an_absolute_path_as_if_it_were_relative_just_does_an_absolut
     eq_(a / '/b', root_b)
 
 
-def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
+@deferred_cleanup
+def test_looking_up_a_non_existent_local_actor_raises_runtime_error(defer):
     node = DummyNode()
+    defer(node.stop)
     with assert_raises(RuntimeError):
         node.guardian / 'noexist'
 
@@ -1083,13 +1233,13 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 #     noexist = node.lookup('local:123/a/b/c')
 #     eq_(noexist.uri, 'local:123/a/b/c')
 #     ok_(noexist.is_local)
-#     with assert_one_event(DeadLetter(noexist, 'foo')):
+#     with expect_one_event(DeadLetter(noexist, 'foo')):
 #         noexist << 'foo'
 
 #     hypotheticalchild = noexist / 'hypotheticalchild'
 #     ok_(hypotheticalchild.is_local)
 #     eq_(hypotheticalchild.uri, 'local:123/a/b/c/hypotheticalchild')
-#     with assert_one_event(DeadLetter(hypotheticalchild, 'foo')):
+#     with expect_one_event(DeadLetter(hypotheticalchild, 'foo')):
 #         hypotheticalchild << 'foo'
 
 
@@ -1099,7 +1249,7 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 
 #     noexist = Ref(cell=None, is_local=False, uri=Uri.parse('local:123/a/b/c'), hub=node.hub)
 
-#     with assert_one_event(DeadLetter(noexist, 'foo')):
+#     with expect_one_event(DeadLetter(noexist, 'foo')):
 #         noexist << 'foo'
 #     ok_(noexist.is_local)
 
@@ -1107,7 +1257,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error():
 ##
 ## SUPERVISION & ERROR HANDLING
 
-def test_supervision_decision_resume():
+@deferred_cleanup
+def test_supervision_decision_resume(defer):
     # Child is resumed if `supervise` returns `Ignore`
     class Parent(Actor):
         def pre_start(self):
@@ -1123,12 +1274,15 @@ def test_supervision_decision_resume():
             else:
                 message_received.set()
 
+    node = DummyNode()
+    defer(node.stop)
     message_received = Event()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     message_received.wait()
 
 
-def test_supervision_decision_restart():
+@deferred_cleanup
+def test_supervision_decision_restart(defer):
     # Child is restarted if `supervise` returns `Restart`
     class Parent(Actor):
         def pre_start(self):
@@ -1144,12 +1298,15 @@ def test_supervision_decision_restart():
         def receive(self, message):
             raise MockException
 
+    node = DummyNode()
+    defer(node.stop)
     child_started = obs_count()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     child_started.wait_eq(2)
 
 
-def test_supervision_decision_stop():
+@deferred_cleanup
+def test_supervision_decision_stop(defer):
     # Child is stopped if `supervise` returns `Stop`
     class Parent(Actor):
         def pre_start(self):
@@ -1165,12 +1322,15 @@ def test_supervision_decision_stop():
         def receive(self, message):
             raise MockException
 
+    node = DummyNode()
+    defer(node.stop)
     child_stopped = Event()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     child_stopped.wait()
 
 
-def test_supervision_decision_escalate():
+@deferred_cleanup
+def test_supervision_decision_escalate(defer):
     class ParentsParent(Actor):
         def pre_start(self):
             self.spawn(Parent)
@@ -1190,8 +1350,10 @@ def test_supervision_decision_escalate():
         def receive(self, message):
             raise MockException
 
+    node = DummyNode()
+    defer(node.stop)
     escalated = Event()
-    DummyNode().spawn(ParentsParent)
+    node.spawn(ParentsParent)
     escalated.wait()
 
 
@@ -1199,7 +1361,8 @@ def test_supervision_decision_escalate():
 #     pass
 
 
-def test_error_suspends_actor():
+@deferred_cleanup
+def test_error_suspends_actor(defer):
     class Parent(Actor):
         def pre_start(self):
             child.set(self.spawn(Child))
@@ -1217,11 +1380,12 @@ def test_error_suspends_actor():
             else:
                 child_received_message.set()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     child = AsyncResult()
     parent_received_error, parent_supervise_released, child_received_message = Event(), Event(), Event()
 
-    spawn(Parent)
+    node.spawn(Parent)
     child.get() << 'cause-error' << 'dummy'
     parent_received_error.wait()
     ok_(not child_received_message.is_set(), "actor should not receive messages after error until being resumed")
@@ -1229,7 +1393,48 @@ def test_error_suspends_actor():
     child_received_message.wait()
 
 
-def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
+@deferred_cleanup
+def test_error_suspends_children(defer):
+    class Parent(Actor):
+        def pre_start(self):
+            child.set(self.spawn(Child))
+
+        def supervise(self, exc):
+            parent_supervise_released.wait()
+            return Stop
+
+    class Child(Actor):
+        def pre_start(self):
+            childchild.set(self.spawn(ChildChild))
+
+        def receive(self, message):
+            raise MockException
+
+    class ChildChild(Actor):
+        def receive(self, message):
+            received.set()
+
+    parent_supervise_released = Event()
+    child, childchild = AsyncResult(), AsyncResult()
+    received = Event()
+
+    node = DummyNode()
+    defer(node.stop)
+
+    node.spawn(Parent)
+    child = child.get()
+    child << 'cause-error'
+    childchild = childchild.get()
+    sleep(.05)
+    childchild << 'foo'
+    try:
+        ok_(not received.is_set())
+    finally:
+        parent_supervise_released.set()
+
+
+@deferred_cleanup
+def test_exception_after_stop_is_ignored_and_does_not_report_to_parent(defer):
     class Child(Actor):
         def receive(self, _):
             self.stop()
@@ -1242,12 +1447,14 @@ def test_exception_after_stop_is_ignored_and_does_not_report_to_parent():
         def supervise(self, exc):
             ok_(False, "should not reach here")
 
-    spawn = DummyNode().spawn
-    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        spawn(Parent)
+    node = DummyNode()
+    defer(node.stop)
+    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        node.spawn(Parent)
 
 
-def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent_as_normal():
+@deferred_cleanup
+def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent_as_normal(defer):
     class Child(Actor):
         def post_stop(self):
             raise MockException
@@ -1265,15 +1472,17 @@ def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_m
             eq_(message, ('terminated', self.child))
             termination_message_received.set()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     termination_message_received = Event()
-    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        spawn(Parent)
+    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+        node.spawn(Parent)
         idle()
     termination_message_received.wait()
 
 
-def test_supervision_message_is_handled_directly_by_supervise_method():
+@deferred_cleanup
+def test_supervision_message_is_handled_directly_by_supervise_method(defer):
     class Parent(Actor):
         def supervise(self, exc):
             supervise_called.set()
@@ -1287,18 +1496,20 @@ def test_supervision_message_is_handled_directly_by_supervise_method():
         def receive(self, _):
             raise exc
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     supervise_called = Event()
     exc_received = AsyncResult()
     exc = MockException('arg1', 'arg2')
 
-    spawn(Parent)
+    node.spawn(Parent)
     supervise_called.wait()
     ok_(isinstance(exc_received.get(), MockException))
     ok_(exc_received.get().args, exc.args)
 
 
-def test_init_error_reports_to_supervisor():
+@deferred_cleanup
+def test_init_error_reports_to_supervisor(defer):
     class ChildWithFailingInit(Actor):
         def __init__(self):
             raise MockException
@@ -1311,16 +1522,18 @@ def test_init_error_reports_to_supervisor():
         def pre_start(self):
             self.spawn(ChildWithFailingInit)
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     received_exception = AsyncResult()
-    spawn(Parent)
+    node.spawn(Parent)
     exc = received_exception.get()
     ok_(isinstance(exc, CreateFailed))
     with assert_raises(MockException):
         exc.raise_original()
 
 
-def test_pre_start_error_reports_to_supervisor():
+@deferred_cleanup
+def test_pre_start_error_reports_to_supervisor(defer):
     class ChildWithFailingInit(Actor):
         def pre_start(self):
             raise MockException
@@ -1336,10 +1549,11 @@ def test_pre_start_error_reports_to_supervisor():
         def pre_start(self):
             self.spawn(ChildWithFailingInit)
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     received_exception = AsyncResult()
     post_stop_called = Event()
-    spawn(Parent)
+    node.spawn(Parent)
     exc = received_exception.get()
     ok_(isinstance(exc, CreateFailed))
     with assert_raises(MockException):
@@ -1347,7 +1561,8 @@ def test_pre_start_error_reports_to_supervisor():
     ok_(not post_stop_called.is_set(), "post_stop must not be called if there was an error in pre_start")
 
 
-def test_receive_error_reports_to_supervisor():
+@deferred_cleanup
+def test_receive_error_reports_to_supervisor(defer):
     class Parent(Actor):
         def supervise(self, exc):
             received_exception.set(exc)
@@ -1362,14 +1577,16 @@ def test_receive_error_reports_to_supervisor():
         def receive(self, _):
             raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     received_exception = AsyncResult()
-    spawn(Parent)
+    node.spawn(Parent)
     ok_(isinstance(received_exception.get(), MockException),
         "Child errors in the 'receive' method should be sent to its parent")
 
 
-def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
+@deferred_cleanup
+def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start(defer):
     class Parent(Actor):
         def __init__(self, child_cls, supervisor_decision):
             self.child_cls = child_cls
@@ -1390,15 +1607,16 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
                 init_already_raised.set()
                 raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     init_already_raised = Event()
     child_created = obs_count()
-    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
+    node.spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
     child_created.wait_eq(2)
     #
     init_already_raised = Event()
     child_created = obs_count()
-    spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Ignore))
+    node.spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Ignore))
     child_created.wait_eq(1, message="resuming a tainted actor stops it")
 
     ##
@@ -1410,19 +1628,21 @@ def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start():
                 pre_start_already_raised.set()
                 raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     pre_start_already_raised = Event()
     child_started = obs_count()
-    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
+    node.spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
     child_started.wait_eq(2)
     #
     pre_start_already_raised = Event()
     child_started = obs_count()
-    spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Ignore))
+    node.spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Ignore))
     child_started.wait_eq(1, message="resuming a tainted actor stops it")
 
 
-def test_error_report_after_restart_is_ignored():
+@deferred_cleanup
+def test_error_report_after_restart_is_ignored(defer):
     class Parent(Actor):
         def pre_start(self):
             if not child.ready():  # so that after the restart the child won't exist
@@ -1433,18 +1653,20 @@ def test_error_report_after_restart_is_ignored():
             child_released.wait()
             raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     child = AsyncResult()
     child_released = Event()
 
-    parent = spawn(Parent)
+    parent = node.spawn(Parent)
     child.get() << 'dummy'
     parent << '_restart'
-    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
         child_released.set()
 
 
-def test_default_supervision_stops_for_create_failed():
+@deferred_cleanup
+def test_default_supervision_stops_for_create_failed(defer):
     class Parent(Actor):
         def pre_start(self):
             self.child = self.spawn(Child)
@@ -1457,15 +1679,19 @@ def test_default_supervision_stops_for_create_failed():
     class Child(Actor):
         def __init__(self):
             raise MockException
+    node = DummyNode()
+    defer(node.stop)
     termination_message_received = Event()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     termination_message_received.wait()
 
     class Child(Actor):
         def pre_start(self):
             raise MockException
+    node = DummyNode()
+    defer(node.stop)
     termination_message_received = Event()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     termination_message_received.wait()
 
 
@@ -1474,7 +1700,8 @@ def test_default_supervision_stops_for_create_failed():
 #     pass
 
 
-def test_default_supervision_restarts_by_default():
+@deferred_cleanup
+def test_default_supervision_restarts_by_default(defer):
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child) << 'fail'
@@ -1486,12 +1713,15 @@ def test_default_supervision_restarts_by_default():
         def receive(self, _):
             raise MockException
 
+    node = DummyNode()
+    defer(node.stop)
     child_started = obs_count()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     child_started.wait_eq(2)
 
 
-def test_supervision_decision_default():
+@deferred_cleanup
+def test_supervision_decision_default(defer):
     class Parent(Actor):
         def pre_start(self):
             c = self.spawn(Child)
@@ -1510,14 +1740,15 @@ def test_supervision_decision_default():
         def post_stop(self):
             post_stop_called.set()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
 
     #
 
     child = AsyncResult()
     child_started = obs_count()
     post_stop_called = Event()
-    spawn(Parent)
+    node.spawn(Parent)
     child_started.wait_eq(1)
     wait(lambda: child.get().is_stopped)
     ok_(not post_stop_called.is_set(), "actors with failing start up should not have their post_stop called")
@@ -1531,7 +1762,7 @@ def test_supervision_decision_default():
             raise MockException
 
     child_started = obs_count()
-    spawn(Parent)
+    node.spawn(Parent)
     child_started.wait_eq(2)
 
 
@@ -1540,7 +1771,8 @@ def test_supervision_decision_default():
 #     pass
 
 
-def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
+@deferred_cleanup
+def test_error_is_escalated_if_supervision_returns_escalate_or_nothing(defer):
     class Supervisor(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1555,16 +1787,18 @@ def test_error_is_escalated_if_supervision_returns_escalate_or_nothing():
         def receive(self, _):
             raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     supervision_decision = Escalate
     with expect_failure(MockException):
-        spawn(Supervisor)
+        node.spawn(Supervisor)
     supervision_decision = None
     with expect_failure(MockException):
-        spawn(Supervisor)
+        node.spawn(Supervisor)
 
 
-def test_error_is_escalated_if_supervision_raises_exception():
+@deferred_cleanup
+def test_error_is_escalated_if_supervision_raises_exception(defer):
     class SupervisorException(Exception):
         pass
 
@@ -1582,12 +1816,14 @@ def test_error_is_escalated_if_supervision_raises_exception():
         def receive(self, _):
             raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     with expect_failure(SupervisorException):
-        spawn(Supervisor)
+        node.spawn(Supervisor)
 
 
-def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
+@deferred_cleanup
+def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value(defer):
     class Supervisor(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1602,9 +1838,11 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
         def receive(self, _):
             raise MockException
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     with expect_failure(BadSupervision, "Should raise BadSupervision if supervision returns an illegal value") as basket:
-        spawn(Supervisor)
+        node.spawn(Supervisor)
+        sleep(0.1)
     with assert_raises(MockException):
         basket[0].raise_original()
 
@@ -1628,7 +1866,7 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
 #             child_started()
 #             raise MockException
 
-#     spawn(Parent)
+#     node.spawn(Parent)
 
 #     assert child_started == 4, child_started
 
@@ -1647,7 +1885,8 @@ def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value():
 ##
 ## HIERARCHY
 
-def test_actors_remember_their_children():
+@deferred_cleanup
+def test_actors_remember_their_children(defer):
     class MyActor(Actor):
         def pre_start(self):
             ok_(not self.children)
@@ -1655,10 +1894,13 @@ def test_actors_remember_their_children():
             ok_(child1 in self.children)
             child2 = self.spawn(Actor)
             ok_(child2 in self.children)
-    DummyNode().spawn(MyActor)
+    node = DummyNode()
+    defer(node.stop)
+    node.spawn(MyActor)
 
 
-def test_stopped_child_is_removed_from_its_parents_list_of_children():
+@deferred_cleanup
+def test_stopped_child_is_removed_from_its_parents_list_of_children(defer):
     class MyActor(Actor):
         def pre_start(self):
             child = self.spawn(Actor)
@@ -1673,12 +1915,15 @@ def test_stopped_child_is_removed_from_its_parents_list_of_children():
             _, child = message
             ok_(child not in self.children)
 
+    node = DummyNode()
+    defer(node.stop)
     receive_called = Event()
-    DummyNode().spawn(MyActor)
+    node.spawn(MyActor)
     receive_called.wait()
 
 
-def test_suspending_suspends_and_resuming_resumes_all_children():
+@deferred_cleanup
+def test_suspending_suspends_and_resuming_resumes_all_children(defer):
     class Parent(Actor):
         def pre_start(self):
             child.set(self.spawn(Child))
@@ -1699,10 +1944,11 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
         def receive(self, message):
             subchild_received_message.set()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     child, subchild = AsyncResult(), AsyncResult()
     parent_received_error, subchild_received_message = Event(), Event()
-    spawn(Parent)
+    node.spawn(Parent)
     child.get() << 'dummy'  # will cause Child to raise MockException
     subchild.get() << 'dummy'
 
@@ -1710,7 +1956,8 @@ def test_suspending_suspends_and_resuming_resumes_all_children():
     subchild_received_message.wait()
 
 
-def test_stopping_stops_children():
+@deferred_cleanup
+def test_stopping_stops_children(defer):
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1719,13 +1966,15 @@ def test_stopping_stops_children():
         def post_stop(self):
             child_stopped.set()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     child_stopped = Event()
-    spawn(Parent).stop()
+    node.spawn(Parent).stop()
     child_stopped.wait()
 
 
-def test_stopping_parent_from_child():
+@deferred_cleanup
+def test_stopping_parent_from_child(defer):
     class PoorParent(Actor):
         def pre_start(self):
             child.set(self.spawn(EvilChild))
@@ -1737,14 +1986,17 @@ def test_stopping_parent_from_child():
         def pre_start(self):
             self._parent.stop()  # this will queue a `_stop` in the parent's queue
 
+    node = DummyNode()
+    defer(node.stop)
     child = AsyncResult()
     parent_stopped = Event()
-    DummyNode().spawn(PoorParent)
+    node.spawn(PoorParent)
     child.get() << 'dummy'
     parent_stopped.wait()
 
 
-def test_restarting_stops_children():
+@deferred_cleanup
+def test_restarting_stops_children(defer):
     class Parent(Actor):
         def pre_start(self):
             started.incr()
@@ -1758,9 +2010,11 @@ def test_restarting_stops_children():
         def post_stop(self):
             child_stopped.set()
 
+    node = DummyNode()
+    defer(node.stop)
     started = obs_count()
     child_stopped, parent_restarted = Event(), Event()
-    DummyNode().spawn(Parent) << '_restart'
+    node.spawn(Parent) << '_restart'
     child_stopped.wait()
     parent_restarted.wait()
 
@@ -1769,7 +2023,8 @@ def test_restarting_stops_children():
 #     pass  # Parent.stop_children_on_restart = False
 
 
-def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the_message():
+@deferred_cleanup
+def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the_message(defer):
     class Parent(Actor):
         def pre_start(self):
             self.spawn(Child)
@@ -1781,40 +2036,50 @@ def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the
         def post_stop(self):
             self._parent << 'should-not-be-received'
 
-    p = DummyNode().spawn(Parent)
-    with assert_one_event(DeadLetter(ANY, ANY)):
+    node = DummyNode()
+    defer(node.stop)
+    p = node.spawn(Parent)
+    with expect_one_event(DeadLetter(ANY, ANY)):
         p.stop()
         idle()
 
 
-def test_queued_messages_are_logged_as_deadletters_after_stop():
-    spawn = DummyNode().spawn
+@deferred_cleanup
+def test_queued_messages_are_logged_as_deadletters_after_stop(defer):
+    node = DummyNode()
+    defer(node.stop)
     deadletter_event_emitted = Events.consume_one(DeadLetter)
-    a = spawn(Actor)
+    a = node.spawn(Actor)
     a.stop()
     a << 'dummy'
     eq_(deadletter_event_emitted.get(), DeadLetter(a, 'dummy'))
 
 
-def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is_ignored():
-    spawn = DummyNode().spawn
-    a = spawn(Actor)
-    a << ('_child_terminated', spawn(Actor))
+@deferred_cleanup
+def test_child_termination_message_from_an_actor_not_a_child_of_the_recipient_is_ignored(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
+    a << ('_child_terminated', node.spawn(Actor))
     idle()
 
 
 ##
 ## DEATH WATCH
 
-def test_watch_returns_the_arg():
+@deferred_cleanup
+def test_watch_returns_the_arg(defer):
     class Parent(Actor):
         def pre_start(self):
             a = self.spawn(Actor)
             ok_(self.watch(a) is a)
-    DummyNode().spawn(Parent)
+    node = DummyNode()
+    defer(node.stop)
+    node.spawn(Parent)
 
 
-def test_watching_running_actor():
+@deferred_cleanup
+def test_watching_running_actor(defer):
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -1822,15 +2087,17 @@ def test_watching_running_actor():
         def receive(self, message):
             message_receieved.set(message)
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     message_receieved = AsyncResult()
-    watchee = spawn(Actor)
-    spawn(Watcher)
+    watchee = node.spawn(Actor)
+    node.spawn(Watcher)
     watchee.stop()
     eq_(message_receieved.get(), ('terminated', watchee))
 
 
-def test_watching_new_actor():
+@deferred_cleanup
+def test_watching_new_actor(defer):
     class Watcher(Actor):
         def pre_start(self):
             a = self.spawn(Actor)
@@ -1841,13 +2108,15 @@ def test_watching_new_actor():
         def receive(self, message):
             message_receieved.set(message)
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     watchee, message_receieved = AsyncResult(), AsyncResult()
-    spawn(Watcher)
+    node.spawn(Watcher)
     eq_(message_receieved.get(), ('terminated', watchee.get()))
 
 
-def test_watching_dead_actor():
+@deferred_cleanup
+def test_watching_dead_actor(defer):
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -1855,16 +2124,18 @@ def test_watching_dead_actor():
         def receive(self, message):
             message_receieved.set(message)
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     message_receieved = AsyncResult()
-    watchee = spawn(Actor)
+    watchee = node.spawn(Actor)
     watchee.stop()
     idle()
-    spawn(Watcher)
+    node.spawn(Watcher)
     eq_(message_receieved.get(), ('terminated', watchee))
 
 
-def test_watching_self_is_noop_and_returns_self():
+@deferred_cleanup
+def test_watching_self_is_noop_and_returns_self(defer):
     class MyActor(Actor):
         def pre_start(self):
             eq_(self.watch(self.ref), self.ref)
@@ -1872,14 +2143,17 @@ def test_watching_self_is_noop_and_returns_self():
         def receive(self, message):
             ok_(False)
 
-    a = DummyNode().spawn(MyActor)
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyActor)
     dead_letter_emitted = Events.consume_one(DeadLetter)
     a.stop()
     idle()
     ok_(not dead_letter_emitted.ready())
 
 
-def test_termination_message_contains_ref_that_forwards_to_deadletters():
+@deferred_cleanup
+def test_termination_message_contains_ref_that_forwards_to_deadletters(defer):
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -1887,20 +2161,22 @@ def test_termination_message_contains_ref_that_forwards_to_deadletters():
         def receive(self, message):
             eq_(message, ('terminated', watchee))
             _, sender = message
-            with assert_one_event(DeadLetter(sender, 'dummy')):
+            with expect_one_event(DeadLetter(sender, 'dummy')):
                 sender << 'dummy'
                 idle()
             all_ok.set()
 
     all_ok = Event()
-    spawn = DummyNode().spawn
-    watchee = spawn(Actor)
-    spawn(Watcher)
+    node = DummyNode()
+    defer(node.stop)
+    watchee = node.spawn(Actor)
+    node.spawn(Watcher)
     watchee.stop()
     all_ok.wait()
 
 
-def test_watching_dying_actor():
+@deferred_cleanup
+def test_watching_dying_actor(defer):
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -1913,17 +2189,19 @@ def test_watching_dying_actor():
         def post_stop(self):
             watchee_released.wait()
 
-    spawn = DummyNode().spawn
+    node = DummyNode()
+    defer(node.stop)
     watchee_released, message_receieved = Event(), Event()
 
-    watchee = spawn(Watchee)
+    watchee = node.spawn(Watchee)
     watchee.stop()
-    spawn(Watcher)
+    node.spawn(Watcher)
     watchee_released.set()
     message_receieved.wait()
 
 
-def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination():
+@deferred_cleanup
+def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermination(defer):
     class Watcher(Actor):
         def pre_start(self):
             self.watch(watchee)
@@ -1931,15 +2209,19 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
         def receive(self, message):
             raise Unhandled
 
-    spawn = DummyNode().spawn
-    watchee = spawn(Actor)
+    node = DummyNode()
+    defer(node.stop)
+    watchee = node.spawn(Actor)
     watchee.stop()
     with expect_failure(UnhandledTermination):
-        spawn(Watcher)
+        node.spawn(Watcher)
 
 
-def test_system_messages_to_dead_actorrefs_are_discarded():
-    a = DummyNode().spawn(Actor)
+@deferred_cleanup
+def test_system_messages_to_dead_actorrefs_are_discarded(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
     a.stop()
     for event in ['_stop', '_suspend', '_resume', '_restart']:
         d = Events.consume_one(DeadLetter)
@@ -1947,89 +2229,81 @@ def test_system_messages_to_dead_actorrefs_are_discarded():
         ok_(not d.ready(), "message %r sent to a dead actor should be discarded" % (event,))
 
 
-def test_termination_message_to_dead_actor_is_discarded():
+@deferred_cleanup
+def test_termination_message_to_dead_actor_is_discarded(defer):
     class Parent(Actor):
         def pre_start(self):
             self.watch(self.spawn(Actor)).stop()
             self.stop()
     d = Events.consume_one(DeadLetter)
-    DummyNode().spawn(Parent)
+    node = DummyNode()
+    defer(node.stop)
+    node.spawn(Parent)
     idle()
     ok_(not d.ready())
 
 
-# @simtime
-# def test_watching_running_remote_actor_that_stops_causes_termination_message(clock):
-#     network = MockNetwork(clock)
-#     node1, node2 = network.node('host1:123'), network.node('host2:123')
+@deferred_cleanup
+def test_watching_running_remote_actor_that_stops_causes_termination_message(defer):
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(self.root.node.lookup_str('localhost:20002/remote-watchee'))
 
-#     received = Event()
+        def receive(self, msg):
+            received.set(msg)
 
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watchee = self.watch(self.root.node.lookup('host2:123/remote-watchee'))
+    received = AsyncResult()
+    node1, node2 = Node('localhost:20001', enable_remoting=True), Node('localhost:20002', enable_remoting=True)
+    defer(node1.stop, node2.stop)
 
-#         def receive(self, msg):
-#             eq_(msg, ('terminated', self.watchee))
-#             received()
-#     node1.spawn(Watcher)
+    remote_watchee = node2.spawn(Actor, name='remote-watchee')
+    node1.spawn(Watcher)
+    remote_watchee.stop()
 
-#     remote_watchee = node2.spawn(Actor, name='remote-watchee')
-
-#     network.simulate(duration=1.0)
-#     ok_(not received)
-
-#     remote_watchee.stop()
-
-#     network.simulate(duration=1.0)
-#     ok_(received)
+    eq_(received.get(), ('terminated', remote_watchee))
 
 
-# @simtime
-# def test_watching_remote_actor_that_restarts_doesnt_cause_termination_message(clock):
-#     network = MockNetwork(clock)
-#     node1, node2 = network.node('host1:123'), network.node('host2:123')
+@deferred_cleanup
+def test_watching_remote_actor_that_restarts_doesnt_cause_termination_message(defer):
+    node1, node2 = Node('localhost:20001', enable_remoting=True), Node('localhost:20002', enable_remoting=True)
+    defer(node1.stop, node2.stop)
 
-#     received = Event()
+    received = Event()
 
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watchee = self.watch(self.root.node.lookup('host2:123/remote-watchee'))
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(self.root.node.lookup_str('localhost:20002/remote-watchee'))
 
-#         def receive(self, msg):
-#             eq_(msg, ('terminated', self.watchee))
-#             received()
-#     node1.spawn(Watcher)
+        def receive(self, msg):
+            received.set()
 
-#     remote_watchee = node2.spawn(Actor, name='remote-watchee')
+    remote_watchee = node2.spawn(Actor, name='remote-watchee')
+    node1.spawn(Watcher)
+    sleep(.001)
+    remote_watchee << '_restart'
 
-#     network.simulate(duration=1.0)
-#     ok_(not received)
-
-#     remote_watchee << '_restart'
-
-#     network.simulate(duration=1.0)
-#     ok_(not received)
+    sleep(.05)
+    ok_(not received.is_set())
 
 
-# @simtime
-# def test_watching_nonexistent_remote_actor_causes_termination_message(clock):
-#     network = MockNetwork(clock)
-#     node1, _ = network.node('host1:123'), network.node('host2:123')
+@deferred_cleanup
+def test_watching_nonexistent_remote_actor_causes_termination_message(defer):
+    class Watcher(Actor):
+        def pre_start(self):
+            self.watch(watchee)
 
-#     received = Event()
+        def receive(self, msg):
+            received.set(msg)
 
-#     class Watcher(Actor):
-#         def pre_start(self):
-#             self.watchee = self.watch(self.root.node.lookup('host2:123/nonexistent-watchee'))
+    received = AsyncResult()
+    node1, node2 = (Node('localhost:20001', enable_remoting=True),
+                    Node('localhost:20002', enable_remoting=True))
+    defer(node1.stop, node2.stop)
 
-#         def receive(self, msg):
-#             eq_(msg, ('terminated', self.watchee))
-#             received()
-#     node1.spawn(Watcher)
+    watchee = node1.lookup_str('localhost:20002/nonexistent-watchee')
+    node1.spawn(Watcher)
 
-#     network.simulate(duration=2.0)
-#     ok_(received)
+    eq_(received.get(), ('terminated', watchee))
 
 
 # @simtime
@@ -2062,19 +2336,6 @@ def test_termination_message_to_dead_actor_is_discarded():
 
 #     test_it(packet_loss_src='watchee', packet_loss_dst='watcher')
 #     test_it(packet_loss_src='watcher', packet_loss_dst='watchee')
-
-
-def deferred_cleanup(fn):
-    @functools.wraps(fn)
-    def ret(*args, **kwargs):
-        defers = []
-        try:
-            ret = fn(lambda *args: defers.extend(args), *args, **kwargs)
-        finally:
-            for defer in reversed(defers):
-                defer()
-        return ret
-    return ret
 
 
 ##
@@ -2215,11 +2476,12 @@ def test_sending_remote_refs(defer):
 
 @deferred_cleanup
 def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(defer):
-    sender_node, receiver_node = Node('localhost:20001', enable_remoting=True), Node('localhost:20002', enable_remoting=True)
+    sender_node, receiver_node = (Node('localhost:20001', enable_remoting=True),
+                                  Node('localhost:20002', enable_remoting=True))
     defer(sender_node.stop, receiver_node.stop)
 
     noexist = sender_node.lookup_str('localhost:20002/non-existent-actor')
-    with assert_one_event(RemoteDeadLetter):
+    with expect_one_event(RemoteDeadLetter):
         noexist << 'straight-down-the-drain'
 test_messages_sent_to_nonexistent_remote_actors_are_deadlettered.timeout = 3.0
 
@@ -2231,49 +2493,53 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
     sender_node = Node('localhost:20001', enable_remoting=True, hub_kwargs={'heartbeat_interval': 0.05, 'heartbeat_max_silence': 0.1})
     defer(sender_node.stop)
     ref = sender_node.lookup_str('localhost:23456/actor2')
-    with assert_one_event(DeadLetter(ref, 'bar')):
+    with expect_one_event(DeadLetter(ref, 'bar')):
         ref << 'bar'
 test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped.timeout = 40.0
 
 
-def test_sending_to_an_unknown_host_that_becomes_visible_in_time():
-    # spawn(timeprinter, resolution=0.005)
+@deferred_cleanup
+def test_sending_to_an_unknown_host_that_becomes_visible_in_time(defer):
     node1 = Node('localhost:20001', enable_remoting=True, hub_kwargs={'heartbeat_interval': 0.05, 'heartbeat_max_silence': 0.5})
+    defer(node1.stop)
 
     ref = node1.lookup_str('localhost:20002/actor1')
-    with assert_event_not_emitted(DeadLetter):
+    with expect_event_not_emitted(DeadLetter):
         ref << 'foo'
 
     sleep(0.1)
+
     node2 = Node('localhost:20002', enable_remoting=True)
+    defer(node2.stop)
+
     actor2_msgs = obs_list()
     node2.spawn(Props(MockActor, actor2_msgs), name='actor1')
 
     actor2_msgs.wait_eq(['foo'])
 
 
-@deferred_cleanup
-def test_sending_stops_if_visibility_is_lost(defer):
-    node1 = Node('host1:123')
-    node2 = Node('host2:123')
-    defer(node1.stop, node2.stop)
+# @deferred_cleanup
+# def test_sending_stops_if_visibility_is_lost(defer):
+#     node1 = Node('host1:123')
+#     node2 = Node('host2:123')
+#     defer(node1.stop, node2.stop)
 
-    # set up a normal sending state first
+#     # set up a normal sending state first
 
-    ref = node1.lookup_str('host2:123/actor2')
-    ref << 'foo'  # causes host2 to also start the heartbeat
+#     ref = node1.lookup_str('host2:123/actor2')
+#     ref << 'foo'  # causes host2 to also start the heartbeat
 
-    sleep(1.0)
+#     sleep(1.0)
 
-    # ok, now they both know/have seen each other; let's change that:
-    network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
-    network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
+#     # ok, now they both know/have seen each other; let's change that:
+#     network.packet_loss(percent=100.0, src='tcp://host2:123', dst='tcp://host1:123')
+#     network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
-    # the next message should fail after 5 seconds
-    ref << 'bar'
+#     # the next message should fail after 5 seconds
+#     ref << 'bar'
 
-    with assert_one_event(DeadLetter(ref, 'bar')):
-        network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
+#     with expect_one_event(DeadLetter(ref, 'bar')):
+#         network.simulate(duration=node1.hub.HEARTBEAT_MAX_SILENCE + 1.0)
 
 
 # @simtime
@@ -2299,7 +2565,7 @@ def test_sending_stops_if_visibility_is_lost(defer):
 
 #     network.packet_loss(percent=0, src='tcp://host2:123', dst='tcp://host1:123')
 #     # and it is rewarded for its patience
-#     with assert_event_not_emitted(DeadLetter):
+#     with expect_event_not_emitted(DeadLetter):
 #         network.simulate(duration=2.0)
 
 
@@ -2353,6 +2619,7 @@ def test_incoming_refs_pointing_to_local_actors_are_converted_to_local_refs(defe
 @deferred_cleanup
 def test_looking_up_addresses_that_actually_point_to_the_local_node_return_a_local_ref(defer):
     node = Node('localhost:20000', enable_remoting=True)
+    defer(node.stop)
     node.spawn(Actor, name='localactor')
     ref = node.lookup_str('localhost:20000/localactor')
     ok_(ref.is_local)
@@ -2361,6 +2628,7 @@ def test_looking_up_addresses_that_actually_point_to_the_local_node_return_a_loc
 @deferred_cleanup
 def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(defer):
     node = Node('localhost:20000', enable_remoting=True)
+    defer(node.stop)
 
     msgs = obs_list()
     node.spawn(Props(MockActor, msgs), name='localactor')
@@ -2378,26 +2646,32 @@ def test_sending_to_a_remote_ref_that_points_to_a_local_ref_is_redirected(defer)
 ##
 ## PROCESSES
 
-def test_processes_run_is_called_when_the_process_is_spawned():
+@deferred_cleanup
+def test_processes_run_is_called_when_the_process_is_spawned(defer):
     class MyProc(Actor):
         def run(self):
             run_called.set()
+    node = DummyNode()
+    defer(node.stop)
     run_called = Event()
-    DummyNode().spawn(MyProc)
+    node.spawn(MyProc)
     run_called.wait()
 
 
-def test_warning_is_emitted_if_process_run_returns_a_value():
+@deferred_cleanup
+def test_warning_is_emitted_if_process_run_returns_a_value(defer):
     class ProcThatReturnsValue(Actor):
         def run(self):
             return 'foo'
-    spawn = DummyNode().spawn
-    with assert_one_warning():
-        spawn(ProcThatReturnsValue)
+    node = DummyNode()
+    defer(node.stop)
+    with expect_one_warning():
+        node.spawn(ProcThatReturnsValue)
 
 
 def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
-    def do():
+    @deferred_cleanup
+    def do(defer):
         class MyProc(Actor):
             def run(self):
                 released.wait()
@@ -2405,7 +2679,9 @@ def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resume
 
         released, after_release = Event(), Event()
 
-        p = DummyNode().spawn(MyProc)
+        node = DummyNode()
+        defer(node.stop)
+        p = node.spawn(MyProc)
         sleep(0.001)
         ok_(not after_release.is_set())
 
@@ -2421,21 +2697,25 @@ def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resume
         do()
 
 
-def test_process_run_is_cancelled_if_the_actor_is_stopped():
+@deferred_cleanup
+def test_process_run_is_cancelled_if_the_actor_is_stopped(defer):
     class MyProc(Actor):
         def run(self):
             try:
                 self.get()
             except GreenletExit:
                 exited.set()
+    node = DummyNode()
+    defer(node.stop)
     exited = Event()
-    r = DummyNode().spawn(MyProc)
+    r = node.spawn(MyProc)
     idle()
     r.stop()
     exited.wait()
 
 
-def test_stopping_waits_till_process_is_done_handling_a_message():
+@deferred_cleanup
+def test_stopping_waits_till_process_is_done_handling_a_message(defer):
     class MyProc(Actor):
         def run(self):
             self.get()
@@ -2444,8 +2724,10 @@ def test_stopping_waits_till_process_is_done_handling_a_message():
                 self.get()
             except GreenletExit:
                 exited.set()
+    node = DummyNode()
+    defer(node.stop)
     exited, released = Event(), Event()
-    r = DummyNode().spawn(MyProc)
+    r = node.spawn(MyProc)
     r << 'foo'
     sleep(.001)
     r.stop()
@@ -2455,7 +2737,8 @@ def test_stopping_waits_till_process_is_done_handling_a_message():
     exited.wait()
 
 
-def test_stopping_a_process_that_never_gets_a_message_just_kills_it_immediately():
+@deferred_cleanup
+def test_stopping_a_process_that_never_gets_a_message_just_kills_it_immediately(defer):
     # not the most elegant solution, but there's no other way
     class MyProc(Actor):
         def run(self):
@@ -2466,65 +2749,81 @@ def test_stopping_a_process_that_never_gets_a_message_just_kills_it_immediately(
 
         def post_stop(self):
             exited2.set()
+
+    node = DummyNode()
+    defer(node.stop)
     exited, exited2 = Event(), Event()
-    a = DummyNode().spawn(MyProc)
+    a = node.spawn(MyProc)
     sleep(.001)
     a.stop()
     exited.wait()
     exited2.wait()
 
 
-def test_error_in_stopping_proc_is_ignored():
+@deferred_cleanup
+def test_error_in_stopping_proc_is_ignored(defer):
     class MyProc(Actor):
         def run(self):
             self.get()
             released.wait()
             raise MockException
     released = Event()
-    a = DummyNode().spawn(MyProc)
+    node = node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyProc)
     a << 'dummy'
     sleep(.001)
     a.stop()
-    with assert_one_event(ErrorIgnored(a, IS_INSTANCE(MockException), ANY)):
+    with expect_one_event(ErrorIgnored(a, IS_INSTANCE(MockException), ANY)):
         released.set()
 
 
-def test_sending_a_message_to_a_process():
+@deferred_cleanup
+def test_sending_a_message_to_a_process(defer):
     class MyProc(Actor):
         def run(self):
             received_message.set(self.get())
+    node = DummyNode()
+    defer(node.stop)
     random_message = random.random()
     received_message = AsyncResult()
-    DummyNode().spawn(MyProc) << random_message
+    node.spawn(MyProc) << random_message
     eq_(received_message.get(), random_message)
 
 
-def test_sending_2_messages_to_a_process():
+@deferred_cleanup
+def test_sending_2_messages_to_a_process(defer):
     class MyProc(Actor):
         def run(self):
             first_message.set(self.get())
             second_message.set(self.get())
 
+    node = DummyNode()
+    defer(node.stop)
     second_message, first_message = AsyncResult(), AsyncResult()
     msg1, msg2 = random.random(), random.random()
-    p = DummyNode().spawn(MyProc)
+    p = node.spawn(MyProc)
     p << msg1
     eq_(first_message.get(), msg1)
     p << msg2
     eq_(second_message.get(), msg2)
 
 
-def test_errors_in_process_while_processing_a_message_are_reported():
+@deferred_cleanup
+def test_errors_in_process_while_processing_a_message_are_reported(defer):
     class MyProc(Actor):
         def run(self):
             self.get()
             raise MockException
-    p = DummyNode().spawn(MyProc)
+    node = DummyNode()
+    defer(node.stop)
+    p = node.spawn(MyProc)
     with expect_failure(MockException):
         p << 'dummy'
 
 
-def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it():
+@deferred_cleanup
+def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it(defer):
     class Parent(Actor):
         def supervise(self, exc):
             return Ignore
@@ -2539,14 +2838,17 @@ def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it():
         def post_stop(self):
             stopped.set()
 
+    node = DummyNode()
+    defer(node.stop)
     proc = AsyncResult()
     stopped = Event()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     proc.get() << 'dummy'
     stopped.wait()
 
 
-def test_restarting_a_process():
+@deferred_cleanup
+def test_restarting_a_process(defer):
     class Parent(Actor):
         def supervise(self, exc):
             return Restart
@@ -2560,45 +2862,54 @@ def test_restarting_a_process():
             self.get()
             raise MockException
 
+    node = DummyNode()
+    defer(node.stop)
     proc = AsyncResult()
     started = obs_count()
-    DummyNode().spawn(Parent)
+    node.spawn(Parent)
     started.wait_eq(1)
     proc.get() << 'dummy'
     started.wait_eq(2)
 
 
-def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors():
+@deferred_cleanup
+def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors(defer):
     class MyProc(Actor):
         def run(self):
             try:
                 self.get()
             finally:
                 raise MockException
-    a = DummyNode().spawn(MyProc)
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(MyProc)
     sleep(.001)
-    with assert_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
         a.stop()
 
 
-def test_all_stashed_messages_are_reported_as_unhandled_on_flush_and_discarded():
+@deferred_cleanup
+def test_all_stashed_messages_are_reported_as_unhandled_on_flush_and_discarded(defer):
     class MyProc(Actor):
         def run(self):
             self.get('dummy')
             self.flush()
             self.get('dummy')
             self.flush()
-    p = DummyNode().spawn(MyProc)
+    node = DummyNode()
+    defer(node.stop)
+    p = node.spawn(MyProc)
     p << 'should-be-reported-as-unhandled'
-    with assert_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
-        with assert_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
+        with expect_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
             p << 'dummy'
-    with assert_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
-        with assert_event_not_emitted(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
+        with expect_event_not_emitted(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
             p << 'dummy'
 
 
-def test_getting_stashed_message():
+@deferred_cleanup
+def test_getting_stashed_message(defer):
     class MyProc(Actor):
         def run(self):
             self.get('dummy1')
@@ -2606,37 +2917,47 @@ def test_getting_stashed_message():
             got_both_messages.set()
             self.get('dummy2')
             ok_(False, "should not reach here")
+    node = DummyNode()
+    defer(node.stop)
     got_both_messages = Event()
-    p = DummyNode().spawn(MyProc)
+    p = node.spawn(MyProc)
     p << 'dummy2'
     p << 'dummy1'
     got_both_messages.wait()
 
 
-def test_dead_letters_are_emitted_in_the_order_the_messages_were_sent():
-    a = DummyNode().spawn(Actor)
-    with assert_one_event(DeadLetter(a, 'dummy1')):
-        with assert_one_event(DeadLetter(a, 'dummy2')):
+@deferred_cleanup
+def test_dead_letters_are_emitted_in_the_order_the_messages_were_sent(defer):
+    node = DummyNode()
+    defer(node.stop)
+    a = node.spawn(Actor)
+    with expect_one_event(DeadLetter(a, 'dummy1')):
+        with expect_one_event(DeadLetter(a, 'dummy2')):
             a << 'dummy1' << 'dummy2'
             a.stop()
 
 
-def test_stashed_messages_are_received_in_the_order_they_were_sent():
+@deferred_cleanup
+def test_stashed_messages_are_received_in_the_order_they_were_sent(defer):
     class MyProc(Actor):
         def run(self):
             msgs_received.append(self.get(1))
             msgs_received.append(self.get())
             msgs_received.append(self.get())
             done.set()
+
+    node = DummyNode()
+    defer(node.stop)
     msgs_received = []
     done = Event()
-    a = DummyNode().spawn(MyProc)
+    a = node.spawn(MyProc)
     a << 3 << 2 << 1
     done.wait()
     eq_(msgs_received, [1, 3, 2])
 
 
-def test_process_is_stopped_when_run_returns():
+@deferred_cleanup
+def test_process_is_stopped_when_run_returns(defer):
     class MyProc(Actor):
         def run(self):
             self.get()
@@ -2644,13 +2965,16 @@ def test_process_is_stopped_when_run_returns():
         def post_stop(self):
             stopped.set()
 
+    node = DummyNode()
+    defer(node.stop)
     stopped = Event()
-    p = DummyNode().spawn(MyProc)
+    p = node.spawn(MyProc)
     p << 'dummy'
     stopped.wait()
 
 
-def test_process_is_stopped_when_the_coroutine_exits_during_startup():
+@deferred_cleanup
+def test_process_is_stopped_when_the_coroutine_exits_during_startup(defer):
     class MyProc(Actor):
         def run(self):
             pass
@@ -2658,12 +2982,15 @@ def test_process_is_stopped_when_the_coroutine_exits_during_startup():
         def post_stop(self):
             stopped.set()
 
+    node = DummyNode()
+    defer(node.stop)
     stopped = Event()
-    DummyNode().spawn(MyProc)
+    node.spawn(MyProc)
     stopped.wait()
 
 
-def test_process_can_get_messages_selectively():
+@deferred_cleanup
+def test_process_can_get_messages_selectively(defer):
     class MyProc(Actor):
         def run(self):
             messages.append(self.get(ANY))
@@ -2673,9 +3000,11 @@ def test_process_can_get_messages_selectively():
             messages.append(self.get(IS_INSTANCE(int)))
             release2.wait()
             messages.append(self.get(IS_INSTANCE(float)))
+    node = DummyNode()
+    defer(node.stop)
     messages = obs_list()
     release1, release2 = Event(), Event()
-    p = DummyNode().spawn(MyProc)
+    p = node.spawn(MyProc)
     p << 'msg1'
     messages.wait_eq(['msg1'])
     p << 'msg2'
@@ -2719,7 +3048,7 @@ def test_process_can_get_messages_selectively():
 #             process_continued.set()
 
 #     process_continued, supervision_invoked = Event(), Event()
-#     DummyNode().spawn(Parent)
+#     node.spawn(Parent)
 #     supervision_invoked.wait()
 #     ok_(not process_continued.is_set())
 #     sleep(.001)
@@ -2741,8 +3070,9 @@ def test_process_can_get_messages_selectively():
 #             self.get()  # put in started-mode
 #             self.escalate()
 
+#     node = DummyNode()
 #     exc_raised = Event()
-#     DummyNode().spawn(MyProc)
+#     node.spawn(MyProc)
 #     exc_raised.wait()
 
 
@@ -2805,13 +3135,7 @@ class MockException(Exception):
 
 
 def DummyNode():
-    return Node('dummynode:123')
+    return Node()
 
 
 wrap_globals(globals())
-
-
-def timeprinter(resolution=0.1):
-    while True:
-        print("*")
-        sleep(resolutionu)
