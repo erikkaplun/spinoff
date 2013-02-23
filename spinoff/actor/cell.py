@@ -184,7 +184,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             processing, has_ever_wanted_a_message = (True, False) if self.impl.run else (False, True)
             error = suspended = stopping = restarting = False
             while True:
-                # dbg("processing: %r, error: %r, suspended: %r, stash size: %d, active: %r" % (processing, error, suspended, len(self.stash), has_ever_wanted_a_message))
+                # dbg("processing: %r, error: %r, suspended: %r, stash size: %s, active: %r" % (processing, error, suspended, len(self.stash) if self.stash is not None else '-', has_ever_wanted_a_message))
                 # consume the queue, handle system messages, and collect letters to the inbox
                 if suspended or processing or error or stopping or not self.inbox:
                     self.queue.peek()
