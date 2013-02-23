@@ -541,7 +541,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     #         return ''
 
     def __repr__(self):
-        return "<cell:%s@%s>" % (type(self.impl).__name__ if self.impl else (self.factory.__name__ if isinstance(self.factory, type) else self.factory.cls.__name__), self.uri.path,)
+        return "<cell:%s>" % (self.uri.path,)
 
 
 def default_supervise(exc):
