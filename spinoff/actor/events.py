@@ -151,11 +151,7 @@ class Events(object):
     def consume_one(self, event_type):
         assert isinstance(event_type, type) or all(isinstance(x, type) for x in event_type)
         ret = AsyncResult()
-        if hasattr(event_type, '__iter__'):
-            for x in event_type:
-                self.consumers.setdefault(x, []).append(ret)
-        else:
-            self.consumers.setdefault(event_type, []).append(ret)
+        self.consumers.setdefault(event_type, []).append(ret)
         return ret
 
     def reset(self):
