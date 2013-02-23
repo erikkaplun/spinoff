@@ -2,15 +2,13 @@ import datetime
 import errno
 import uuid
 import os
-import warnings
 from cStringIO import StringIO
 
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from txcoroutine import coroutine
 
-from spinoff.actor import Actor, Ref
+from spinoff.actor import Actor
 from spinoff.actor.exceptions import Unhandled
-from spinoff.actor.process import Process
 from spinoff.contrib.filetransfer.util import read_file_async
 from spinoff.util.async import with_timeout, Timeout, after
 from spinoff.util.logging import dbg, err
@@ -27,7 +25,7 @@ class FileAlreadyPublished(Exception):
     pass
 
 
-class _Sender(Process):
+class _Sender(Actor):
     def run(self, service, pub_id, file, send_to):
         self.watch(send_to)
 
@@ -133,7 +131,7 @@ class FilePublisher(Actor):
         del self._instances[self.node]
 
 
-class _Receiver(Process):
+class _Receiver(Actor):
     def run(self, pub_id, file_service):
         self.watch(file_service)
 
