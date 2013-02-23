@@ -258,11 +258,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                         if suspended:
                             self._suspend_children()
                         else:
-                            if self.proc and self.proc.exception:
-                                self.destroy()
-                                gevent.getcurrent().kill()
-                            else:
-                                _resume_children()
+                            _resume_children()
                 # process the normal letters (i.e. the regular, non-system/non-special messages)
                 while not processing and not suspended and not error and not stopping and self.queue.empty() and self.inbox:
                     m = self.inbox.popleft()
