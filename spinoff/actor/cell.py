@@ -172,7 +172,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             stash = deque()
             while True:
                 m = self.queue.get()
-                if m in ('_resume', '_stop'):
+                if m in ('_ignore', '_stop'):
                     self.queue.queue.extendleft(stash)
                     _stop()
                 elif m == '_restart':
