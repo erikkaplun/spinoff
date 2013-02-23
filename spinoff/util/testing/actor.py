@@ -15,7 +15,6 @@ from spinoff.actor import Actor, Node
 from spinoff.actor.events import Events, ErrorIgnored, UnhandledError
 from spinoff.actor.exceptions import WrappingException
 from spinoff.remoting import HubWithNoRemoting
-from spinoff.util.async import _process_idle_calls
 
 from .common import assert_raises
 
@@ -244,7 +243,6 @@ def wrap_globals(globals):
                     idle()
                 return ret
             finally:
-                _process_idle_calls()
                 check_memleaks()
         return ret
 

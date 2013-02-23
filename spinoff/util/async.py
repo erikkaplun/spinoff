@@ -8,7 +8,7 @@ from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, De
 from twisted.internet import reactor, task
 
 
-__all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'cancel_all_idle_calls', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'sleep', 'after', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
 
 
 def sleep(seconds=0, reactor=reactor):
@@ -48,48 +48,6 @@ def after(seconds=0, reactor=reactor):
 
     """
     return _AfterWrap(sleep(seconds, reactor))
-
-
-from collections import deque
-_idle_calls = deque()
-_processing_idle_calls = False
-
-
-def _process_idle_calls():
-    # dbg("_process_idle_calls")
-    global _processing_idle_calls
-
-    _processing_idle_calls = True
-    try:
-        while _idle_calls:
-            fn, args, kwargs = _idle_calls.popleft()
-            try:
-                fn(*args, **kwargs)
-            except Exception:
-                print("*** PANIC: error while processing idle calls", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-    finally:
-        _processing_idle_calls = False
-
-
-def call_when_idle(fn, *args, **kwargs):
-    if not _processing_idle_calls:
-        # dbg("callLater")
-        reactor.callLater(0, _process_idle_calls)
-    # dbg("append")
-    _idle_calls.append((fn, args, kwargs))
-
-
-def call_when_idle_unless_already(fn, *args, **kwargs):
-    # dbg("call_when_idle_unless_already(")
-    if (fn, args, kwargs) not in _idle_calls:
-        # dbg("call_when_idle_unless_already2")
-        call_when_idle(fn, *args, **kwargs)
-
-
-def cancel_all_idle_calls():
-    print("IDLECALL: cancelling calls:", [x[0] for x in _idle_calls], file=sys.stderr)
-    _idle_calls.clear()
 
 
 class FakeDeferred(object, Deferred):
