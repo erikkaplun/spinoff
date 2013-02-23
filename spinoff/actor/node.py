@@ -4,10 +4,7 @@ from __future__ import print_function
 from cPickle import dumps, PicklingError
 from cStringIO import StringIO
 
-import gevent
-
 from spinoff.actor.events import Events, DeadLetter
-from spinoff.actor import _actor
 from spinoff.actor.exceptions import LookupFailed
 from spinoff.actor.guardian import Guardian
 from spinoff.actor.ref import Ref
@@ -15,7 +12,6 @@ from spinoff.actor.supervision import Stop
 from spinoff.actor.uri import Uri
 from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.remoting.pickler import IncomingMessageUnpickler
-from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import ANY
 from spinoff.actor.events import RemoteDeadLetter
 
