@@ -1,32 +1,24 @@
 from __future__ import print_function
 
-import functools
 import gc
 import random
 import re
 import weakref
-import time
-import sys
 
 from gevent import idle, sleep, GreenletExit, with_timeout, Timeout
 from gevent.event import Event, AsyncResult
-from gevent.queue import Channel, Empty, Queue
+from gevent.queue import Channel
 from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Uri
 from spinoff.actor.ref import Ref
-from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, HighWaterMarkReached
+from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored
 from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
-from spinoff.remoting import Hub, HubWithNoRemoting
-from spinoff.remoting.hublogic import HubLogic, Connect
-from spinoff.actor.exceptions import InvalidEscalation, Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
+from spinoff.actor.exceptions import Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
-from spinoff.util.testing import (
-    assert_raises, expect_one_warning, expect_one_event,
-    expect_failure, MockActor, expect_event_not_emitted,)
+from spinoff.util.testing import assert_raises, expect_one_warning, expect_one_event, expect_failure, MockActor, expect_event_not_emitted
 from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
-from spinoff.util.logging import dbg
 from spinoff.util.python import deferred_cleanup
 
 
