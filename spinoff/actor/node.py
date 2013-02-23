@@ -29,7 +29,7 @@ class Node(object):
     """
     _hub = None
 
-    def __init__(self, nid, enable_remoting=False, enable_relay=False, root_supervision=Stop, hub_kwargs={}):
+    def __init__(self, nid=None, enable_remoting=False, enable_relay=False, root_supervision=Stop, hub_kwargs={}):
         self.nid = nid
         self._hub = (
             HubWithNoRemoting() if not enable_remoting else
