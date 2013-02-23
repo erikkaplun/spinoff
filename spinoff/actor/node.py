@@ -65,16 +65,16 @@ class Node(object):
 
     def _on_receive(self, sender_nid, msg_bytes):
         local_path, message = IncomingMessageUnpickler(self, StringIO(msg_bytes)).load()
-        # self.lookup_cell(local_path) << message
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:
             if ('_watched', ANY) == message:
                 watched_ref = Ref(cell=None, is_local=True, uri=Uri.parse(self.nid + local_path))
                 _, watcher = message
                 watcher << ('terminated', watched_ref)
+            elif message in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
+                pass
             else:
-                if message not in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
-                    self._remote_dead_letter(local_path, message, sender_nid)
+                self._remote_dead_letter(local_path, message, sender_nid)
         else:
             cell.receive(message)  # XXX: force_async=True perhaps?
 
