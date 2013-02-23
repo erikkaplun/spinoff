@@ -5,7 +5,6 @@ import gevent.event
 
 from spinoff.actor._actor import Actor
 from spinoff.actor.ref import _BaseRef
-from spinoff.util.async import call_when_idle
 
 
 class Future(gevent.event.AsyncResult):
@@ -34,7 +33,7 @@ class TempActor(Actor):
     def receive(self, msg):
         d, self.d = self.d, gevent.event.AsyncResult()
         self.pool.add((self.ref, self.d))
-        call_when_idle(d.set_exception if isinstance(msg, BaseException) else d.set, msg)
+        (d.set_exception if isinstance(msg, BaseException) else d.set)(msg)
 
 
 class TypedRef(_BaseRef):
