@@ -13,11 +13,10 @@ import gevent
 import gevent.event
 import gevent.queue
 
-from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored, Error
-from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, CreateFailed, UnhandledTermination, BadSupervision, WrappingException
+from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
+from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, UnhandledTermination
 from spinoff.actor.props import Props
 from spinoff.actor.ref import Ref
-from spinoff.actor.supervision import Decision, Ignore, Restart, Stop, Default, Escalate
 from spinoff.actor.uri import Uri
 from spinoff.util.logging import logstring, dbg, fail
 from spinoff.util.pattern_matching import ANY
@@ -148,151 +147,87 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
 
     @logstring(u'↻')
     def work(self):
-        def _restart():
-            # dbg(u"► ↻")
-            self.shutdown()
-            self.worker = gevent.spawn(self.work)
-            gevent.getcurrent().kill()
-
         def _stop():
             # dbg("STOP")
             self.shutdown()
             self.destroy()
             gevent.getcurrent().kill()
 
-        def _resume_children():
-            for x in self.children:
-                x.send('_resume')
-
         # dbg(u"►►")
         try:
             self.impl = self.construct()
-        except:
+        except Exception:
             self.report()
-            stash = deque()
+            _stop()
+            return
+        processing = True if self.impl.run else False
+        stopped = False
+        while True:
+            # dbg("processing: %r, error: %r, suspended: %r, stash size: %s, active: %r" % (processing, error, suspended, len(self.stash) if self.stash is not None else '-'))
+            # consume the queue, handle system messages, and collect letters to the inbox
+            if processing or not self.inbox:
+                self.queue.peek()
             while True:
-                m = self.queue.get()
-                if m in ('_ignore', '_stop'):
-                    self.queue.queue.extendleft(stash)
+                try:
+                    m = self.queue.get_nowait()
+                except gevent.queue.Empty:
+                    break
+                # dbg("@ CTRL:", m)
+                if m == '__done':
+                    processing = False
+                    if stopped:
+                        m = '_stop'  # fall thru to the _stop/_kill handler
+                    else:
+                        continue
+                if m == ('__error', ANY, ANY):
+                    _, exc, tb = m
+                    self.report((exc, tb))
                     _stop()
-                elif m == '_restart':
-                    self.queue.queue.extendleft(stash)
-                    _restart()
+                elif m in ('_kill', '_stop'):
+                    if m == '_kill':
+                        processing = False
+                    if not processing:
+                        if self.proc:
+                            self.proc.kill()
+                        _stop()
+                    else:
+                        stopped = True
+                elif m == ('_watched', ANY):
+                    self._watched(m[1])
+                elif m == ('_unwatched', ANY):
+                    self.watchers.discard(m[1])
                 else:
-                    stash.appendleft(m)
-        else:
-            processing, has_ever_wanted_a_message = (True, False) if self.impl.run else (False, True)
-            error = suspended = stopping = restarting = False
-            while True:
-                # dbg("processing: %r, error: %r, suspended: %r, stash size: %s, active: %r" % (processing, error, suspended, len(self.stash) if self.stash is not None else '-', has_ever_wanted_a_message))
-                # consume the queue, handle system messages, and collect letters to the inbox
-                if suspended or processing or error or stopping or not self.inbox:
-                    self.queue.peek()
-                should_restart = False
-                suspend_or_resume = None
-                while True:
-                    try:
-                        m = self.queue.get_nowait()
-                    except gevent.queue.Empty:
-                        break
-                    if m == '__done':
-                        has_ever_wanted_a_message = True
-                        processing = False
-                        if stopping:
-                            if self.proc:
-                                self.proc.kill()
-                            _stop()
-                        elif restarting:
-                            should_restart = True
-                    elif m == ('__error', ANY, ANY):
-                        _, exc, tb = m
-                        error = True
-                        processing = False
-                        if stopping:
-                            Events.log(ErrorIgnored(self.ref, exc, tb))
-                            if self.proc:
-                                self.proc.kill()
-                            _stop()
-                        elif restarting:
-                            should_restart = True
-                        else:
-                            self._suspend_children()
-                            self.report((exc, tb))
-                    elif m == '_stop':
-                        if not processing or not has_ever_wanted_a_message:
-                            if self.proc:
-                                self.proc.kill()
-                            _stop()
-                        else:
-                            stopping = True
-                    elif m == '_restart':
-                        if not processing or not has_ever_wanted_a_message:
-                            should_restart = True
-                        else:
-                            restarting = True
-                    elif m in ('_suspend', '_resume'):
-                        suspend_or_resume = m
-                    elif m == '_ignore':
-                        assert error, "unexpected _ignore received"
-                        if self.impl.run:
-                            _stop()
-                        else:
-                            error = False
-                    elif m == ('_watched', ANY):
-                        self._watched(m[1])
-                    elif m == ('_unwatched', ANY):
-                        self.watchers.discard(m[1])
+                    if m == ('_node_down', ANY):
+                        _, node = m
+                        self.inbox.extend(('terminated', x) for x in (self.watchees or []) if x.uri.node == node)
                     else:
-                        if m == ('_node_down', ANY):
-                            _, node = m
-                            self.inbox.extend(('terminated', x) for x in (self.watchees or []) if x.uri.node == node)
-                        else:
-                            self.inbox.append(m)
-                if should_restart:
-                    _restart()
-                elif suspend_or_resume:
-                    suspended_new = (suspend_or_resume == '_suspend')
-                    if suspended != suspended_new:
-                        # dbg(u"||" if suspended_new else u"► ↻")
-                        suspended = suspended_new
-                        if suspended:
-                            self._suspend_children()
-                        else:
-                            _resume_children()
-                # process the normal letters (i.e. the regular, non-system/non-special messages)
-                while not processing and not suspended and not error and not stopping and self.queue.empty() and self.inbox:
-                    m = self.inbox.popleft()
-                    if m == ('_error', ANY, ANY, ANY):  # error handling is viewed as user-land logic
-                        _, sender, exc, tb = m
-                        self.catch_exc(self.supervise, sender, exc, tb)
-                        break
-                    if m == ('terminated', ANY):
-                        _, actor = m
-                        if actor in self.watchees:
-                            self.watchees.remove(actor)
-                            self._unwatch(actor, silent=True)
-                    elif m == ('_child_terminated', ANY):
-                        self._child_gone(m[1])
-                        break
-                    if self.impl.receive:
+                        self.inbox.append(m)
+            # process the normal letters (i.e. the regular, non-system/non-special messages)
+            while not processing and self.queue.empty() and self.inbox:
+                m = self.inbox.popleft()
+                # dbg("@ NORMAL:", m)
+                if m == ('terminated', ANY):
+                    _, actor = m
+                    if actor in self.watchees:
+                        self.watchees.remove(actor)
+                        self._unwatch(actor, silent=True)
+                elif m == ('_child_terminated', ANY):
+                    self._child_gone(m[1])
+                    break
+                if self.impl.receive:
+                    processing = True
+                    self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.impl.receive, m)
+                elif self.impl.run:
+                    assert self.ch.balance == -1
+                    if self.get_pt == m:
                         processing = True
-                        self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.impl.receive, m)
-                        gevent.idle()
-                    elif self.impl.run:
-                        assert self.ch.balance == -1
-                        if self.get_pt == m:
-                            processing = True
-                            self.ch.put(m)
-                            self.inbox.extendleft(reversed(self.stash))
-                            self.stash.clear()
-                        else:
-                            self.stash.append(m)
+                        self.ch.put(m)
+                        self.inbox.extendleft(reversed(self.stash))
+                        self.stash.clear()
                     else:
-                        self.catch_exc(self.unhandled, m)
-
-    def _suspend_children(self):
-        for x in self.children:
-            x.send('_suspend')
+                        self.stash.append(m)
+                else:
+                    self.catch_exc(self.unhandled, m)
 
     def catch_exc(self, fn, *args, **kwargs):
         try:
@@ -319,32 +254,17 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         while self.stash:
             self.unhandled(self.stash.popleft())
 
-    # TODO: haven't figured out yet how to cleanly fit an implementation of this to the existing state machine
-    # def escalate(self):
-    #     _, exc, tb = sys.exc_info()
-    #     if not (exc and tb):
-    #         raise InvalidEscalation("Process.escalate must be called in an exception context")
-    #     self.report((exc, tb))
-    #     self._resumed = gevent.event.Event()
-    #     self._resumed.wait()
-
     # birth & death
 
     def construct(self):
         factory = self.factory
-        try:
-            impl = factory()
-        except Exception:
-            raise CreateFailed("Constructing actor failed", factory)
+        impl = factory()
         impl._parent = self.parent
         impl._set_cell(self)
         if hasattr(impl, 'pre_start'):
             pre_start = impl.pre_start
             args, kwargs = impl.args, impl.kwargs
-            try:
-                pre_start(*args, **kwargs)
-            except Exception:
-                raise CreateFailed("Actor failed to start", impl)
+            pre_start(*args, **kwargs)
         if impl.run:
             self.ch = gevent.queue.Channel()
             if impl.receive:
@@ -369,7 +289,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             try:
                 self.impl.post_stop()
             except Exception:
-                Events.log(ErrorIgnored(self.ref, sys.exc_info()[1], sys.exc_info()[2]))
+                Events.log(Error(self.ref, sys.exc_info()[1], sys.exc_info()[2]))
         while self.watchees:
             self._unwatch(self.watchees.pop())
         for child in self.children:
@@ -395,52 +315,21 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 break
             if m == ('_watched', ANY):
                 self._watched(m[1])
-            elif m == ('_error', ANY, ANY, ANY):
-                _, sender, exc, tb = m
-                Events.log(ErrorIgnored(sender, exc, tb))
             elif m == ('__error', ANY, ANY):
                 _, exc, tb = m
-                Events.log(ErrorIgnored(ref, exc, tb))
-            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_restart' or m == '_stop' or m == '_suspend' or m == '_resume' or m == '__done'):
+                Events.log(Error(ref, exc, tb))
+            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '__done'):
                 Events.log(DeadLetter(ref, m))
         self.parent.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
         self.impl = self.inbox = self.queue = ref._cell = self.parent = None
 
-    # unhandled
-
     def unhandled(self, m):
         if ('terminated', ANY) == m:
             raise UnhandledTermination(watcher=self.ref, watchee=m[1])
         else:
             Events.log(UnhandledMessage(self.ref, m))
-
-    # supervision
-
-    @logstring("SUP")
-    def supervise(self, child, exc, tb):
-        # dbg(u"%r ← %r" % (exc, child))
-        if child not in self.children:
-            Events.log(ErrorIgnored(child, exc, tb))
-            return
-        supervise = getattr(self.impl, 'supervise', None)
-        if supervise:
-            decision = supervise(exc)
-        if not supervise or decision == Default:
-            decision = default_supervise(exc)
-        dbg(u"%r → %r" % (decision, child))
-        if not isinstance(decision, Decision):
-            raise BadSupervision("Bad supervisor decision: %s" % (decision,), exc, tb)
-        # TODO: make these always async?
-        if decision == Ignore:
-            child << '_ignore'
-        elif decision == Restart(ANY, ANY):
-            child << '_restart'
-        elif decision == Stop:
-            child << '_stop'
-        else:
-            raise exc, None, tb
 
     @logstring("report")
     def report(self, exc_and_tb=None):
@@ -453,17 +342,10 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 exc_fmt = tb
             else:
                 exc_fmt = ''.join(traceback.format_exception(type(exc), exc, tb))
-                if isinstance(exc, WrappingException):
-                    inner_exc_fm = traceback.format_exception(type(exc.cause), exc.cause, exc.tb)
-                    inner_exc_fm = ''.join('      ' + line for line in inner_exc_fm)
-                    exc_fmt += "-------\n" + inner_exc_fm
             fail('\n\n', exc_fmt)
         else:
             fail("Died because a watched actor (%r) died" % (exc.watchee,))
         Events.log(Error(self.ref, exc, tb)),
-        self.parent << ('_error', self.ref, exc, tb)
-
-    # death watch
 
     def watch(self, actor, *actors, **kwargs):
         actors = (actor,) + actors
@@ -542,15 +424,3 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
 
     def __repr__(self):
         return "<cell:%s>" % (self.uri.path,)
-
-
-def default_supervise(exc):
-    if isinstance(exc, CreateFailed):
-        return Stop
-    elif isinstance(exc, AssertionError):
-        return Escalate
-    elif isinstance(exc, Exception):
-        return Restart
-    else:
-        assert False, "don't know how to supervise this exception"
-    #     return Escalate  # TODO: needed for BaseException

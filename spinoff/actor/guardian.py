@@ -1,15 +1,13 @@
 # coding: utf-8
 from __future__ import print_function
 
-import types
 from pickle import PicklingError
 
 import gevent
 from spinoff.actor.cell import _BaseCell
-from spinoff.actor.events import Events, UnhandledMessage, Terminated, UnhandledError
+from spinoff.actor.events import Events, UnhandledMessage, Terminated
 from spinoff.actor.ref import _BaseRef
-from spinoff.actor.supervision import Ignore, Restart, Stop
-from spinoff.util.pattern_matching import IS_INSTANCE, ANY
+from spinoff.util.pattern_matching import ANY
 
 
 class Guardian(_BaseCell, _BaseRef):
@@ -17,10 +15,9 @@ class Guardian(_BaseCell, _BaseRef):
 
     `Guardian` is a pseudo-actor in the sense that it's implemented in a way that makes it both an actor reference (but
     not a subclass of `Ref`) and an actor (but not a subclass of `Actor`). It only handles spawning of top-level
-    actors, supervising them with the default guardian strategy, and taking care of stopping the entire system when
-    told so.
+    actors, and taking care of stopping the entire system when told so.
 
-    Obviously, unlike a normal actor, any other actor can directly spawn from under the/a `Guardian`.
+    Unlike a normal actor, any other actor can directly spawn from under the/a `Guardian`.
 
     """
     is_local = True  # imitate Ref
@@ -31,14 +28,11 @@ class Guardian(_BaseCell, _BaseRef):
     uri = None
     cell = None
 
-    def __init__(self, uri, node, supervision=Stop):
-        if supervision not in (Stop, Restart, Ignore):
-            raise TypeError("Invalid supervision specified for Guardian")
+    def __init__(self, uri, node):
         self.uri = uri
         self.node = node
         self.root = self
         self._cell = self  # for _BaseCell
-        self.supervision = supervision
         self.all_children_stopped = None
 
     @property
@@ -46,18 +40,7 @@ class Guardian(_BaseCell, _BaseRef):
         return self
 
     def send(self, message):
-        if ('_error', ANY, IS_INSTANCE(Exception), IS_INSTANCE(types.TracebackType) | IS_INSTANCE(basestring)) == message:
-            _, sender, exc, tb = message
-            Events.log(UnhandledError(sender, exc, tb))
-            if self.supervision == Stop:
-                sender.stop()
-            elif self.supervision == Restart:
-                sender << '_restart'
-            elif self.supervision == Ignore:
-                sender << '_resume'
-            else:
-                assert False
-        elif ('_child_terminated', ANY) == message:
+        if ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
             if not self._children and self.all_children_stopped:
@@ -66,23 +49,26 @@ class Guardian(_BaseCell, _BaseRef):
             # possibly by using a /tmp container for them
             if not str(sender.uri).startswith('/tempactor'):
                 Events.log(Terminated(sender))
-        elif '_stop' == message:
+        elif message == '_stop':
             return self._do_stop()
+        elif message == '_kill':
+            return self._do_stop(kill=True)
         else:
             Events.log(UnhandledMessage(self, message))
 
     receive = send
 
-    def _do_stop(self):
+    def _do_stop(self, kill=False):
         if self.children:
             self.all_children_stopped = gevent.event.AsyncResult()
             for actor in self.children:
-                actor.stop()
+                (actor.stop if not kill else actor.kill)()
             try:
                 self.all_children_stopped.get(timeout=3.0)
             except gevent.Timeout:  # pragma: no cover
-                raise RuntimeError("actors %r refused to stop" % (self.children,))
-                # TODO: force-stop
+                assert not kill
+                for actor in self.children:
+                    actor.kill()
 
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Guardian cannot be serialized")

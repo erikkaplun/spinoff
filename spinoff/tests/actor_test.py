@@ -12,9 +12,8 @@ from nose.tools import eq_, ok_
 
 from spinoff.actor import Actor, Props, Node, Uri
 from spinoff.actor.ref import Ref
-from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, ErrorIgnored
-from spinoff.actor.supervision import Ignore, Restart, Stop, Escalate, Default
-from spinoff.actor.exceptions import Unhandled, NameConflict, UnhandledTermination, CreateFailed, BadSupervision
+from spinoff.actor.events import Events, UnhandledMessage, DeadLetter
+from spinoff.actor.exceptions import Unhandled, NameConflict, UnhandledTermination
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import assert_raises, expect_one_warning, expect_one_event, expect_failure, MockActor, expect_event_not_emitted
 from spinoff.actor.events import RemoteDeadLetter
@@ -300,16 +299,14 @@ def test_pre_start_is_called_after_constructor_and_ref_and_parent_are_available(
 
 
 @deferred_cleanup
-def test_errors_in_pre_start_are_reported_as_create_failed(defer):
+def test_errors_in_pre_start_are_reported(defer):
     class MyActor(Actor):
         def pre_start(self):
             raise MockException()
     node = DummyNode()
     defer(node.stop)
-    with expect_failure(CreateFailed) as basket:
+    with expect_failure(MockException):
         node.spawn(MyActor)
-    with assert_raises(MockException):
-        basket[0].raise_original()
 
 
 @deferred_cleanup
@@ -329,318 +326,8 @@ def test_sending_to_self_does_not_deliver_the_message_until_after_the_actor_is_s
     message_received.wait()
 
 
-## REMOTE SPAWNING
-
-# def test_TODO_remote_spawning():
-#     pass
-
-
-# def test_TODO_remotely_spawned_actors_ref_is_registered_eagerly():
-#     # might not be necessary because a ref to the new remote child is returned anyway, and that does the registration;
-#     # but then if the parent immediately sends another message before waiting for the spawning to return, the message
-#     # will probably be dropped on the remote node
-#     pass
-
-
-# def test_TODO_remotely_spawned_actors_die_if_their_parent_node_seems_to_have_died():
-#     # might not be necessary because a ref to the new remote child is returned anyway, and that does the registration;
-#     # but then if the parent immediately sends another message before waiting for the spawning to return, the message
-#     # will probably be dropped on the remote node
-#     pass
-
-
-# def test_TODO_remote_actorref_determinism():
-#     pass
-
-
-## REMOTE AUTO-DEPLOY
-
-# def test_TODO_test_stub_registration_and_sending_of_eggs():
-#     pass
-
-
 ##
 ## LIFECYCLE
-
-@deferred_cleanup
-def test_suspending(defer):
-    node = DummyNode()
-    defer(node.stop)
-
-    message_received = Event()
-
-    class MyActor(Actor):
-        def receive(self, message):
-            message_received.set()
-
-    a = node.spawn(MyActor)
-    a << 'foo'
-    message_received.wait()
-    message_received.clear()
-    a << '_suspend'
-    sleep(.001)
-    ok_(not message_received.is_set())
-
-
-def test_suspending_while_pre_start_is_blocked_pauses_pre_start():
-    @deferred_cleanup
-    def do(defer):
-        class MyActor(Actor):
-            def pre_start(self):
-                released.wait()
-                after_release.set()
-
-        node = DummyNode()
-        defer(node.stop)
-        released = Event()
-        after_release = Event()
-
-        a = node.spawn(MyActor)
-        sleep(.001)
-        ok_(not after_release.is_set())
-        a << '_suspend'
-        released.set()
-        sleep(.001)
-        ok_(not after_release.is_set())
-
-        a << '_resume'
-        after_release.wait()
-    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
-    with assert_raises(AssertionError):
-        do()
-
-
-@deferred_cleanup
-def test_suspending_with_nonempty_inbox_while_receive_is_blocked(defer):
-    class MyActor(Actor):
-        def receive(self, message):
-            message_received.incr()
-            if not released.is_set():  # only yield the first time for correctness
-                released.wait()
-
-    node = DummyNode()
-    defer(node.stop)
-    released = Event()
-    message_received = obs_count()
-
-    a = node.spawn(MyActor)
-    a << None
-    message_received.wait_eq(1)
-
-    a << 'foo' << '_suspend'
-    released.set()
-    message_received.wait_eq(1)
-
-    a << '_resume'
-    message_received.wait_eq(2)
-
-
-def test_suspending_while_receive_is_blocked_pauses_the_receive():
-    @deferred_cleanup
-    def do(defer):
-        class MyActor(Actor):
-            def receive(self, _):
-                child_released.wait()
-                after_release_reached.set()
-
-        node = DummyNode()
-        defer(node.stop)
-        child_released, after_release_reached = Event(), Event()
-        a = node.spawn(MyActor)
-        a << 'dummy'
-        sleep(.001)
-        a << '_suspend'
-        child_released.set()
-        sleep(.001)
-        ok_(not after_release_reached.is_set())
-
-        a << '_resume'
-        sleep(.001)
-        ok_(after_release_reached.is_set())
-    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
-    with assert_raises(AssertionError):
-        do()
-
-
-@deferred_cleanup
-def test_suspending_while_already_suspended(defer):
-    # This can happen when an actor is suspended and then its parent gets suspended.
-    class DoubleSuspendingActor(Actor):
-        def receive(self, msg):
-            message_received.set()
-    node = DummyNode()
-    defer(node.stop)
-    message_received = Event()
-    node.spawn(DoubleSuspendingActor) << '_suspend' << '_suspend' << '_resume' << 'dummy'
-    message_received.wait()
-
-
-# def test_TODO_stopping():
-#     pass
-
-
-# def test_TODO_force_stopping_does_not_wait_for_a_deferred_post_stop_to_complete():
-#     pass
-
-
-@deferred_cleanup
-def test_resuming(defer):
-    class MyActor(Actor):
-        def receive(self, message):
-            message_received.incr()
-    node = DummyNode()
-    defer(node.stop)
-    a = node.spawn(MyActor)
-    a << '_suspend'
-    message_received = obs_count()
-    a << 'foo' << 'foo' << '_resume'
-    message_received.wait_eq(2)
-
-
-@deferred_cleanup
-def test_restarting(defer):
-    class MyActor(Actor):
-        def pre_start(self):
-            actor_started.incr()
-
-        def receive(self, _):
-            message_received.set()
-
-        def post_stop(self):
-            post_stop_called.set()
-
-    actor_started = obs_count()
-    message_received, post_stop_called = Event(), Event()
-
-    node = DummyNode()
-    defer(node.stop)
-    a = node.spawn(MyActor)
-    actor_started.wait_eq(1)
-    a << '_restart'
-    idle()
-    ok_(not message_received.is_set())
-    actor_started.wait_eq(2)
-    post_stop_called.wait()
-
-
-@deferred_cleanup
-def test_restarting_stopped_actor_has_no_effect(defer):
-    class MyActor(Actor):
-        def pre_start(self):
-            actor_started.incr()
-
-    node = DummyNode()
-    defer(node.stop)
-    actor_started = obs_count()
-    a = node.spawn(MyActor)
-    a.stop()
-    a << '_restart'
-    sleep(.001)
-    eq_(actor_started, 1)
-
-
-@deferred_cleanup
-def test_restarting_doesnt_destroy_the_inbox(defer):
-    class MyActor(Actor):
-        def pre_start(self):
-            started.incr()
-
-        def receive(self, message):
-            messages_received.append(message)
-
-    node = DummyNode()
-    defer(node.stop)
-    messages_received = obs_list()
-    started = obs_count()
-    a = node.spawn(MyActor)
-    a << 'foo' << '_restart' << 'bar'
-    messages_received.wait_eq(['foo', 'bar'])
-
-
-@deferred_cleanup
-def test_restarting_waits_till_the_ongoing_receive_is_complete(defer):
-    # Restarts are not carried out until the current receive finishes.
-    class MyActor(Actor):
-        def pre_start(self):
-            started.incr()
-
-        def receive(self, message):
-            receive_started.set()
-            if started == 1:
-                released.wait()
-
-    node = DummyNode()
-    defer(node.stop)
-    started = obs_count()
-    receive_started, released = Event(), Event()
-    a = node.spawn(MyActor)
-    a << 'foo'
-    receive_started.wait()
-    a << '_restart'
-    sleep(.001)
-    eq_(started, 1)
-    released.set()
-    started.wait_eq(2)
-
-
-@deferred_cleanup
-def test_restarting_does_not_complete_until_pre_start_completes(defer):
-    class MyActor(Actor):
-        def pre_start(self):
-            if not started:
-                started.set()
-            else:
-                released.wait()  # only block on restart, not on creation
-
-        def receive(self, message):
-            received.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    released, received, started = Event(), Event(), Event()
-
-    a = node.spawn(MyActor)
-    a << '_restart' << 'dummy'
-    sleep(.001)
-    ok_(not received.is_set())
-    released.set()
-    received.wait()
-
-
-@deferred_cleanup
-def test_actor_is_untainted_after_a_restart(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            child.set(self.spawn(Child))
-
-        def supervise(self, exc):
-            return (Restart if isinstance(exc, CreateFailed) and isinstance(exc.cause, MockException) else
-                    Ignore if isinstance(exc, MockException) else
-                    Escalate)
-
-    class Child(Actor):
-        def pre_start(self):
-            if not started_once.is_set():
-                started_once.set()
-                raise MockException
-
-        def receive(self, _):
-            if not received_once.is_set():
-                received_once.set()
-                raise MockException
-            else:
-                message_received.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    started_once, received_once, message_received = Event(), Event(), Event()
-    child = AsyncResult()
-    node.spawn(Parent)
-    child.get() << 'dummy1'
-    received_once.wait()
-    child.get() << 'dummy'
-    message_received.wait()
-
 
 @deferred_cleanup
 def test_stopping_waits_till_the_ongoing_receive_is_complete(defer):
@@ -657,33 +344,28 @@ def test_stopping_waits_till_the_ongoing_receive_is_complete(defer):
     a = node.spawn(MyActor) << 'foo'
     sleep(.001)
     a.stop()
+    sleep(.001)
     ok_(not stopped.is_set())
     released.set()
     stopped.wait()
 
 
 @deferred_cleanup
-def test_messages_sent_by_child_post_stop_to_restarting_parent_are_processed_after_restart(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            parent_started.incr()
-            if parent_started == 1:
-                self.spawn(Child)
-
+def test_killing_does_not_wait_till_the_ongoing_receive_is_complete(defer):
+    class MyActor(Actor):
         def receive(self, message):
-            eq_(parent_started, 2)
-            parent_received.set()
+            released.wait()
 
-    class Child(Actor):
         def post_stop(self):
-            self._parent << 'should-be-received-after-restart'
+            stopped.set()
 
     node = DummyNode()
     defer(node.stop)
-    parent_started = obs_count()
-    parent_received = Event()
-    node.spawn(Parent) << '_restart'
-    parent_received.wait()
+    stopped, released = Event(), Event()
+    a = node.spawn(MyActor) << 'foo'
+    sleep(.001)
+    a.kill()
+    stopped.wait()
 
 
 @deferred_cleanup
@@ -719,13 +401,13 @@ def test_stopping_calls_post_stop(defer):
 
 @deferred_cleanup
 def test_stopping_waits_for_post_stop(defer):
-    class ChildWithDeferredPostStop(Actor):
+    class ChildWithSlowPostStop(Actor):
         def post_stop(self):
             stop_complete.wait()
 
     class Parent(Actor):
         def pre_start(self):
-            self.child = self.watch(self.spawn(ChildWithDeferredPostStop))
+            self.child = self.watch(self.spawn(ChildWithSlowPostStop))
 
         def receive(self, message):
             if message == 'stop-child':
@@ -769,49 +451,6 @@ def test_parent_is_stopped_before_children(defer):
 
 
 @deferred_cleanup
-def test_actor_is_not_restarted_until_its_children_are_stopped(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            parent_started.incr()
-            self.spawn(Child)
-
-    class Child(Actor):
-        def post_stop(self):
-            stop_complete.wait()
-
-    node = DummyNode()
-    defer(node.stop)
-    stop_complete = Event()
-    parent_started = obs_count()
-    node.spawn(Parent) << '_restart'
-    parent_started.wait_eq(1)
-    stop_complete.set()
-    parent_started.wait_eq(2)
-
-
-@deferred_cleanup
-def test_error_reports_to_a_stopping_actor_are_ignored(defer):
-    class Child(Actor):
-        def receive(self, _):
-            child_released.wait()
-            raise MockException()
-
-    class Parent(Actor):
-        def pre_start(self):
-            child.set(self.spawn(Child))
-
-    node = DummyNode()
-    defer(node.stop)
-    child = AsyncResult()
-    child_released = Event()
-    p = node.spawn(Parent)
-    child.get() << 'dummy'
-    p.stop()
-    with expect_one_event(ErrorIgnored(child.get(), ANY, ANY)):
-        child_released.set()
-
-
-@deferred_cleanup
 def test_stopping_in_pre_start_directs_any_refs_to_deadletters(defer):
     class MyActor(Actor):
         def pre_start(self):
@@ -839,39 +478,8 @@ def test_stop_message_received_twice_is_silently_ignored(defer):
     sleep(.001)
 
 
-# def test_TODO_kill():
-#     pass
-
-
-# def test_TODO_poisonpill():
-#     pass
-
-
-# ## REMOTE LIFECYCLE
-
-
-# def test_TODO_remote_suspending():
-#     pass
-
-
-# def test_TODO_remote_resuming():
-#     pass
-
-
-# def test_TODO_remote_restarting():
-#     pass
-
-
-# def test_TODO_remote_stopping():
-#     pass
-
-
 ##
 ## ACTORREFS, URIS & LOOKUP
-
-# def test_TODO_actorrefs_with_equal_paths_are_equal():
-#     assert Ref(None, path='123') == Ref(None, path='123')
-
 
 @deferred_cleanup
 def test_actors_are_garbage_collected_on_termination(defer):
@@ -1246,207 +854,8 @@ def test_looking_up_a_non_existent_local_actor_raises_runtime_error(defer):
 #     ok_(noexist.is_local)
 
 
-##
-## SUPERVISION & ERROR HANDLING
-
 @deferred_cleanup
-def test_supervision_decision_resume(defer):
-    # Child is resumed if `supervise` returns `Ignore`
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'raise' << 'other-message'
-
-        def supervise(self, _):
-            return Ignore
-
-    class Child(Actor):
-        def receive(self, message):
-            if message == 'raise':
-                raise MockException
-            else:
-                message_received.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    message_received = Event()
-    node.spawn(Parent)
-    message_received.wait()
-
-
-@deferred_cleanup
-def test_supervision_decision_restart(defer):
-    # Child is restarted if `supervise` returns `Restart`
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'raise'
-
-        def supervise(self, _):
-            return Restart
-
-    class Child(Actor):
-        def pre_start(self):
-            child_started.incr()
-
-        def receive(self, message):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    child_started = obs_count()
-    node.spawn(Parent)
-    child_started.wait_eq(2)
-
-
-@deferred_cleanup
-def test_supervision_decision_stop(defer):
-    # Child is stopped if `supervise` returns `Stop`
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'raise'
-
-        def supervise(self, _):
-            return Stop
-
-    class Child(Actor):
-        def post_stop(self):
-            child_stopped.set()
-
-        def receive(self, message):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    child_stopped = Event()
-    node.spawn(Parent)
-    child_stopped.wait()
-
-
-@deferred_cleanup
-def test_supervision_decision_escalate(defer):
-    class ParentsParent(Actor):
-        def pre_start(self):
-            self.spawn(Parent)
-
-        def supervise(self, exc):
-            escalated.set()
-            return Stop
-
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'raise'
-
-        def supervise(self, _):
-            return Escalate
-
-    class Child(Actor):
-        def receive(self, message):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    escalated = Event()
-    node.spawn(ParentsParent)
-    escalated.wait()
-
-
-# def test_TODO_exception_escalations_are_reported_as_events():
-#     pass
-
-
-@deferred_cleanup
-def test_error_suspends_actor(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            child.set(self.spawn(Child))
-
-        def supervise(self, exc):
-            ok_(isinstance(exc, MockException))
-            parent_received_error.set()
-            parent_supervise_released.wait()
-            return Ignore
-
-    class Child(Actor):
-        def receive(self, message):
-            if message == 'cause-error':
-                raise MockException
-            else:
-                child_received_message.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    child = AsyncResult()
-    parent_received_error, parent_supervise_released, child_received_message = Event(), Event(), Event()
-
-    node.spawn(Parent)
-    child.get() << 'cause-error' << 'dummy'
-    parent_received_error.wait()
-    ok_(not child_received_message.is_set(), "actor should not receive messages after error until being resumed")
-    parent_supervise_released.set()
-    child_received_message.wait()
-
-
-@deferred_cleanup
-def test_error_suspends_children(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            child.set(self.spawn(Child))
-
-        def supervise(self, exc):
-            parent_supervise_released.wait()
-            return Stop
-
-    class Child(Actor):
-        def pre_start(self):
-            childchild.set(self.spawn(ChildChild))
-
-        def receive(self, message):
-            raise MockException
-
-    class ChildChild(Actor):
-        def receive(self, message):
-            received.set()
-
-    parent_supervise_released = Event()
-    child, childchild = AsyncResult(), AsyncResult()
-    received = Event()
-
-    node = DummyNode()
-    defer(node.stop)
-
-    node.spawn(Parent)
-    child = child.get()
-    child << 'cause-error'
-    childchild = childchild.get()
-    sleep(.05)
-    childchild << 'foo'
-    try:
-        ok_(not received.is_set())
-    finally:
-        parent_supervise_released.set()
-
-
-@deferred_cleanup
-def test_exception_after_stop_is_ignored_and_does_not_report_to_parent(defer):
-    class Child(Actor):
-        def receive(self, _):
-            self.stop()
-            raise MockException
-
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'dummy'
-
-        def supervise(self, exc):
-            ok_(False, "should not reach here")
-
-    node = DummyNode()
-    defer(node.stop)
-    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        node.spawn(Parent)
-
-
-@deferred_cleanup
-def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_messages_are_sent_as_normal(defer):
+def test_error_in_post_stop_reports_error_and_termination_messages_are_sent_as_normal(defer):
     class Child(Actor):
         def post_stop(self):
             raise MockException
@@ -1457,9 +866,6 @@ def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_m
             self.watch(self.child)
             self.child.stop()
 
-        def supervise(self, exc):
-            ok_(False, "should not reach here")
-
         def receive(self, message):
             eq_(message, ('terminated', self.child))
             termination_message_received.set()
@@ -1467,411 +873,9 @@ def test_error_in_post_stop_prints_but_doesnt_report_to_parent_and_termination_m
     node = DummyNode()
     defer(node.stop)
     termination_message_received = Event()
-    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+    with expect_failure(MockException):
         node.spawn(Parent)
-        idle()
     termination_message_received.wait()
-
-
-@deferred_cleanup
-def test_supervision_message_is_handled_directly_by_supervise_method(defer):
-    class Parent(Actor):
-        def supervise(self, exc):
-            supervise_called.set()
-            exc_received.set(exc)
-            return Stop
-
-        def pre_start(self):
-            self.spawn(Child) << None
-
-    class Child(Actor):
-        def receive(self, _):
-            raise exc
-
-    node = DummyNode()
-    defer(node.stop)
-    supervise_called = Event()
-    exc_received = AsyncResult()
-    exc = MockException('arg1', 'arg2')
-
-    node.spawn(Parent)
-    supervise_called.wait()
-    ok_(isinstance(exc_received.get(), MockException))
-    ok_(exc_received.get().args, exc.args)
-
-
-@deferred_cleanup
-def test_init_error_reports_to_supervisor(defer):
-    class ChildWithFailingInit(Actor):
-        def __init__(self):
-            raise MockException
-
-    class Parent(Actor):
-        def supervise(self, exc):
-            received_exception.set(exc)
-            return Stop
-
-        def pre_start(self):
-            self.spawn(ChildWithFailingInit)
-
-    node = DummyNode()
-    defer(node.stop)
-    received_exception = AsyncResult()
-    node.spawn(Parent)
-    exc = received_exception.get()
-    ok_(isinstance(exc, CreateFailed))
-    with assert_raises(MockException):
-        exc.raise_original()
-
-
-@deferred_cleanup
-def test_pre_start_error_reports_to_supervisor(defer):
-    class ChildWithFailingInit(Actor):
-        def pre_start(self):
-            raise MockException
-
-        def post_stop(self):
-            post_stop_called()
-
-    class Parent(Actor):
-        def supervise(self, exc):
-            received_exception.set(exc)
-            return Stop
-
-        def pre_start(self):
-            self.spawn(ChildWithFailingInit)
-
-    node = DummyNode()
-    defer(node.stop)
-    received_exception = AsyncResult()
-    post_stop_called = Event()
-    node.spawn(Parent)
-    exc = received_exception.get()
-    ok_(isinstance(exc, CreateFailed))
-    with assert_raises(MockException):
-        exc.raise_original()
-    ok_(not post_stop_called.is_set(), "post_stop must not be called if there was an error in pre_start")
-
-
-@deferred_cleanup
-def test_receive_error_reports_to_supervisor(defer):
-    class Parent(Actor):
-        def supervise(self, exc):
-            received_exception.set(exc)
-            return Stop
-
-        def pre_start(self):
-            self.spawn(ChildWithExcInReceive) << None
-
-    class ChildWithExcInReceive(Actor):
-        method_under_test = 'receive'
-
-        def receive(self, _):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    received_exception = AsyncResult()
-    node.spawn(Parent)
-    ok_(isinstance(received_exception.get(), MockException),
-        "Child errors in the 'receive' method should be sent to its parent")
-
-
-@deferred_cleanup
-def test_restarting_or_resuming_an_actor_that_failed_to_init_or_in_pre_start(defer):
-    class Parent(Actor):
-        def __init__(self, child_cls, supervisor_decision):
-            self.child_cls = child_cls
-            self.supervisor_decision = supervisor_decision
-
-        def supervise(self, exc):
-            return self.supervisor_decision
-
-        def pre_start(self):
-            self.spawn(self.child_cls)
-
-    ##
-
-    class ChildWithErrorInInit(Actor):
-        def __init__(self):
-            child_created.incr()
-            if not init_already_raised.is_set():  # avoid infinite ping-pong
-                init_already_raised.set()
-                raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    init_already_raised = Event()
-    child_created = obs_count()
-    node.spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Restart))
-    child_created.wait_eq(2)
-    #
-    init_already_raised = Event()
-    child_created = obs_count()
-    node.spawn(Props(Parent, child_cls=ChildWithErrorInInit, supervisor_decision=Ignore))
-    child_created.wait_eq(1, message="resuming a tainted actor stops it")
-
-    ##
-
-    class ChildWithErrorInPreStart(Actor):
-        def pre_start(self):
-            child_started.incr()
-            if not pre_start_already_raised.is_set():  # avoid infinite ping-pong
-                pre_start_already_raised.set()
-                raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    pre_start_already_raised = Event()
-    child_started = obs_count()
-    node.spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Restart))
-    child_started.wait_eq(2)
-    #
-    pre_start_already_raised = Event()
-    child_started = obs_count()
-    node.spawn(Props(Parent, child_cls=ChildWithErrorInPreStart, supervisor_decision=Ignore))
-    child_started.wait_eq(1, message="resuming a tainted actor stops it")
-
-
-@deferred_cleanup
-def test_error_report_after_restart_is_ignored(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            if not child.ready():  # so that after the restart the child won't exist
-                child.set(self.spawn(Child))
-
-    class Child(Actor):
-        def receive(self, _):
-            child_released.wait()
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    child = AsyncResult()
-    child_released = Event()
-
-    parent = node.spawn(Parent)
-    child.get() << 'dummy'
-    parent << '_restart'
-    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
-        child_released.set()
-
-
-@deferred_cleanup
-def test_default_supervision_stops_for_create_failed(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            self.child = self.spawn(Child)
-            self.watch(self.child)
-
-        def receive(self, message):
-            eq_(message, ('terminated', self.child))
-            termination_message_received.set()
-
-    class Child(Actor):
-        def __init__(self):
-            raise MockException
-    node = DummyNode()
-    defer(node.stop)
-    termination_message_received = Event()
-    node.spawn(Parent)
-    termination_message_received.wait()
-
-    class Child(Actor):
-        def pre_start(self):
-            raise MockException
-    node = DummyNode()
-    defer(node.stop)
-    termination_message_received = Event()
-    node.spawn(Parent)
-    termination_message_received.wait()
-
-
-# def test_TODO_default_supervision_stops_for_actorkilled():
-#     # TODO: akka treats actor-killed as an exception--does this make sense?
-#     pass
-
-
-@deferred_cleanup
-def test_default_supervision_restarts_by_default(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            self.spawn(Child) << 'fail'
-
-    class Child(Actor):
-        def pre_start(self):
-            child_started.incr()
-
-        def receive(self, _):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    child_started = obs_count()
-    node.spawn(Parent)
-    child_started.wait_eq(2)
-
-
-@deferred_cleanup
-def test_supervision_decision_default(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            c = self.spawn(Child)
-            child.set(c)
-            Events.consume_one(DeadLetter)
-            c << 'dummy'
-
-        def supervise(self, _):
-            return Default
-
-    class Child(Actor):
-        def pre_start(self):
-            child_started.incr()
-            raise MockException
-
-        def post_stop(self):
-            post_stop_called.set()
-
-    node = DummyNode()
-    defer(node.stop)
-
-    #
-
-    child = AsyncResult()
-    child_started = obs_count()
-    post_stop_called = Event()
-    node.spawn(Parent)
-    child_started.wait_eq(1)
-    wait(lambda: child.get().is_stopped)
-    ok_(not post_stop_called.is_set(), "actors with failing start up should not have their post_stop called")
-    #
-
-    class Child(Actor):
-        def pre_start(self):
-            child_started.incr()
-
-        def receive(self, _):
-            raise MockException
-
-    child_started = obs_count()
-    node.spawn(Parent)
-    child_started.wait_eq(2)
-
-
-# def test_TODO_other_error_escalates():
-#     # TODO: what does this mean in Akka anyway?
-#     pass
-
-
-@deferred_cleanup
-def test_error_is_escalated_if_supervision_returns_escalate_or_nothing(defer):
-    class Supervisor(Actor):
-        def pre_start(self):
-            self.spawn(Child)
-
-        def supervise(self, exc):
-            return supervision_decision
-
-    class Child(Actor):
-        def pre_start(self):
-            self << 'dummy'
-
-        def receive(self, _):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    supervision_decision = Escalate
-    with expect_failure(MockException):
-        node.spawn(Supervisor)
-    supervision_decision = None
-    with expect_failure(MockException):
-        node.spawn(Supervisor)
-
-
-@deferred_cleanup
-def test_error_is_escalated_if_supervision_raises_exception(defer):
-    class SupervisorException(Exception):
-        pass
-
-    class Supervisor(Actor):
-        def pre_start(self):
-            self.spawn(Child)
-
-        def supervise(self, exc):
-            raise SupervisorException
-
-    class Child(Actor):
-        def pre_start(self):
-            self << 'dummy'
-
-        def receive(self, _):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    with expect_failure(SupervisorException):
-        node.spawn(Supervisor)
-
-
-@deferred_cleanup
-def test_bad_supervision_is_raised_if_supervision_returns_an_illegal_value(defer):
-    class Supervisor(Actor):
-        def pre_start(self):
-            self.spawn(Child)
-
-        def supervise(self, exc):
-            return 'illegal-value'
-
-    class Child(Actor):
-        def pre_start(self):
-            self << 'dummy'
-
-        def receive(self, _):
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    with expect_failure(BadSupervision, "Should raise BadSupervision if supervision returns an illegal value") as basket:
-        node.spawn(Supervisor)
-        sleep(0.1)
-    with assert_raises(MockException):
-        basket[0].raise_original()
-
-
-# def test_TODO_baseexceptions_are_also_propagated_through_the_hierarchy():
-#     pass
-
-
-# def test_TODO_supervise_can_specify_maxrestarts():
-#     class Parent(Actor):
-#         def supervise(self, _):
-#             return Restart(max=3)
-
-#         def pre_start(self):
-#             self.spawn(Child)
-
-#     child_started = obs_count()
-
-#     class Child(Actor):
-#         def pre_start(self):
-#             child_started()
-#             raise MockException
-
-#     node.spawn(Parent)
-
-#     assert child_started == 4, child_started
-
-
-# def test_TODO_supervision_can_be_marked_as_allforone_or_oneforone():
-#     pass
-
-
-##
-## GUARDIAN
-
-# def test_TODO_guardian_supervision():
-#     pass
 
 
 ##
@@ -1915,40 +919,6 @@ def test_stopped_child_is_removed_from_its_parents_list_of_children(defer):
 
 
 @deferred_cleanup
-def test_suspending_suspends_and_resuming_resumes_all_children(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            child.set(self.spawn(Child))
-
-        def supervise(self, exc):
-            ok_(isinstance(exc, MockException))
-            parent_received_error.set()
-            return Ignore  # should resume both Child and SubChild, and allow SubChild to process its message
-
-    class Child(Actor):
-        def pre_start(self):
-            subchild.set(self.spawn(SubChild))
-
-        def receive(self, message):
-            raise MockException  # should also cause SubChild to be suspended
-
-    class SubChild(Actor):
-        def receive(self, message):
-            subchild_received_message.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    child, subchild = AsyncResult(), AsyncResult()
-    parent_received_error, subchild_received_message = Event(), Event()
-    node.spawn(Parent)
-    child.get() << 'dummy'  # will cause Child to raise MockException
-    subchild.get() << 'dummy'
-
-    parent_received_error.wait()
-    subchild_received_message.wait()
-
-
-@deferred_cleanup
 def test_stopping_stops_children(defer):
     class Parent(Actor):
         def pre_start(self):
@@ -1985,34 +955,6 @@ def test_stopping_parent_from_child(defer):
     node.spawn(PoorParent)
     child.get() << 'dummy'
     parent_stopped.wait()
-
-
-@deferred_cleanup
-def test_restarting_stops_children(defer):
-    class Parent(Actor):
-        def pre_start(self):
-            started.incr()
-            if started == 1:  # only start the first time, so after the restart, there should be no children
-                self.spawn(Child)
-            else:
-                ok_(not self.children)
-                parent_restarted.set()
-
-    class Child(Actor):
-        def post_stop(self):
-            child_stopped.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    started = obs_count()
-    child_stopped, parent_restarted = Event(), Event()
-    node.spawn(Parent) << '_restart'
-    child_stopped.wait()
-    parent_restarted.wait()
-
-
-# def test_TODO_restarting_does_not_restart_children_if_told_so():
-#     pass  # Parent.stop_children_on_restart = False
 
 
 @deferred_cleanup
@@ -2210,12 +1152,12 @@ def test_unhandled_termination_message_causes_receiver_to_raise_unhandledtermina
 
 
 @deferred_cleanup
-def test_system_messages_to_dead_actorrefs_are_discarded(defer):
+def test_stop_and_kill_messages_to_dead_actorrefs_are_discarded(defer):
     node = DummyNode()
     defer(node.stop)
     a = node.spawn(Actor)
     a.stop()
-    for event in ['_stop', '_suspend', '_resume', '_restart']:
+    for event in ['_stop', '_kill']:
         d = Events.consume_one(DeadLetter)
         a << event
         ok_(not d.ready(), "message %r sent to a dead actor should be discarded" % (event,))
@@ -2253,29 +1195,6 @@ def test_watching_running_remote_actor_that_stops_causes_termination_message(def
     remote_watchee.stop()
 
     eq_(received.get(), ('terminated', remote_watchee))
-
-
-@deferred_cleanup
-def test_watching_remote_actor_that_restarts_doesnt_cause_termination_message(defer):
-    node1, node2 = Node('localhost:20001', enable_remoting=True), Node('localhost:20002', enable_remoting=True)
-    defer(node1.stop, node2.stop)
-
-    received = Event()
-
-    class Watcher(Actor):
-        def pre_start(self):
-            self.watch(self.root.node.lookup_str('localhost:20002/remote-watchee'))
-
-        def receive(self, msg):
-            received.set()
-
-    remote_watchee = node2.spawn(Actor, name='remote-watchee')
-    node1.spawn(Watcher)
-    sleep(.001)
-    remote_watchee << '_restart'
-
-    sleep(.05)
-    ok_(not received.is_set())
 
 
 @deferred_cleanup
@@ -2561,24 +1480,6 @@ def test_sending_to_an_unknown_host_that_becomes_visible_in_time(defer):
 #         network.simulate(duration=2.0)
 
 
-## REMOTE NAME-TO-PORT MAPPING
-
-# def test_TODO_node_identifiers_are_mapped_to_addresses_on_the_network():
-#     pass  # nodes connect to remote mappers on demand
-
-
-# def test_TODO_node_addresses_are_discovered_automatically_using_a_mapper_daemon_on_each_host():
-#     pass  # node registers itself
-
-
-# def test_TODO_nodes_can_acquire_ports_automatically():
-#     pass  # node tries several ports (or asks the mapper?) and settles with the first available one
-
-
-# def test_TODO_mapper_daemon_can_be_on_a_range_of_ports():
-#     pass
-
-
 ## OPTIMIZATIONS
 
 @deferred_cleanup
@@ -2661,36 +1562,8 @@ def test_warning_is_emitted_if_process_run_returns_a_value(defer):
         node.spawn(ProcThatReturnsValue)
 
 
-def test_process_run_is_paused_and_unpaused_if_the_actor_is_suspended_and_resumed():
-    @deferred_cleanup
-    def do(defer):
-        class MyProc(Actor):
-            def run(self):
-                released.wait()
-                after_release.set()
-
-        released, after_release = Event(), Event()
-
-        node = DummyNode()
-        defer(node.stop)
-        p = node.spawn(MyProc)
-        sleep(0.001)
-        ok_(not after_release.is_set())
-
-        p << '_suspend'
-        released.set()
-        sleep(0.001)
-        ok_(not after_release.is_set())
-
-        p << '_resume'
-        after_release.wait()
-    # TODO: not possible to implement until gevent/greenlet acquires a means to suspend greenlets
-    with assert_raises(AssertionError):
-        do()
-
-
 @deferred_cleanup
-def test_process_run_is_cancelled_if_the_actor_is_stopped(defer):
+def test_greenletexit_is_raised_in_run_if_the_actor_is_stopped(defer):
     class MyProc(Actor):
         def run(self):
             try:
@@ -2730,30 +1603,7 @@ def test_stopping_waits_till_process_is_done_handling_a_message(defer):
 
 
 @deferred_cleanup
-def test_stopping_a_process_that_never_gets_a_message_just_kills_it_immediately(defer):
-    # not the most elegant solution, but there's no other way
-    class MyProc(Actor):
-        def run(self):
-            try:
-                Event().wait()
-            except GreenletExit:
-                exited.set()
-
-        def post_stop(self):
-            exited2.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    exited, exited2 = Event(), Event()
-    a = node.spawn(MyProc)
-    sleep(.001)
-    a.stop()
-    exited.wait()
-    exited2.wait()
-
-
-@deferred_cleanup
-def test_error_in_stopping_proc_is_ignored(defer):
+def test_error_in_stopping_proc_is_reported_nevertheless(defer):
     class MyProc(Actor):
         def run(self):
             self.get()
@@ -2766,7 +1616,7 @@ def test_error_in_stopping_proc_is_ignored(defer):
     a << 'dummy'
     sleep(.001)
     a.stop()
-    with expect_one_event(ErrorIgnored(a, IS_INSTANCE(MockException), ANY)):
+    with expect_failure(MockException):
         released.set()
 
 
@@ -2815,57 +1665,7 @@ def test_errors_in_process_while_processing_a_message_are_reported(defer):
 
 
 @deferred_cleanup
-def test_error_in_process_suspends_and_taints_and_resuming_it_stops_it(defer):
-    class Parent(Actor):
-        def supervise(self, exc):
-            return Ignore
-
-        def pre_start(self):
-            proc.set(self.spawn(MyProc))
-
-    class MyProc(Actor):
-        def run(self):
-            raise MockException
-
-        def post_stop(self):
-            stopped.set()
-
-    node = DummyNode()
-    defer(node.stop)
-    proc = AsyncResult()
-    stopped = Event()
-    node.spawn(Parent)
-    proc.get() << 'dummy'
-    stopped.wait()
-
-
-@deferred_cleanup
-def test_restarting_a_process(defer):
-    class Parent(Actor):
-        def supervise(self, exc):
-            return Restart
-
-        def pre_start(self):
-            proc.set(self.spawn(MyProc))
-
-    class MyProc(Actor):
-        def run(self):
-            started.incr()
-            self.get()
-            raise MockException
-
-    node = DummyNode()
-    defer(node.stop)
-    proc = AsyncResult()
-    started = obs_count()
-    node.spawn(Parent)
-    started.wait_eq(1)
-    proc.get() << 'dummy'
-    started.wait_eq(2)
-
-
-@deferred_cleanup
-def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_errors(defer):
+def test_errors_while_stopping_are_reported(defer):
     class MyProc(Actor):
         def run(self):
             try:
@@ -2876,7 +1676,7 @@ def test_errors_while_stopping_and_finalizing_are_treated_the_same_as_post_stop_
     defer(node.stop)
     a = node.spawn(MyProc)
     sleep(.001)
-    with expect_one_event(ErrorIgnored(ANY, IS_INSTANCE(MockException), ANY)):
+    with expect_failure(MockException):
         a.stop()
 
 
@@ -3018,106 +1818,6 @@ def test_process_can_get_messages_selectively(defer):
     sleep(.001)
     ok_(321 not in messages)
     ok_(32.1 in messages)
-
-
-# def test_TODO_process_can_delegate_handling_of_caught_exceptions_to_parent():
-#     class Parent(Actor):
-#         def supervise(self, exc):
-#             ok_(isinstance(exc, MockException))
-#             supervision_invoked.set()
-#             return Restart
-
-#         def pre_start(self):
-#             self.spawn(Child) << 'invoke'
-
-#     class Child(Actor):
-#         def run(self):
-#             self.get()  # put the process into receive mode (i.e. started)
-#             try:
-#                 raise MockException()
-#             except MockException:
-#                 self.escalate()
-#             process_continued.set()
-
-#     process_continued, supervision_invoked = Event(), Event()
-#     node.spawn(Parent)
-#     supervision_invoked.wait()
-#     ok_(not process_continued.is_set())
-#     sleep(.001)
-
-
-# def test_TODO_calling_escalate_outside_of_error_context_causes_runtime_error():
-#     class MyProc(Actor):
-#         def supervise(self, exc):
-#             ok_(isinstance(exc, InvalidEscalation))
-#             exc_raised.set()
-#             return Stop
-
-#         def pre_start(self):
-#             self.spawn(MyProcChild)
-
-#     class MyProcChild(Actor):
-#         def run(self):
-#             self << 'foo'
-#             self.get()  # put in started-mode
-#             self.escalate()
-
-#     node = DummyNode()
-#     exc_raised = Event()
-#     node.spawn(MyProc)
-#     exc_raised.wait()
-
-
-##
-## SUBPROCESS
-
-# def test_TODO_spawning_an_actor_in_subprocess_uses_a_special_agent_guardian():
-#     pass  # TODO: subprocess contains another actor system; maybe add a
-#           # guardian actor like in Akka, and that guardian could be
-#           # different when running in a subprocess and instead of dumping a log message on stderr
-#           # it prints a parsable message
-
-
-# def test_TODO_entire_failing_subproccess_reports_the_subprocessed_actor_as_terminated():
-#     # TODO: and how to report  the cause?
-#     pass
-
-
-# def test_TODO_stopping_a_subprocessed_actor_kills_the_subprocess():
-#     pass
-
-
-##
-##  MIGRATION
-
-# def test_TODO_migrating_an_actor_to_another_host_suspends_serializes_and_deserializes_it_and_makes_it_look_as_if_it_had_been_deployed_remotely():
-#     pass
-
-
-# def test_TODO_migrating_an_actor_doesnt_break_existing_refs():
-#     pass
-
-
-# def test_TODO_migrating_an_actor_redirects_all_actorrefs_to_it():
-#     pass
-
-
-# def test_TODO_actor_is_allowed_to_fail_to_be_serialized():
-#     pass
-
-
-##
-## TYPED ACTORREFS
-
-# def test_TODO_typed_actorrefs():
-#     pass
-
-
-##
-## DISPATCHING
-
-# def test_TODO_suspend_and_resume_doesnt_change_global_message_queue_ordering():
-#     pass
 
 
 # SUPPORT

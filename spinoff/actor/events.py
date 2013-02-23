@@ -45,20 +45,8 @@ class RemoteDeadLetter(Event, fields('actor', 'message', 'sender_addr')):
         return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender_addr)))
 
 
-class LifecycleEvent(Event):
-    pass
-
-
-class Started(LifecycleEvent, fields('actor')):
-    pass
-
-
-class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
-    """Logged by actors as they run into errors.
-
-    This is done before the error is reported to the supervisor so even handled errors are logged this way.
-
-    """
+class Error(Event, fields('actor', 'exc', 'tb')):
+    """Logged by actors as they run into errors."""
     def repr_args(self):  # pragma: no cover
         try:
             formatted_traceback = '\n' + traceback.format_exception(self.exc, None, self.tb)
@@ -67,50 +55,7 @@ class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
         return super(Error, self).repr_args() + formatted_traceback
 
 
-class UnhandledError(Error, fields('actor', 'exc', 'tb')):
-    """Logged by the System actor in the case of errors coming from top-level actors.
-
-    Logged in addition to a regular `Error` event.
-
-    """
-
-
-class ErrorIgnored(Error, fields('actor', 'exc', 'tb')):
-    """Logged whenever there is an exception in an actor but this exception cannot be reported.
-
-    The causes for this event is either an exception in Actor.post_stop or an exception when the actor is being
-    stopped anyway.
-
-    """
-
-
-class _SupressedBase(LifecycleEvent):
-    """Internal base class that implements the logic shared by the Suspended and Terminated events."""
-    def __new__(cls, actor, reason=None):
-        return super(_SupressedBase, cls).__new__(cls, actor, reason)
-
-    def repr_args(self):
-        return (super(_SupressedBase, self).repr_args() +
-                (', reason=%r' % (self.reason, ) if self.reason else ''))
-
-
-class Suspended(_SupressedBase, fields('actor', 'reason')):
-    pass
-
-
-class Resumed(LifecycleEvent, fields('actor')):
-    pass
-
-
-class Terminated(_SupressedBase, fields('actor', 'reason')):
-    pass
-
-
-class Terminated(Terminated, fields('actor', 'reason')):
-    pass
-
-
-class HighWaterMarkReached(Event, fields('actor', 'count')):
+class Terminated(Event, fields('actor')):
     pass
 
 

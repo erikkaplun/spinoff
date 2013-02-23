@@ -8,7 +8,6 @@ from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.exceptions import LookupFailed
 from spinoff.actor.guardian import Guardian
 from spinoff.actor.ref import Ref
-from spinoff.actor.supervision import Stop
 from spinoff.actor.uri import Uri
 from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.remoting.pickler import IncomingMessageUnpickler
@@ -25,14 +24,14 @@ class Node(object):
     """
     _hub = None
 
-    def __init__(self, nid=None, enable_remoting=False, enable_relay=False, root_supervision=Stop, hub_kwargs={}):
+    def __init__(self, nid=None, enable_remoting=False, enable_relay=False, hub_kwargs={}):
         self.nid = nid
         self._hub = (
             HubWithNoRemoting() if not enable_remoting else
             Hub(nid, enable_relay, on_node_down=lambda ref, nid: ref << ('_node_down', nid), on_receive=self._on_receive, **hub_kwargs)
         )
         self._uri = Uri(name=None, parent=None, node=nid)
-        self.guardian = Guardian(uri=self._uri, node=self, supervision=root_supervision)
+        self.guardian = Guardian(uri=self._uri, node=self)
 
     def lookup_str(self, addr):
         return self.lookup(Uri.parse(addr))

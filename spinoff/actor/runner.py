@@ -1,7 +1,6 @@
 from __future__ import print_function
 
 import re
-import traceback
 
 import gevent
 from twisted.application.service import Service
@@ -12,19 +11,17 @@ from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
 from spinoff.actor._actor import _validate_nodeid
-from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.util.logging import log, err, panic, dbg
 from spinoff.util.async import after
 from spinoff.util.pattern_matching import ANY
 from spinoff.actor.events import Events, Message
-from spinoff.actor.supervision import Stop, Restart, Resume
 
 _EMPTY = object()
 
 
 class ActorRunner(Service):
 
-    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, supervise='stop', keep_running=False):
+    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, keep_running=False):
         nodeid = 'localhost' + nodeid if nodeid and re.match(r'^:\d+$', nodeid) else nodeid
         if nodeid:
             _validate_nodeid(nodeid)
@@ -34,7 +31,6 @@ class ActorRunner(Service):
         self._wrapper = None
         self._nodeid = nodeid
         self._name = name
-        self._supervise = supervise
         self._keep_running = keep_running
 
     def startService(self):
@@ -45,19 +41,10 @@ class ActorRunner(Service):
         def start_actor():
             if self._nodeid:
                 Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
-                try:
-                    hub = Hub(nodeid=self._nodeid)
-                except Exception:
-                    err("Could not set up remoting")
-                    traceback.print_exc()
-                    reactor.stop()
-                    return
             else:
                 Events.log(Message("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting"))
-                hub = HubWithNoRemoting()
 
-            supervision = {'stop': Stop, 'restart': Restart, 'resume': Resume}[self._supervise]
-            node = Node(hub=hub, root_supervision=supervision)
+            node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False)
 
             try:
                 self._wrapper = node.spawn(Wrapper.using(

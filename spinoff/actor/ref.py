@@ -76,7 +76,7 @@ class Ref(_BaseRef):
 
     By spawning new actors:
 
-    * `self.spawn(...)`: a ref to a newly created subordinate actor of the spawning actor (a supervisor);
+    * `self.spawn(...)`: a ref to a newly created subordinate actor of the spawning actor;
 
     * `spawn(...)`: a ref to a newly spawned top-level actor in the default hierarchy, however, top-level actors should
        in general be avoided, instead, have only one top-level actor under which your entire application is laid out;
@@ -136,7 +136,7 @@ class Ref(_BaseRef):
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
-            elif message in ('_stop', '_suspend', '_resume', '_restart', (IN(['terminated', '_watched', '_unwatched']), ANY)):
+            elif message in ('_stop', (IN(['terminated', '_watched', '_unwatched']), ANY)):
                 pass
             else:
                 Events.log(DeadLetter(self, message))
