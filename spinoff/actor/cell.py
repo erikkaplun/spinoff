@@ -375,6 +375,8 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         for child in self.children:
             child << term_msg
         stash = deque()
+        self.queue.queue.extendleft(reversed(self.inbox))
+        self.inbox.clear()
         while self.children:
             m = self.queue.get()
             if m == ('_child_terminated', ANY):
@@ -386,7 +388,6 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     def destroy(self):
         ref = self.ref  # grab the ref before we stop, otherwise ref() returns a dead ref
         self.stopped = True
-        self.queue.queue.extendleft(reversed(self.inbox))
         while True:
             try:
                 m = self.queue.get_nowait()
