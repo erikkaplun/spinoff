@@ -127,7 +127,12 @@ class Ref(_BaseRef):
         if self._cell:
             self._cell.receive(message)
         elif not self.is_local:
-            self.node.send_message(message, remote_ref=self)
+            if self.uri.node != self.node.nid:
+                self.node.send_message(message, remote_ref=self)
+            else:
+                self._cell = self.node.guardian.lookup_cell(self.uri)
+                self.is_local = True
+                self._cell.receive(message)
         else:
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
