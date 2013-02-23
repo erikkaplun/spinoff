@@ -496,7 +496,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         if not silent:
             other << ('_unwatched', self.ref)
         if not other.is_local:
-            self.node.unwatch_node(other.uri.node, report_to=self.ref)
+            self.node.unwatch_node(other.uri.node, self.ref)
 
     def _watched(self, other):
         if not self.watchers:
