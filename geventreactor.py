@@ -274,6 +274,8 @@ class DelayedCall(object):
         L.append('>')
         return ''.join(L)
 
+    __repr__ = __str__
+
 
 class Stream(Greenlet, styles.Ephemeral):
     def __init__(self, reactor, selectable, method):
