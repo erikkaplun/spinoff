@@ -543,6 +543,7 @@ class GeventReactor(posixbase.PosixReactorBase):
     # IReactorCore
 
     def stop(self):
+        posixbase.PosixReactorBase.stop(self)
         self._callqueue.insert(0, DelayedCall(self, 0, gevent.sleep, (), {}, seconds=self.seconds))
         gevent.kill(self.greenlet)
 
