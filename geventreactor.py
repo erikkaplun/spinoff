@@ -26,7 +26,7 @@ import sys
 from bisect import insort
 
 import gevent
-from gevent import Greenlet, GreenletExit, socket, getcurrent
+from gevent import spawn, Greenlet, GreenletExit, socket, getcurrent
 from gevent.pool import Group
 from gevent.event import Event, AsyncResult
 from twisted.python import log, failure, reflect, util
@@ -60,7 +60,7 @@ def deferToGreenletPool(*args, **kwargs):
             reactor.callFromGreenlet(d.callback, func(*args[3:], **kwargs))
         except:
             reactor.callFromGreenlet(d.errback, failure.Failure())
-    pool.add(Greenlet.spawn_later(0, task))
+    pool.add(spawn(task))
     return d
 
 
