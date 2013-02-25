@@ -342,7 +342,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 exc_fmt = tb
             else:
                 exc_fmt = ''.join(traceback.format_exception(type(exc), exc, tb))
-            fail('\n\n', exc_fmt)
+            print(exc_fmt.strip(), file=sys.stderr)
         else:
             fail("Died because a watched actor (%r) died" % (exc.watchee,))
         Events.log(Error(self.ref, exc, tb)),
