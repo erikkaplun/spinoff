@@ -11,7 +11,6 @@ import types
 import os
 import multiprocessing
 from collections import defaultdict
-from Queue import Queue, Empty
 from spinoff.util.python import dump_method_call
 
 try:
@@ -24,7 +23,6 @@ WIN32 = sys.platform == 'win32'
 
 
 _lock = multiprocessing.Lock()
-_queue = Queue()
 
 
 if WIN32:
@@ -165,26 +163,11 @@ def get_calling_context(frame):
 
 
 def _write(level, *args, **kwargs):
-    _queue.put_nowait((level, args, kwargs))
-
-    if _lock.acquire(False):
-        try:
-            while True:
-                try:
-                    pending = _queue.get_nowait()
-                except Empty:
-                    break
-                else:
-                    _do_write(pending[0], *pending[1], **pending[2])
-        finally:
-            _lock.release()
-
-
-def _do_write(level, *args, **kwargs):
+    _lock.acquire()
     try:
         if level >= LEVEL:
 
-            frame = sys._getframe(3)
+            frame = sys._getframe(2)
             file, lineno, caller_name, caller = get_calling_context(frame)
 
             if caller:
@@ -258,6 +241,8 @@ def _do_write(level, *args, **kwargs):
         print(RED, "!!%d: (logger failure)" % (level,), file=sys.stderr, *args, **kwargs)
         print(RED, "...while trying to log", repr(args), repr(comment) if 'comment' in locals() else '')
         print(traceback.format_exc(), RESET_COLOR, file=sys.stderr)
+    finally:
+        _lock.release()
 
 
 def get_logname(obj):
