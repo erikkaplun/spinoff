@@ -5,7 +5,7 @@ from pickle import PicklingError
 
 import gevent
 from spinoff.actor.cell import _BaseCell
-from spinoff.actor.events import Events, UnhandledMessage, Terminated
+from spinoff.actor.events import Events, UnhandledMessage
 from spinoff.actor.ref import _BaseRef
 from spinoff.util.pattern_matching import ANY
 
@@ -45,10 +45,10 @@ class Guardian(_BaseCell, _BaseRef):
             self._child_gone(sender)
             if not self._children and self.all_children_stopped:
                 self.all_children_stopped.set(None)
-            # XXX: find a better way to avoid Terminated messages for TempActors,
-            # possibly by using a /tmp container for them
-            if not str(sender.uri).startswith('/tempactor'):
-                Events.log(Terminated(sender))
+            # # XXX: find a better way to avoid Terminated messages for TempActors,
+            # # possibly by using a /tmp container for them
+            # if not str(sender.uri).startswith('/tempactor'):
+            #     Events.log(Terminated(sender))
         elif message == '_stop':
             return self._do_stop()
         elif message == '_kill':
