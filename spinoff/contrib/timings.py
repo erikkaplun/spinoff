@@ -1,9 +1,10 @@
-from spinoff.actor.process import Process
-from spinoff.util.async import sleep
+from gevent import sleep
+
+from spinoff.actor import Actor
 
 
-class LoopingCaller(Process):
+class LoopingCaller(Actor):
     def run(self, interval, fn, *args, **kwargs):
         while True:
-            yield sleep(interval)
-            yield fn(*args, **kwargs)
+            sleep(interval)
+            fn(*args, **kwargs)
