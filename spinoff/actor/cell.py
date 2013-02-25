@@ -318,7 +318,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             elif m == ('__error', ANY, ANY):
                 _, exc, tb = m
                 Events.log(Error(ref, exc, tb))
-            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '__done'):
+            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done'):
                 Events.log(DeadLetter(ref, m))
         self.parent.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
