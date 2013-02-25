@@ -19,6 +19,7 @@ setup(
         'zope.interface',
         'twisted>=12.0',
         'pyzmq==13.0',
+        'gevent==1.0dev',
     ],
 
     data_files=[('twisted/plugins', ['twisted/plugins/startnode.py'])],

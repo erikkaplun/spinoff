@@ -4,6 +4,7 @@ python:
     - "2.6"
     - "pypy"
 install:
+    - pip install https://github.com/downloads/SiteSupport/gevent/gevent-1.0rc2.tar.gz
     - pip install . --use-mirrors
     - pip install genshi --use-mirrors
 script:
