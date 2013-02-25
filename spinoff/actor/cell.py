@@ -288,8 +288,8 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         if hasattr(self.impl, 'post_stop'):
             try:
                 self.impl.post_stop()
-            except Exception:
-                Events.log(Error(self.ref, sys.exc_info()[1], sys.exc_info()[2]))
+            except:
+                self.report()
         while self.watchees:
             self._unwatch(self.watchees.pop())
         for child in self.children:
@@ -317,7 +317,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 self._watched(m[1])
             elif m == ('__error', ANY, ANY):
                 _, exc, tb = m
-                Events.log(Error(ref, exc, tb))
+                self.report((exc, tb))
             elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done'):
                 Events.log(DeadLetter(ref, m))
         self.parent.send(('_child_terminated', ref))
