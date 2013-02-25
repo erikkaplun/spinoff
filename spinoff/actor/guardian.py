@@ -64,7 +64,7 @@ class Guardian(_BaseCell, _BaseRef):
             for actor in self.children:
                 (actor.stop if not kill else actor.kill)()
             try:
-                self.all_children_stopped.get(timeout=3.0)
+                self.all_children_stopped.get(timeout=1.0)
             except gevent.Timeout:  # pragma: no cover
                 assert not kill
                 for actor in self.children:
