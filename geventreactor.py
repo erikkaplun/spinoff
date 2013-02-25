@@ -26,7 +26,7 @@ import sys
 from bisect import insort
 
 import gevent
-from gevent import Greenlet, GreenletExit, socket
+from gevent import Greenlet, GreenletExit, socket, getcurrent
 from gevent.pool import Group
 from gevent.event import Event, AsyncResult
 from twisted.python import log, failure, reflect, util
@@ -67,17 +67,21 @@ def deferToGreenletPool(*args, **kwargs):
 def deferToGreenlet(*args, **kwargs):
     """Call function using a greenlet and return the result as a Deferred"""
     from twisted.internet import reactor
+    assert reactor.greenlet == getcurrent(), "must invoke this in the reactor greenlet"
     return deferToGreenletPool(reactor, reactor.getGreenletPool(), *args, **kwargs)
 
 
 def callMultipleInGreenlet(tupleList):
     """Call a list of functions in the same thread"""
     from twisted.internet import reactor
+    assert reactor.greenlet == getcurrent(), "must invoke this in the reactor greenlet"
     reactor.callInGreenlet(_runMultiple, tupleList)
 
 
 def waitForGreenlet(g):
     """Link greenlet completion to Deferred"""
+    from twisted.internet import reactor
+    assert reactor.greenlet == getcurrent(), "must invoke this in the reactor greenlet"
     d = defer.Deferred()
 
     def cb(g):
@@ -92,6 +96,8 @@ def waitForGreenlet(g):
 
 def waitForDeferred(d, result=None):
     """Block current greenlet for Deferred, waiting until result is not a Deferred or a failure is encountered"""
+    from twisted.internet import reactor
+    assert reactor.greenlet != getcurrent(), "can't invoke this in the reactor greenlet"
     if result is None:
         result = AsyncResult()
 
@@ -114,6 +120,7 @@ def waitForDeferred(d, result=None):
 def blockingCallFromGreenlet(*args, **kwargs):
     """Call function in reactor greenlet and block current greenlet waiting for the result"""
     reactor = args[0]
+    assert reactor.greenlet and reactor.greenlet != getcurrent(), "can't invoke this in the reactor greenlet"
     func = args[1]
     result = AsyncResult()
 
@@ -483,6 +490,7 @@ class GeventReactor(posixbase.PosixReactorBase):
         self.addToGreenletPool(Greenlet.spawn_later(0, *args, **kwargs))
 
     def callFromGreenlet(self, *args, **kw):
+        assert self.greenlet != getcurrent(), "can't invoke this in the reactor greenlet"
         c = DelayedCall(self, self.seconds(), args[0], args[1:], kw, seconds=self.seconds)
         insort(self._callqueue, c)
         self.reschedule()
