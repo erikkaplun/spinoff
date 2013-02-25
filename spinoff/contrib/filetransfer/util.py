@@ -1,8 +1,8 @@
-from twisted.internet.threads import deferToThread
+from gevent.threadpool import ThreadPool
 
 
 def read_file_async(filename, start=0, end=None):
-    return deferToThread(_do_read_file_async, filename, start, end)
+    return ThreadPool(1).apply(_do_read_file_async, args=(filename, start, end))
 
 
 def _do_read_file_async(filename, start, end):

@@ -4,13 +4,10 @@ import uuid
 import os
 from cStringIO import StringIO
 
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
-from txcoroutine import coroutine
-
-from spinoff.actor import Actor
-from spinoff.actor.exceptions import Unhandled
+from gevent import with_timeout, Timeout, spawn_later
+from gevent.event import Event, AsyncResult
+from spinoff.actor import Actor, Unhandled
 from spinoff.contrib.filetransfer.util import read_file_async
-from spinoff.util.async import with_timeout, Timeout, after
 from spinoff.util.logging import dbg, err
 from spinoff.util.pattern_matching import ANY, IN
 
@@ -33,7 +30,7 @@ class _Sender(Actor):
 
         while True:
             try:
-                msg = yield with_timeout(OPEN_FILE_TIMEOUT, self.get())
+                msg = with_timeout(OPEN_FILE_TIMEOUT, self.get)
             except Timeout:
                 err("Sending of file at %r timed out" % (file,))
                 break
@@ -42,7 +39,7 @@ class _Sender(Actor):
                 service << ('touch-file', pub_id)
                 _, chunk_size = msg
 
-                chunk = yield read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
+                chunk = read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
                 seek_ptr += len(chunk)
 
                 more_coming = len(chunk) > 0 if chunk_size > 0 else True
@@ -114,7 +111,7 @@ class FilePublisher(Actor):
             self._touch_file(pub_id)
 
         elif 'purge-old' == msg:
-            after(60.0).do(self.send, 'purge-old')
+            spawn_later(60.0, self.send, 'purge-old')
 
             t = datetime.datetime.now()
 
@@ -137,13 +134,13 @@ class _Receiver(Actor):
 
         file_service << ('get-file', pub_id, self.ref)
 
-        msg = yield self.get(('take-file', ANY), ('terminated', file_service))
+        msg = self.get(('take-file', ANY), ('terminated', file_service))
 
         if ('take-file', ANY) == msg:
             _, sender = msg
         elif ('terminated', file_service) == msg:
-            _, _, d = yield self.get(('next-chunk', ANY, ANY))
-            d.errback(Exception("file sender died prematurely"))
+            _, _, d = self.get(('next-chunk', ANY, ANY))
+            d.set_exception(Exception("file sender died prematurely"))
             return
         else:
             raise Unhandled(msg)
@@ -151,15 +148,13 @@ class _Receiver(Actor):
         self.watch(sender)
 
         while True:
-            msg = yield self.get(('next-chunk', ANY, ANY), ('terminated', sender))
+            msg = self.get(('next-chunk', ANY, ANY), ('terminated', sender))
 
             if ('next-chunk', ANY, ANY) == msg:
                 _, size, d = msg
                 sender << ('next-chunk', size)
-                _, chunk, more_coming = yield self.get(('chunk', ANY, ANY))
-                # if chunk:
-                #     dbg("receive %r at %r" % (hashlib.md5(chunk[:100]).hexdigest()[:8], str(time.time())[8:]))
-                d.callback((chunk, more_coming))
+                _, chunk, more_coming = self.get(('chunk', ANY, ANY))
+                d.set((chunk, more_coming))
 
             elif ('terminated', sender) == msg:
                 break
@@ -189,21 +184,21 @@ class FileRef(object):
 
     def open(self, context=None):
         ret = FileHandle(self.pub_id, self.file_service, context=context, abstract_path=self.abstract_path)
-        return ret._open().addCallback(lambda _: ret)
+        ret._open()
+        return ret
 
-    @coroutine
     def fetch(self, path, context=None):
         if path in self._fetching:
-            yield self._fetching[path]
+            self._fetching[path].wait()
         else:
             if os.path.exists(path) and reasonable_get_mtime(path) != self.mtime:
                 os.remove(path)
-            self._fetching[path] = Deferred()
+            self._fetching[path] = Event()
             mkdir_p(os.path.dirname(path))
-            with (yield self.open(context=context)) as f:
-                yield f.read_into(path)
+            with self.open(context=context) as f:
+                f.read_into(path)
             os.utime(path, (self.mtime, self.mtime))
-            self._fetching[path].callback(None)
+            self._fetching[path].set()
             del self._fetching[path]
 
     # @classmethod
@@ -239,30 +234,28 @@ class FileHandle(object):
         If `size` is not specified, returns the content of the entire file.
 
         """
-        d = Deferred()
+        d = AsyncResult()
         if size is None or size > DEFAULT_CHUNK_SIZE:
             return self._read_multipart(total_size=size)
         else:
             self.receiver << ('next-chunk', size, d)
-            d.addCallback(lambda (chunk, more_coming): ((self.close() if not more_coming else None), chunk)[-1])
-            d.addErrback(err)
-            return d
+            chunk, more_coming = d.get()
+            if not more_coming:
+                self.close()
 
-    @inlineCallbacks
     def read_into(self, file):
         if file in self._reading:
-            yield self._reading[file]
+            self._reading[file].wait()
         else:
-            d = self._reading[file] = Deferred()
+            d = self._reading[file] = Event()
             try:
                 if os.path.exists(file):
                     os.unlink(file)
                 with open(file, 'wb') as f:
-                    yield self._read_multipart(read_into=f)
+                    self._read_multipart(read_into=f)
             finally:
-                d.callback(None)
+                d.set()
 
-    @inlineCallbacks
     def _read_multipart(self, total_size=None, read_into=None):
         if self.closed:
             raise Exception("Can't read from a File that's been closed")
@@ -280,23 +273,23 @@ class FileHandle(object):
             else:
                 chunk_size = DEFAULT_CHUNK_SIZE
 
-            d = Deferred()
+            d = AsyncResult()
             self.receiver << ('next-chunk', chunk_size, d)
-            chunk, more_coming = yield d
+            chunk, more_coming = d.get()
 
             read_into.write(chunk)
 
             if not more_coming:
                 break
 
-        returnValue(ret.getvalue() if ret else None)
+        return ret.getvalue() if ret else None
 
     def _open(self):
         self.opened = True
         self.receiver = self.context.spawn(_Receiver.using(self.pub_id, self.file_service))
-        d = Deferred()
+        d = AsyncResult()
         self.receiver << ('next-chunk', 0, d)
-        return d
+        return d.get()
 
     def close(self):
         self.closed = True
