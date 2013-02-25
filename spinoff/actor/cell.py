@@ -160,6 +160,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
             self.report()
             _stop()
             return
+        proc_never_done = True if self.impl.run else False
         processing = True if self.impl.run else False
         stopped = False
         while True:
@@ -174,6 +175,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                     break
                 # dbg("@ CTRL:", m)
                 if m == '__done':
+                    proc_never_done = False
                     processing = False
                     if stopped:
                         m = '_stop'  # fall thru to the _stop/_kill handler
@@ -186,7 +188,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 elif m in ('_kill', '_stop'):
                     if m == '_kill':
                         processing = False
-                    if not processing:
+                    if not processing or proc_never_done:
                         if self.proc:
                             self.proc.kill()
                         _stop()
