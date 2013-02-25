@@ -170,8 +170,8 @@ class Hub(object):
         with self._lock:
             for action in flatten(g):
                 cmd = action[0]
-                if cmd not in (NextBeat,):
-                    dbg("%s -> %s: %s" % (fn.__name__.ljust(25), cmd, ", ".join(repr(x) for x in action[1:])))
+                # if cmd not in (NextBeat,):
+                #     dbg("%s -> %s: %s" % (fn.__name__.ljust(25), cmd, ", ".join(repr(x) for x in action[1:])))
                 if cmd is Send:
                     _, use_sock, nid, version, msg_h = action
                     (outsock_send if use_sock == OUT else insock_send)((nid, struct.pack(MSG_HEADER_FORMAT, MIN_VERSION_VALUE + version) + msg_h.serialize()))
