@@ -26,9 +26,10 @@ import sys
 from bisect import insort
 
 import gevent
-from gevent import spawn, Greenlet, GreenletExit, socket, getcurrent
+from gevent import spawn, Greenlet, GreenletExit, socket, getcurrent, get_hub
 from gevent.pool import Group
 from gevent.event import Event, AsyncResult
+from gevent.queue import Queue, Empty
 from twisted.python import log, failure, reflect, util
 from twisted.python.runtime import seconds as runtimeSeconds
 from twisted.internet import defer, error, posixbase
@@ -329,6 +330,11 @@ class Stream(Greenlet, styles.Ephemeral):
             self.reactor.discardWriter(selectable)
 
 
+class _Waker(object):
+    def __init__(self, watcher):
+        self.wakeUp = watcher.send
+
+
 class GeventReactor(posixbase.PosixReactorBase):
     """Implement gevent-powered reactor based on PosixReactorBase."""
     implements(IReactorGreenlets)
@@ -365,9 +371,28 @@ class GeventReactor(posixbase.PosixReactorBase):
                     delay = 300
                 try:
                     self._wait = 1
-                    gevent.sleep(max(0, delay))
+                    try:
+                        self._threadCallNotification.get(timeout=delay if delay > 0 else 0)
+                    except Empty:
+                        pass
+                    else:
+                        raise Reschedule
                     self._wait = 0
                 except Reschedule:
+                    if self.threadCallQueue:
+                        total = len(self.threadCallQueue)
+                        count = 0
+                        for fn, args, kwargs in self.threadCallQueue:
+                            try:
+                                fn(*args, **kwargs)
+                            except:
+                                log.err()
+                            count += 1
+                            if count == total:
+                                break
+                        del self.threadCallQueue[:count]
+                        if self.threadCallQueue:
+                            self.wakeUp()
                     continue
                 now = seconds()
                 while 1:
@@ -508,8 +533,12 @@ class GeventReactor(posixbase.PosixReactorBase):
 
     def _initThreads(self):  # do not initialize ThreadedResolver, since we are using GeventResolver
         self.usingThreads = True
+        self._threadCallNotification = Queue()
+        self._threadWatcher = get_hub().loop.async()
+        self._threadWatcher.start(lambda: self._threadCallNotification.put(None))
 
-    callFromThread = callFromGreenlet
+    def installWaker(self):
+        self.waker = _Waker(self._threadWatcher)
 
     # IReactorCore
 
