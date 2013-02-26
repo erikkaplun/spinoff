@@ -112,13 +112,15 @@ class Hub(object):
             self._listener_in.kill()
             self._listener_in = None
         if getattr(self, '_initialized', None):
-            self._execute(self._logic.shutdown)
-            self._logic = self._initialized = None
+            self._initialized = None
+            logic, self._logic = self._logic, None
+            self._execute(logic.shutdown)
             sleep(.01)  # XXX: needed?
         if getattr(self, '_ctx', None):
             self._insock = self._outsock = None
             self._ctx.destroy(linger=0)
             self._ctx = None
+        self.stop = lambda: None
 
     def __del__(self):
         self.stop()
