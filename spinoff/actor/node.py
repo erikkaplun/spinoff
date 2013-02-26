@@ -26,12 +26,12 @@ class Node(object):
 
     def __init__(self, nid=None, enable_remoting=False, enable_relay=False, hub_kwargs={}):
         self.nid = nid
+        self._uri = Uri(name=None, parent=None, node=nid)
+        self.guardian = Guardian(uri=self._uri, node=self)
         self._hub = (
             HubWithNoRemoting() if not enable_remoting else
             Hub(nid, enable_relay, on_node_down=lambda ref, nid: ref << ('_node_down', nid), on_receive=self._on_receive, **hub_kwargs)
         )
-        self._uri = Uri(name=None, parent=None, node=nid)
-        self.guardian = Guardian(uri=self._uri, node=self)
 
     def lookup_str(self, addr):
         return self.lookup(Uri.parse(addr))
