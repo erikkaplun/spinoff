@@ -4,6 +4,7 @@ import uuid
 import os
 from cStringIO import StringIO
 
+import lockfile
 from gevent import with_timeout, Timeout, spawn_later
 from gevent.event import Event, AsyncResult
 from spinoff.actor import Actor, Unhandled
@@ -166,12 +167,13 @@ class _Receiver(Actor):
 class FileRef(object):
     _fetching = {}
 
-    def __init__(self, pub_id, file_service, abstract_path, mtime):
+    def __init__(self, pub_id, file_service, abstract_path, mtime, size):
         """Private; see File.publish instead"""
         self.pub_id = pub_id
         self.file_service = file_service
         self.abstract_path = abstract_path
         self.mtime = mtime
+        self.size = size
 
     @classmethod
     def publish(cls, path, node, abstract_path=None):
@@ -180,7 +182,8 @@ class FileRef(object):
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=reasonable_get_mtime(path))
+        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path),
+                   mtime=reasonable_get_mtime(path), size=os.path.getsize(path))
 
     def open(self, context=None):
         ret = FileHandle(self.pub_id, self.file_service, context=context, abstract_path=self.abstract_path)
@@ -191,15 +194,24 @@ class FileRef(object):
         if path in self._fetching:
             self._fetching[path].wait()
         else:
-            if os.path.exists(path) and reasonable_get_mtime(path) != self.mtime:
-                os.remove(path)
-            self._fetching[path] = Event()
             mkdir_p(os.path.dirname(path))
-            with self.open(context=context) as f:
-                f.read_into(path)
-            os.utime(path, (self.mtime, self.mtime))
-            self._fetching[path].set()
-            del self._fetching[path]
+            with lockfile.LockFile(path):  # might have multiple processes fetching the same file into the same location
+                if os.path.exists(path):
+                    if reasonable_get_mtime(path) != self.mtime or os.path.getsize(path) != self.size:
+                        os.remove(path)
+                    else:
+                        return
+                self._fetching[path] = Event()
+                mkdir_p(os.path.dirname(path))
+                with self.open(context=context) as f:
+                    f.read_into(path)
+                if os.path.getsize(path) != self.size:
+                    os.unlink(path)
+                    raise AssertionError("fetched file size does not match original size (%db fetched vs %db expected)"
+                                         % (os.path.getsize(path), self.size))
+                os.utime(path, (self.mtime, self.mtime))
+                self._fetching[path].set()
+                del self._fetching[path]
 
     # @classmethod
     # def at_url(cls, url):
