@@ -102,25 +102,27 @@ class Hub(object):
             pass
 
     def stop(self):
-        if getattr(self, '_heartbeater', _DELETED) is not _DELETED:
+        self.stop = lambda: None
+        self.send_message = lambda nid, msg_h: None
+        self.watch_node = lambda nid, watch_handle: None
+        self.unwatch_node = lambda nid, watch_handle: None
+        if hasattr(self, '_heartbeater'):
             self._heartbeater.kill()
             self._heartbeater = _DELETED
-        if getattr(self, '_listener_out', None):
+        if hasattr(self, '_listener_out'):
             self._listener_out.kill()
             self._listener_out = None
-        if getattr(self, '_listener_in', None):
+        if hasattr(self, '_listener_in'):
             self._listener_in.kill()
             self._listener_in = None
-        if getattr(self, '_initialized', None):
-            self._initialized = None
+        if hasattr(self, '_initialized'):
             logic, self._logic = self._logic, None
             self._execute(logic.shutdown)
             sleep(.01)  # XXX: needed?
-        if getattr(self, '_ctx', None):
+        if hasattr(self, '_ctx'):
             self._insock = self._outsock = None
             self._ctx.destroy(linger=0)
             self._ctx = None
-        self.stop = lambda: None
 
     def __del__(self):
         self.stop()
