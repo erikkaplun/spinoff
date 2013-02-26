@@ -195,7 +195,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 elif m == ('_watched', ANY):
                     self._watched(m[1])
                 elif m == ('_unwatched', ANY):
-                    self.watchers.discard(m[1])
+                    self._unwatched(m[1])
                 else:
                     if m == ('_node_down', ANY):
                         _, node = m
