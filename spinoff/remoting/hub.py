@@ -74,9 +74,9 @@ class Hub(object):
         self._outsock = self._ctx.socket(zmq.ROUTER)
         self._insock.identity = self._outsock.identity = nid
         self._listener_in = spawn(self._listen, self._insock, IN)
-        self._listener_in.link(lambda _: self.stop())
+        self._listener_in.link_exception(lambda _: self.stop())
         self._listener_out = spawn(self._listen, self._outsock, OUT)
-        self._listener_out.link(lambda _: self.stop())
+        self._listener_out.link_exception(lambda _: self.stop())
         self._heartbeater = None
         self._watched_nodes = {}
         self._initialized = True
