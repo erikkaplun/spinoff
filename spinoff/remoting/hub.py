@@ -98,7 +98,7 @@ class Hub(object):
     def unwatch_node(self, nid, watch_handle):
         try:
             self._watched_nodes[nid].discard(watch_handle)
-        except IndexError:
+        except KeyError:
             pass
 
     def stop(self):
