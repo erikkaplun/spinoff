@@ -4,13 +4,13 @@ import uuid
 import os
 from cStringIO import StringIO
 
-import lockfile
 from gevent import with_timeout, Timeout, spawn_later
 from gevent.event import Event, AsyncResult
 from spinoff.actor import Actor, Unhandled
 from spinoff.contrib.filetransfer.util import read_file_async
 from spinoff.util.logging import dbg, err
 from spinoff.util.pattern_matching import ANY, IN
+from spinoff.util.lockfile import lock_file
 
 
 DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024
@@ -195,7 +195,7 @@ class FileRef(object):
             self._fetching[path].wait()
         else:
             mkdir_p(os.path.dirname(path))
-            with lockfile.LockFile(path):  # might have multiple processes fetching the same file into the same location
+            with lock_file(path):  # might have multiple processes fetching the same file into the same location
                 if os.path.exists(path):
                     if reasonable_get_mtime(path) != self.mtime or os.path.getsize(path) != self.size:
                         os.remove(path)
