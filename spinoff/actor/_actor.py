@@ -4,9 +4,6 @@ from __future__ import print_function
 from spinoff.actor.props import Props
 
 
-TESTING = False
-
-
 class Actor(object):
     """Description here.
 

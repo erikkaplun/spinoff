@@ -87,10 +87,6 @@ class Node(object):
         if getattr(self, 'guardian', None):
             self.guardian.stop()
             self.guardian = None
-        # TODO: just make the node send a special notification to other nodes, so as to avoid needless sending of many
-        # small termination messages:
-        # if not _actor.TESTING:  # XXX: this might break some (future) tests that test termination messaging
-            # gevent.sleep(.1)  # let actors send termination messages
         if getattr(self, '_hub', None):
             self._hub.stop()
             self._hub = None
