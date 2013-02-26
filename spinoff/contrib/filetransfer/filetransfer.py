@@ -295,6 +295,8 @@ class FileHandle(object):
             if not more_coming:
                 break
 
+        if hasattr(read_into, 'flush'):
+            read_into.flush()
         return ret.getvalue() if ret else None
 
     def _open(self):
