@@ -109,3 +109,6 @@ class _Msg(object):
     def send_failed(self):
         if not (self.msg == ('_unwatched', ANY) or self.msg == ('_watched', ANY)):
             Events.log(DeadLetter(self.ref, self.msg))
+
+    def __repr__(self):
+        return "_Msg(%r, %r)" % (self.ref, self.msg)
