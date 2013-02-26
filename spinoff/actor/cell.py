@@ -310,6 +310,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     def destroy(self):
         ref = self.ref  # grab the ref before we stop, otherwise ref() returns a dead ref
         self.stopped = True
+        ref._cell = None
         while True:
             try:
                 m = self.queue.get_nowait()
@@ -325,7 +326,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         self.parent.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
-        self.impl = self.inbox = self.queue = ref._cell = self.parent = None
+        self.impl = self.inbox = self.queue = self.parent = None
 
     def unhandled(self, m):
         if ('terminated', ANY) == m:
