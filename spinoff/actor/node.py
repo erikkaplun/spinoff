@@ -81,7 +81,8 @@ class Node(object):
 
     def _remote_dead_letter(self, path, msg, from_):
         ref = Ref(cell=None, uri=Uri.parse(self.nid + path), is_local=True)
-        Events.log(RemoteDeadLetter(ref, msg, from_))
+        if not (msg == ('_unwatched', ANY) or msg == ('_watched', ANY)):
+            Events.log(RemoteDeadLetter(ref, msg, from_))
 
     def stop(self):
         if getattr(self, 'guardian', None):
@@ -106,4 +107,5 @@ class _Msg(object):
         return dumps((self.ref.uri.path, self.msg), protocol=2)
 
     def send_failed(self):
-        Events.log(DeadLetter(self.ref, self.msg))
+        if not (self.msg == ('_unwatched', ANY) or self.msg == ('_watched', ANY)):
+            Events.log(DeadLetter(self.ref, self.msg))
