@@ -8,6 +8,7 @@ install()
 from gevent import spawn, spawn_later
 from twisted.application.service import Service
 from twisted.internet import reactor
+from twisted.internet.error import ReactorNotRunning
 from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
