@@ -1178,6 +1178,24 @@ def test_termination_message_to_dead_actor_is_discarded(defer):
 
 
 @deferred_cleanup
+def test_termination_message_is_ignored_when_sender_is_not_watched(defer):
+    node = DummyNode()
+    defer(node.stop)
+
+    received = AsyncResult()
+
+    class Watcher(Actor):
+        def receive(self, msg):
+            received.set(msg)
+
+    dummy = node.spawn(Actor)
+    w = node.spawn(Watcher)
+    w << ('terminated', dummy)
+    sleep(.01)
+    ok_(not received.ready())
+
+
+@deferred_cleanup
 def test_watching_running_remote_actor_that_stops_causes_termination_message(defer):
     class Watcher(Actor):
         def pre_start(self):

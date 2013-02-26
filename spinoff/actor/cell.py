@@ -208,9 +208,11 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
                 # dbg("@ NORMAL:", m)
                 if m == ('terminated', ANY):
                     _, actor = m
-                    if actor in self.watchees:
+                    if self.watchees and actor in self.watchees:
                         self.watchees.remove(actor)
                         self._unwatch(actor, silent=True)
+                    else:
+                        continue
                 elif m == ('_child_terminated', ANY):
                     self._child_gone(m[1])
                     break
