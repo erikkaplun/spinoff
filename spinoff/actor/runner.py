@@ -57,7 +57,7 @@ class ActorRunner(Service):
                 if self._initial_message is not _EMPTY:
                     self._wrapper << ('_forward', self._initial_message)
         # dbg("Running: %s%s" % (actor_path, " @ /%s" % (self._name,) if self._name else ''))
-        spawn(start_actor)
+        spawn(start_actor).link_exception(lambda _: reactor.stop())
 
     def stopService(self):
         if getattr(self, 'node', None):
