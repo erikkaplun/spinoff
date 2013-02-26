@@ -267,6 +267,7 @@ class FileHandle(object):
                     self._read_multipart(read_into=f)
             finally:
                 d.set()
+                del self._reading[file]
 
     def _read_multipart(self, total_size=None, read_into=None):
         if self.closed:
