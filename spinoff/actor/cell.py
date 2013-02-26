@@ -308,9 +308,14 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
         self.queue.queue.extendleft(stash)
 
     def destroy(self):
-        ref = self.ref  # grab the ref before we stop, otherwise ref() returns a dead ref
-        self.stopped = True
-        ref._cell = None
+        if self._ref and self._ref():
+            ref = self._ref()  # grab the ref before we stop, otherwise ref() returns a dead ref
+            self.stopped = True
+            ref._cell = None
+            self._ref = None
+        else:
+            self.stopped = True
+            ref = self.ref
         while True:
             try:
                 m = self.queue.get_nowait()
