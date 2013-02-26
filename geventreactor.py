@@ -121,7 +121,7 @@ def waitForDeferred(d, result=None):
 def blockingCallFromGreenlet(*args, **kwargs):
     """Call function in reactor greenlet and block current greenlet waiting for the result"""
     reactor = args[0]
-    assert reactor.greenlet and reactor.greenlet != getcurrent(), "can't invoke this in the reactor greenlet"
+    assert reactor.greenlet != getcurrent(), "can't invoke this in the reactor greenlet"
     func = args[1]
     result = AsyncResult()
 
