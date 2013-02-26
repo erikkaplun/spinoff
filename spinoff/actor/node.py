@@ -54,8 +54,6 @@ class Node(object):
         return self.guardian.spawn(*args, **kwargs)
 
     def send_message(self, message, remote_ref):
-        # remote_path, rcpt_nid = remote_ref.uri.path, remote_ref.uri.node
-        # dbg(repr(message), "->", remote_path, "@", rcpt_nid)
         self._hub.send_message(remote_ref.uri.node, _Msg(remote_ref, message))
 
     def watch_node(self, nid, watcher):
@@ -77,7 +75,7 @@ class Node(object):
             else:
                 self._remote_dead_letter(local_path, message, sender_nid)
         else:
-            cell.receive(message)  # XXX: force_async=True perhaps?
+            cell.receive(message)
 
     def _remote_dead_letter(self, path, msg, from_):
         ref = Ref(cell=None, uri=Uri.parse(self.nid + path), is_local=True)
