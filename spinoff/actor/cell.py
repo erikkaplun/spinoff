@@ -278,7 +278,7 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     def wrap_run(self, fn):
         try:
             ret = fn(*self.impl.args, **self.impl.kwargs)
-        except Exception:
+        except:
             self.queue.put(('__error', sys.exc_info()[1], sys.exc_info()[2]))
         else:
             if ret is not None:
