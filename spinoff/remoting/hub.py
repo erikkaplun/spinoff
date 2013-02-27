@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import time
+import socket
 import struct
 
 import zmq.green as zmq
@@ -223,12 +224,18 @@ class Hub(object):
                 elif cmd is Connect:
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
-                        self._outsock.connect(naddr_to_zmq_endpoint(naddr))
+                        zmqaddr = naddr_to_zmq_endpoint(naddr)
+                        if zmqaddr:
+                            self._outsock.connect(zmqaddr)
+                        else:
+                            pass  # TODO: would be nicer if we used this information and notified an immediate disconnect
                     sleep(0.001)
                 elif cmd is Disconnect:
                     _, naddr = action
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
-                        self._outsock.disconnect(naddr_to_zmq_endpoint(naddr))
+                        zmqaddr = naddr_to_zmq_endpoint(naddr)
+                        if zmqaddr:
+                            self._outsock.disconnect(zmqaddr)
                 elif cmd is Bind:
                     _, naddr = action
                     self._insock.bind(naddr_to_zmq_endpoint(naddr))
@@ -242,4 +249,10 @@ verifyClass(IHub, Hub)
 
 def naddr_to_zmq_endpoint(nid):
     host, port = nid.split(':')
-    return 'tcp://%s:%s' % (gethostbyname(host), port)
+    try:
+        return 'tcp://%s:%s' % (gethostbyname(host), port)
+    except socket.gaierror as e:
+        if e.errno != socket.EAI_NONAME:
+            raise
+        else:
+            return None
