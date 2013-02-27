@@ -12,6 +12,7 @@ from itertools import count
 import gevent
 import gevent.event
 import gevent.queue
+from gevent import GreenletExit
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
 from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, UnhandledTermination
@@ -278,13 +279,15 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
     def wrap_run(self, fn):
         try:
             ret = fn(*self.impl.args, **self.impl.kwargs)
+        except GreenletExit:
+            ret = None
         except:
             self.queue.put(('__error', sys.exc_info()[1], sys.exc_info()[2]))
-        else:
-            if ret is not None:
-                warnings.warn("Process.run should not return anything--it's ignored")
-            self.queue.put('__done')
-            self.queue.put('_stop')
+            return
+        if ret is not None:
+            warnings.warn("Process.run should not return anything--it's ignored")
+        self.queue.put('__done')
+        self.queue.put('_stop')
 
     def shutdown(self, term_msg='_stop'):
         if hasattr(self.impl, 'post_stop'):
