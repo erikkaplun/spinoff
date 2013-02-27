@@ -94,7 +94,7 @@ class Wrapper(Actor):
 
     def post_stop(self):
         try:
-            reactor.stop()
+            reactor.callFromGreenlet(reactor.stop)
         except ReactorNotRunning:
             pass
 
