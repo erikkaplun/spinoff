@@ -26,7 +26,6 @@ class FileAlreadyPublished(Exception):
 class _Sender(Actor):
     def run(self, service, pub_id, file, send_to):
         self.watch(send_to)
-
         seek_ptr = 0
 
         while True:
@@ -39,20 +38,14 @@ class _Sender(Actor):
             if ('next-chunk', ANY) == msg:
                 service << ('touch-file', pub_id)
                 _, chunk_size = msg
-
                 chunk = read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
                 seek_ptr += len(chunk)
-
                 more_coming = len(chunk) > 0 if chunk_size > 0 else True
-
                 send_to << ('chunk', chunk, more_coming)
-
                 if not more_coming:
                     break
-
             elif ('terminated', send_to) == msg:
                 break
-
             else:
                 self.unhandled(msg)
 
@@ -82,27 +75,21 @@ class FilePublisher(Actor):
             if not os.path.exists(file_path) and not os.path.isdir(file_path):
                 err("attempt to publish a file that does not exist")
                 return
-
             if pub_id in self.published:
                 raise FileAlreadyPublished("Attempt to publish %r with ID %r but a file already exists with that ID" % (file_path, pub_id))
             else:
                 self.published[pub_id] = (file_path, datetime.datetime.now())
-
         elif ('get-file', ANY, ANY) == msg:
             _, pub_id, send_to = msg
-
             if pub_id not in self.published:
                 err("attempt to get a file with ID %r which has not been published or is not available anymore" % (pub_id,))
                 return
-
             self._touch_file(pub_id)
-
             file_path, time_added = self.published[pub_id]
             sender = self.watch(_Sender.using(service=self.ref, pub_id=pub_id, file=file_path, send_to=send_to))
             self.senders[sender] = pub_id
             # self.senders[sender] = pub_id
             send_to << ('take-file', sender)
-
         elif ('touch-file', ANY) == msg:
             _, pub_id = msg
             if pub_id not in self.published:
@@ -110,17 +97,13 @@ class FilePublisher(Actor):
                 return
             _, pub_id = msg
             self._touch_file(pub_id)
-
         elif 'purge-old' == msg:
             spawn_later(60.0, self.send, 'purge-old')
-
             t = datetime.datetime.now()
-
             for pub_id, (file_path, time_added) in self.published.items():
                 if (t - time_added).total_seconds() > FILE_MAX_LIFETIME and pub_id not in self.senders.values():
                     dbg("purging file %r at %r" % (pub_id, file_path))
                     del self.published[pub_id]
-
         elif ('terminated', IN(self.senders)) == msg:
             _, sender = msg
             del self.senders[sender]
