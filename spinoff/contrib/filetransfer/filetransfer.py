@@ -2,6 +2,7 @@ import datetime
 import errno
 import uuid
 import os
+import tempfile
 from cStringIO import StringIO
 
 from gevent import with_timeout, Timeout, spawn_later
@@ -195,6 +196,12 @@ class FileRef(object):
                 os.utime(path, (self.mtime, self.mtime))
                 self._fetching[path].set()
                 del self._fetching[path]
+
+    def fetch_tmp(self, context):
+        fd, path = tempfile.mkstemp()
+        os.close(fd)
+        self.fetch(path, context)
+        return path
 
     # @classmethod
     # def at_url(cls, url):
