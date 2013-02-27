@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import re
+import socket
 
 from geventreactor import install
 install()
@@ -19,10 +20,15 @@ from spinoff.util.pattern_matching import ANY
 _EMPTY = object()
 
 
+def get_default_remoting(port):
+    hostname = socket.gethostname()
+    return '%s:%d' % (hostname, port)
+
+
 class ActorRunner(Service):
 
     def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, keep_running=False):
-        nodeid = 'localhost' + nodeid if nodeid and re.match(r'^:\d+$', nodeid) else nodeid
+        nodeid = get_default_remoting(int(nodeid[1:])) if nodeid and re.match(r'^:\d+$', nodeid) else nodeid
         if nodeid:
             _validate_nodeid(nodeid)
         self._init_params = init_params
