@@ -123,29 +123,21 @@ class _Receiver(Actor):
 
         if ('take-file', ANY) == msg:
             _, sender = msg
+            self.watch(sender)
+            while True:
+                msg = self.get(('next-chunk', ANY, ANY), ('terminated', sender))
+                if ('next-chunk', ANY, ANY) == msg:
+                    _, size, d = msg
+                    sender << ('next-chunk', size)
+                    _, chunk, more_coming = self.get(('chunk', ANY, ANY))
+                    d.set((chunk, more_coming))
+                elif ('terminated', sender) == msg:
+                    d.set_exception(Exception("file sender died prematurely"))
+                else:
+                    assert False
         elif ('terminated', file_service) == msg:
             _, _, d = self.get(('next-chunk', ANY, ANY))
-            d.set_exception(Exception("file sender died prematurely"))
-            return
-        else:
-            raise Unhandled(msg)
-
-        self.watch(sender)
-
-        while True:
-            msg = self.get(('next-chunk', ANY, ANY), ('terminated', sender))
-
-            if ('next-chunk', ANY, ANY) == msg:
-                _, size, d = msg
-                sender << ('next-chunk', size)
-                _, chunk, more_coming = self.get(('chunk', ANY, ANY))
-                d.set((chunk, more_coming))
-
-            elif ('terminated', sender) == msg:
-                break
-
-            else:
-                assert False
+            d.set_exception(Exception("file service died prematurely"))
 
 
 class FileRef(object):
