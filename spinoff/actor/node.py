@@ -51,6 +51,8 @@ class Node(object):
             return Ref(cell=None, uri=uri, node=self, is_local=False)
 
     def spawn(self, *args, **kwargs):
+        if not self.guardian:
+            raise RuntimeError("Node already stopped")
         return self.guardian.spawn(*args, **kwargs)
 
     def send_message(self, message, remote_ref):
@@ -89,6 +91,10 @@ class Node(object):
         if getattr(self, '_hub', None):
             self._hub.stop()
             self._hub = None
+        self.stop = lambda: None
+        self.send_message = lambda message, remote_ref: None
+        self.watch_node = lambda nid, watcher: None
+        self.unwatch_node = lambda nid, watcher: None
 
     def __getstate__(self):  # pragma: no cover
         raise PicklingError("Node cannot be serialized")
