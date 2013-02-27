@@ -48,7 +48,7 @@ class Node(object):
         elif not uri.root:  # pragma: no cover
             raise TypeError("Node can't look up a relative Uri; did you mean Node.guardian.lookup(%r)?" % (uri,))
         else:
-            return Ref(cell=None, uri=uri, is_local=False, node=self)
+            return Ref(cell=None, uri=uri, node=self, is_local=False)
 
     def spawn(self, *args, **kwargs):
         return self.guardian.spawn(*args, **kwargs)
@@ -67,7 +67,7 @@ class Node(object):
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:
             if ('_watched', ANY) == message:
-                watched_ref = Ref(cell=None, is_local=True, uri=Uri.parse(self.nid + local_path))
+                watched_ref = Ref(cell=None, node=self, uri=Uri.parse(self.nid + local_path), is_local=True)
                 _, watcher = message
                 watcher << ('terminated', watched_ref)
             elif message in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
@@ -78,7 +78,7 @@ class Node(object):
             cell.receive(message)
 
     def _remote_dead_letter(self, path, msg, from_):
-        ref = Ref(cell=None, uri=Uri.parse(self.nid + path), is_local=True)
+        ref = Ref(cell=None, uri=Uri.parse(self.nid + path), node=self, is_local=True)
         if not (msg == ('_unwatched', ANY) or msg == ('_watched', ANY)):
             Events.log(RemoteDeadLetter(ref, msg, from_))
 

@@ -111,13 +111,10 @@ class Ref(_BaseRef):
     uri = None
     node = None
 
-    def __init__(self, cell, uri, is_local=True, node=None):
+    def __init__(self, cell, uri, node, is_local=True):
         assert is_local or not cell
-        assert not node if is_local else node, "remote refs must have a node"
         assert uri is None or isinstance(uri, Uri)
-        if cell:
-            assert not node
-            self._cell = cell
+        self._cell = cell
         self.uri = uri
         self.node = node
         self.is_local = is_local
@@ -134,6 +131,11 @@ class Ref(_BaseRef):
                 self.is_local = True
                 self._cell.receive(message)
         else:
+            if self.node and self.node.guardian:
+                cell = self.node.guardian.lookup_cell(self.uri)
+                if cell:
+                    cell.receive(message)  # do NOT set self._cell--it will never be unset and will cause a memleak
+                    return
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
             elif message in ('_stop', (IN(['terminated', '_watched', '_unwatched']), ANY)):
