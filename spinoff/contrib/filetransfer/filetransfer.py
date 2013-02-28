@@ -131,6 +131,8 @@ class _Receiver(Actor):
                     sender << ('next-chunk', size)
                     _, chunk, more_coming = self.get(('chunk', ANY, ANY))
                     d.set((chunk, more_coming))
+                    if not more_coming:
+                        break
                 elif ('terminated', sender) == msg:
                     d.set_exception(Exception("file sender died prematurely"))
                 else:
