@@ -404,10 +404,8 @@ class Cell(_BaseCell):  # TODO: inherit from Greenlet?
 
     @property
     def ref(self):
-        if self.stopped:
-            return Ref(cell=None, uri=self.uri, node=self.node)
         if not self._ref or not self._ref():
-            ref = Ref(self, self.uri, self.node)  # must store in a temporary variable to avoid immediate collection
+            ref = Ref(cell=self, uri=self.uri, node=self.node)  # must store in a temporary variable to avoid immediate collection
             self._ref = weakref.ref(ref)
         return self._ref()
 

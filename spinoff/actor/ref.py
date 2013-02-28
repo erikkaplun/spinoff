@@ -122,8 +122,12 @@ class Ref(_BaseRef):
     def send(self, message):
         """Sends a message to the actor represented by this `Ref`."""
         if self._cell:
-            self._cell.receive(message)
-        elif not self.is_local:
+            if not self._cell.stopped:
+                self._cell.receive(message)
+                return
+            else:
+                self._cell = None
+        if not self.is_local:
             if self.uri.node != self.node.nid:
                 self.node.send_message(message, remote_ref=self)
             else:
