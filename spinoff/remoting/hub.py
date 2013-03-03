@@ -235,7 +235,10 @@ class Hub(object):
                     if naddr not in self.FAKE_INACCESSIBLE_NADDRS:
                         zmqaddr = naddr_to_zmq_endpoint(naddr)
                         if zmqaddr:
-                            self._outsock.disconnect(zmqaddr)
+                            try:
+                                self._outsock.disconnect(zmqaddr)
+                            except zmq.ZMQError:
+                                pass
                 elif cmd is Bind:
                     _, naddr = action
                     zmqaddr = naddr_to_zmq_endpoint(naddr)
