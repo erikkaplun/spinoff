@@ -163,9 +163,9 @@ class HubLogic(object):
             if self.last_seen[nid] <= t_gone:
                 if nid in self.channels_out:
                     self.channels_out.remove(nid)
-                    yield Disconnect, nid2addr(nid)
                 if nid in self.channels_in:
                     self.channels_in.remove(nid)
+                yield Disconnect, nid2addr(nid)
                 yield RELAY_NODEDOWN_CHECKS(self, nid)
                 if self.is_relay or not self.cl_avail_relays:
                     yield NODEDOWN(self, nid)
