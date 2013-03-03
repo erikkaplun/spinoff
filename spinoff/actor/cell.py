@@ -115,7 +115,9 @@ class _BaseCell(object):
         return cell.ref
 
 
-class Cell(_BaseCell):  # TODO: inherit from Greenlet?
+# TODO: inherit from Greenlet--so that gevent.getcurrent could be used to look up the currently executing actor, and
+# temporary actors spawned from it without having to pass in context explicitly
+class Cell(_BaseCell):
     uri = None
     node = None
     impl = None
