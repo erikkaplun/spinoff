@@ -81,7 +81,8 @@ class HubLogic(object):
         self.version = -1
 
     def start(self):
-        yield Bind, nid2addr(self.nid)
+        port = self.nid.split(':', 1)[1]
+        yield Bind, nid2addr('0.0.0.0:' + port)
         yield NextBeat, self.heartbeat_interval
 
     def send_message(self, rcpt_nid, msg_h, t):
