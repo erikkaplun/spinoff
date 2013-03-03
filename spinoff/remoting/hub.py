@@ -238,7 +238,10 @@ class Hub(object):
                             self._outsock.disconnect(zmqaddr)
                 elif cmd is Bind:
                     _, naddr = action
-                    self._insock.bind(naddr_to_zmq_endpoint(naddr))
+                    zmqaddr = naddr_to_zmq_endpoint(naddr)
+                    if not zmqaddr:
+                        raise Exception("Failed to bind to %s" % (naddr,))
+                    self._insock.bind(zmqaddr)
                 else:
                     assert False, "unknown command: %r" % (cmd,)
 
