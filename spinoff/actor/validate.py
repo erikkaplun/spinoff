@@ -7,6 +7,8 @@ _VALID_NODEID_RE = re.compile('(?:%s|%s):(?P<port>[0-9]+)$' % (_VALID_HOSTNAME_R
 
 
 def _validate_nodeid(nodeid):
+    if '|' in nodeid:
+        nodeid = nodeid.split('|', 1)[0]
     # call from app code
     m = _VALID_NODEID_RE.match(nodeid)
     if not m:  # pragma: no cover
