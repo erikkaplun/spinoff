@@ -61,9 +61,7 @@ class Actor(object):
     def _set_cell(self, cell):
         self.__cell = cell
 
-    # TODO: this is a potential spot for optimisation: we could put the message directly in the Cell's inbox without
-    # without invoking the receive logic which will not handle the message immediately anyway because we're processing
-    # a message already--otherwise this method would not get called.
+    # TODO: this is a potential spot for optimisation
     def send(self, *args, **kwargs):
         """Alias for self.ref.send"""
         self.ref.send(*args, **kwargs)
