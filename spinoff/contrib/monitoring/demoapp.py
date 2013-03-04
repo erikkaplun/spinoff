@@ -5,7 +5,6 @@ import random
 from spinoff.actor import Actor
 from spinoff.actor._actor import lookup
 from spinoff.actor.process import Process
-from spinoff.actor.supervision import Stop
 from spinoff.contrib.monitoring.monitor import Monitor
 from spinoff.util.async import sleep, after
 from spinoff.util.logging import err
@@ -17,9 +16,6 @@ __all__ = []
 
 
 class DemoApp(Actor):
-    def supervise(self, _):
-        return Stop
-
     def pre_start(self, monitor=None, count=1000):
         if not monitor:
             monitor = self.monitor = self.spawn(Monitor, name='monitor')

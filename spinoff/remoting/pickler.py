@@ -3,15 +3,15 @@ from __future__ import print_function, absolute_import
 
 from pickle import Unpickler, BUILD
 
-from spinoff.actor import Ref
+from spinoff.actor.ref import Ref
 
 
 class IncomingMessageUnpickler(Unpickler):
     """Unpickler for attaching a `Hub` instance to all deserialized `Ref`s."""
 
-    def __init__(self, hub, file):
+    def __init__(self, node, file):
         Unpickler.__init__(self, file)
-        self.hub = hub
+        self.node = node
 
     # called by `Unpickler.load` before an uninitalized object is about to be filled with members;
     def _load_build(self):
@@ -19,17 +19,17 @@ class IncomingMessageUnpickler(Unpickler):
         # if the ctor. function (penultimate on the stack) is the `Ref` class...
         if isinstance(self.stack[-2], Ref):
             # Ref.__setstate__ will know it's a remote ref if the state is a tuple
-            self.stack[-1] = (self.stack[-1], self.hub)
+            self.stack[-1] = (self.stack[-1], self.node)
 
             self.load_build()  # continue with the default implementation
 
             # detect our own refs sent back to us
             ref = self.stack[-1]
-            if ref.uri.node == self.hub.nodeid:
+            if ref.uri.node == self.node.nid:
                 ref.is_local = True
-                ref._cell = self.hub.guardian.lookup_cell(ref.uri)
+                ref._cell = self.node.guardian.lookup_cell(ref.uri)
                 # dbg(("dead " if not ref._cell else "") + "local ref detected")
-                del ref.hub  # local refs never need hubs
+                del ref.node  # local refs never need access to the node
         else:  # pragma: no cover
             self.load_build()
 

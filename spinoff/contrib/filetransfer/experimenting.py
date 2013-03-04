@@ -2,7 +2,6 @@ import hashlib
 import time
 
 from spinoff.actor.process import Process
-from spinoff.actor.supervision import Stop
 from spinoff.contrib.filetransfer.filetransfer import FileRef
 from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import IN
@@ -24,8 +23,6 @@ def get_checksum(filename):
 
 
 class App(Process):
-    supervise = lambda *args: Stop
-
     def run(self, filename):
         md5 = get_checksum(filename)
         dbg("file checksum: ", md5)

@@ -1,23 +1,30 @@
 # coding: utf8
 from __future__ import print_function, absolute_import
 
-import inspect
 import random
 from decimal import Decimal
 
+from zope.interface import implements
+from zope.interface.verify import verifyClass
+
 from spinoff.actor import Node
 from spinoff.util.logging import logstring, dbg
-from .validation import _assert_valid_nodeid, _assert_valid_addr
-from .remoting import Hub
+from spinoff.remoting.hub import IHub
+from spinoff.remoting.validation import _assert_valid_nodeid, _assert_valid_addr
+
+
+class Hub(object):
+    implements(IHub)
+
+    def send_message(self, nid, msg_h):
+        pass
+# verifyClass(IHub, Hub)
 
 
 class MockNetwork(object):  # pragma: no cover
-    """Represents a mock network with only ZeroMQ ROUTER and DEALER sockets on it."""
-
     def __init__(self, clock):
         self.listeners = {}
         self.queue = []
-        self.test_context = inspect.stack()[1][3]
         self.connections = set()
         self.clock = clock
 
@@ -31,11 +38,11 @@ class MockNetwork(object):  # pragma: no cover
 
         """
         _assert_valid_nodeid(nodeid)
-        addr = 'tcp://' + nodeid
-        insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
-        outsock = lambda: MockOutSocket(addr, self)
+        # addr = 'tcp://' + nodeid
+        # insock = MockInSocket(addEndpoints=lambda endpoints: self.bind(addr, insock, endpoints))
+        # outsock = lambda: MockOutSocket(addr, self)
 
-        return Node(hub=Hub(insock, outsock, nodeid=nodeid, reactor=self.clock))
+        return Node(hub=Hub(nodeid=nodeid))
 
     # def mapperdaemon(self, addr):
     #     pass
@@ -136,47 +143,3 @@ class MockNetwork(object):  # pragma: no cover
 
     def __repr__(self):
         return 'mock-network'
-
-
-class MockInSocket(object):  # pragma: no cover
-    """A fake (ZeroMQ-ROUTER-like) socket that only supports receiving.
-
-    This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
-
-    """
-    def __init__(self, addEndpoints):
-        self.addEndpoints = addEndpoints
-
-    def gotMultipart(self, msg):
-        assert False, "Hub should define gotMultipart on the incoming transport"
-
-    def shutdown(self):
-        pass
-
-
-class MockOutSocket(object):  # pragma: no cover
-    """A fake (ZeroMQ-ROUTER-like) socket that only supports sending.
-
-    This will instead be a ZeroMQ ROUTER connection object from the txzmq package under normal conditions.
-
-    """
-    def __init__(self, addr, owner):
-        self.addr, self.owner = addr, owner
-        self.endpoint_addr = None
-
-    def sendMultipart(self, msgParts):
-        assert self.endpoint_addr, "Outgoing sockets should not send before they connect"
-        self.owner.enqueue(src=self.addr, dst=self.endpoint_addr, msgParts=msgParts)
-
-    def addEndpoints(self, endpoints):
-        assert len(endpoints) == 1, "Outgoing sockets should not connect to more than 1 endpoint"
-        # dbg(endpoints[0].address)
-        self.endpoint_addr = endpoints[0].address
-        self.owner.connect(src=self.addr, endpoints=endpoints)
-
-    def shutdown(self):
-        dbg()
-        self.owner.disconnect(self.addr, self.endpoint_addr)
-
-    def __repr__(self):
-        return '<outsock:%s>' % (self.addr,)

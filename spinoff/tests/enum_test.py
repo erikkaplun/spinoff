@@ -16,11 +16,11 @@ def test_enum_value_name():
     v1 = EnumValue(random_name)
 
     assert str(v1) == random_name
-    assert repr(v1) == '<EnumValue %s>' % (random_name)
+    assert repr(v1) == random_name
 
     v2 = EnumValue(random_name, order=123)
     assert str(v2) == random_name
-    assert repr(v2) == '<EnumValue %s:%s>' % (random_name, 123)
+    assert repr(v2) == random_name
 
 
 def test_unordered_enum_value():

@@ -1,14 +1,11 @@
 from __future__ import print_function
 
-import traceback
-import sys
-
 from twisted.python.failure import Failure
-from twisted.internet.defer import inlineCallbacks, Deferred, CancelledError, DeferredList, maybeDeferred
+from twisted.internet.defer import Deferred, CancelledError
 from twisted.internet import reactor, task
 
 
-__all__ = ['Timeout', 'sleep', 'after', 'call_when_idle', 'cancel_all_idle_calls', 'exec_async', 'if_', 'with_timeout', 'combine', 'CancelledError']
+__all__ = ['Timeout', 'with_timeout', 'CancelledError', 'sleep']
 
 
 def sleep(seconds=0, reactor=reactor):
@@ -22,165 +19,6 @@ def sleep(seconds=0, reactor=reactor):
 
     """
     return task.deferLater(reactor, seconds, lambda: None)
-
-
-def after(seconds=0, reactor=reactor):
-    """Readability sugar for `sleep`.
-
-    Supports specifying delayed actions with `do` or `then`. `do` does not pass any arguments to the callback, whereas
-    `then` passes to the callback the return value of the last callable. So the behaviour of `then` is identical to
-    `Deferred.addCallbacks`.
-
-    Examples:
-
-        after(2.0).do(lambda: print("Printed 2 seconds later"))
-        after(2.0).do(print, "Printed 2 seconds later")
-        after(2.0).do(some_fn, 'arg1', some='kwarg')
-
-        after(2.0) \
-            .do(some_fn, 'arg1', some='kwarg') \
-            .do(other_fn, 'arg2')
-
-        after(2.0) \
-            .do(compute_factorial, 25) \
-            .then(print)
-
-
-    """
-    return _AfterWrap(sleep(seconds, reactor))
-
-
-from collections import deque
-_idle_calls = deque()
-_processing_idle_calls = False
-
-
-def _process_idle_calls():
-    # dbg("_process_idle_calls")
-    global _processing_idle_calls
-
-    _processing_idle_calls = True
-    try:
-        while _idle_calls:
-            fn, args, kwargs = _idle_calls.popleft()
-            try:
-                fn(*args, **kwargs)
-            except Exception:
-                print("*** PANIC: error while processing idle calls", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-    finally:
-        _processing_idle_calls = False
-
-
-def call_when_idle(fn, *args, **kwargs):
-    if not _processing_idle_calls:
-        # dbg("callLater")
-        reactor.callLater(0, _process_idle_calls)
-    # dbg("append")
-    _idle_calls.append((fn, args, kwargs))
-
-
-def call_when_idle_unless_already(fn, *args, **kwargs):
-    # dbg("call_when_idle_unless_already(")
-    if (fn, args, kwargs) not in _idle_calls:
-        # dbg("call_when_idle_unless_already2")
-        call_when_idle(fn, *args, **kwargs)
-
-
-def cancel_all_idle_calls():
-    print("IDLECALL: cancelling calls:", [x[0] for x in _idle_calls], file=sys.stderr)
-    _idle_calls.clear()
-
-
-class FakeDeferred(object, Deferred):
-    reset = False
-
-    def __init__(self, d=None):
-        self.d = d or Deferred()
-
-    def addCallback(self, *args, **kwargs):
-        if self.reset:
-            d, self.d = self.d, Deferred()
-        else:
-            d = self.d
-        d.addCallback(*args, **kwargs)
-        return self
-
-    def addErrback(self, *args, **kwargs):
-        if self.reset:
-            d, self.d = self.d, Deferred()
-        else:
-            d = self.d
-        d.addErrback(*args, **kwargs)
-        return self
-
-    def addBoth(self, *args, **kwargs):
-        if self.reset:
-            d, self.d = self.d, Deferred()
-        else:
-            d = self.d
-        d.addBoth(*args, **kwargs)
-        return self
-
-    def addCallbacks(self, *args, **kwargs):
-        if self.reset:
-            d, self.d = self.d, Deferred()
-        else:
-            d = self.d
-        d.addCallbacks(*args, **kwargs)
-        return self
-
-    def addErrbacks(self, *args, **kwargs):
-        if self.reset:
-            d, self.d = self.d, Deferred()
-        else:
-            d = self.d
-        d.addErrbacks(*args, **kwargs)
-        return self
-
-    def callback(self, *args, **kwargs):
-        assert False, "objects returned by the after() construct should not be callback'd"
-
-    def errback(self, *args, **kwargs):
-        assert False, "objects returned by the after() construct should not be errback'd"
-
-    def callback_and_reset(self, result):
-        self.reset = True
-        self.d.callback(result)
-
-    def errback_and_reset(self, failure):
-        self.reset = True
-        self.d.errback(failure)
-
-
-class _AfterWrap(FakeDeferred):
-    def __init__(self, d):
-        FakeDeferred.__init__(self, d)
-
-    def do(self, fn, *args, **kwargs):
-        self.addCallback(lambda _: fn(*args, **kwargs))
-        return self
-
-    def then(self, fn, *args, **kwargs):
-        self.addCallback(lambda result: fn(result, *args, **kwargs))
-        return self
-
-    def onerror(self, fn, *args, **kwargs):
-        self.addErrback(lambda f: fn(f, *args, **kwargs))
-        return self
-
-    def cancel(self):
-        self.d.addErrback(lambda f: f.trap(CancelledError)).cancel()
-
-
-exec_async = lambda f: inlineCallbacks(f)()
-
-
-def if_(condition, then, else_=None):
-    if condition:
-        return then()
-    elif else_:
-        return else_()
 
 
 class Timeout(Exception):
@@ -203,70 +41,30 @@ def with_timeout(timeout, d, reactor=reactor):
     ret = Deferred(canceller=lambda _: (
         d.cancel(),
         timeout_d.cancel(),
-        ))
+    ))
 
     timeout_d = sleep(timeout, reactor)
     timeout_d.addCallback(lambda _: (
         d.cancel(),
         ret.errback(Failure(Timeout())),
-        ))
+    ))
 
     timeout_d.addErrback(lambda f: f.trap(CancelledError))
 
     d.addCallback(lambda result: (
         timeout_d.cancel(),
         ret.callback(result),
-        ))
+    ))
 
     d.addErrback(lambda f: (
         if_(not f.check(CancelledError), lambda: (
             timeout_d.cancel(),
             ret.errback(f),
             )),
-        ))
+    ))
 
     return ret
 
 
-def combine(ds):
-    return DeferredList(ds, consumeErrors=True, fireOnOneErrback=True)
-
-
-class EventBuffer(object):
-
-    _TWISTED_REACTOR = reactor
-
-    def __init__(self, fn, args=[], kwargs={}, milliseconds=1000, reactor=None):
-        self._milliseconds = milliseconds
-        self._last_event = None
-        self._fn = fn
-        self._args = args
-        self._kwargs = kwargs
-        self._reactor = reactor or self._TWISTED_REACTOR
-
-    def call(self, *args, **kwargs):
-        t = self._reactor.seconds()
-        if self._last_event is None or t - self._last_event >= self._milliseconds:
-            self._last_event = t
-            _args, _kwargs = [], {}
-            if self._args or args:
-                _args.extend(self._args)
-                _args.extend(args)
-            if self._kwargs or kwargs:
-                _kwargs.update(self._kwargs)
-                _kwargs.update(kwargs)
-            self._fn(*_args, **_kwargs)
-
-
-def deferred_with(cm, f, *args, **kwargs):
-    cm.__enter__()
-
-    def on_failure(f):
-        should_suppress = cm.__exit__(f.type, f.value, f.getTracebackObject())
-        return None if should_suppress else f
-
-    return (
-        maybeDeferred(f, *args, **kwargs)
-        .addErrback(on_failure)
-        .addCallback(lambda result: (cm.__exit__(None, None, None), result)[-1])
-    )
+def if_(condition, then, else_=lambda: None):
+    return then() if condition else else_()

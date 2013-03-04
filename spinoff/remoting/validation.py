@@ -1,6 +1,6 @@
 import re
 
-from spinoff.actor._actor import _VALID_NODEID_RE, _validate_nodeid
+from spinoff.actor.validate import _VALID_NODEID_RE, _validate_nodeid
 
 
 _VALID_ADDR_RE = re.compile('tcp://%s' % (_VALID_NODEID_RE.pattern,))

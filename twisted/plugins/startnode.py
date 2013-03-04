@@ -1,5 +1,8 @@
 from __future__ import print_function
 
+import geventreactor
+geventreactor.install()
+
 import sys
 import traceback
 
@@ -33,7 +36,6 @@ class Options(usage.Options):
         ['message', 'm', _EMPTY, "[m]essage to send to the actor"],
         ['remoting', 'r', None, "Set up [r]emoting with the specified hostname/IP:port pair; hostname/IP is optional and defaults to localhost"],
         ['name', 'n', None, "Set the [n]ame of the actor"],
-        ['supervise', 's', 'stop', "Set how the spawned actor is [s]upervised in case of failures"],
 
         ['remotedebuggingport', 'p', 6022, "[p]rt on which to start the SSH remote debug console server"],
         ['remotedebuggingusername', 'u', 'debug', "[u]sername to log on to the SSH remote debug console"],
@@ -115,13 +117,6 @@ class ActorRunnerMaker(object):
                 sys.exit(1)
             else:
                 kwargs['nodeid'] = nodeid
-
-        if options['supervise']:
-            supervise_option = options['supervise']
-            if supervise_option not in ('stop', 'restart', 'resume'):
-                fatal("Supervision should be either 'stop', 'restart' or 'resume'")
-                sys.exit(1)
-            kwargs['supervise'] = supervise_option
 
         kwargs['keep_running'] = options['keeprunning']
 

@@ -1,30 +1,29 @@
 from __future__ import print_function
 
-import re
-import traceback
+from twisted.internet.error import ReactorAlreadyInstalledError
+from geventreactor import install, GeventReactor
+try:
+    install()
+except ReactorAlreadyInstalledError:
+    from twisted.internet import reactor
+    assert isinstance(reactor, GeventReactor)
 
+from gevent import spawn, spawn_later
 from twisted.application.service import Service
 from twisted.internet import reactor
 from twisted.internet.error import ReactorNotRunning
-from twisted.internet.defer import inlineCallbacks
 from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
-from spinoff.actor._actor import _validate_nodeid
-from spinoff.actor.remoting import Hub, HubWithNoRemoting
-from spinoff.util.logging import log, err, panic
-from spinoff.util.async import after
+from spinoff.actor.validate import _validate_nodeid
+from spinoff.util.logging import panic, dbg, log
 from spinoff.util.pattern_matching import ANY
-from spinoff.actor.events import Events, Message
-from spinoff.actor.supervision import Stop, Restart, Resume
 
 _EMPTY = object()
 
 
 class ActorRunner(Service):
-
-    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, supervise='stop', keep_running=False):
-        nodeid = 'localhost' + nodeid if nodeid and re.match(r'^:\d+$', nodeid) else nodeid
+    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, keep_running=False):
         if nodeid:
             _validate_nodeid(nodeid)
         self._init_params = init_params
@@ -33,33 +32,21 @@ class ActorRunner(Service):
         self._wrapper = None
         self._nodeid = nodeid
         self._name = name
-        self._supervise = supervise
         self._keep_running = keep_running
 
     def startService(self):
         actor_path = self._actor_path = '%s.%s' % (self._actor_cls.__module__, self._actor_cls.__name__)
 
-        Events.log(Message("Running: %s%s" % (actor_path, " @ /%s" % (self._name,) if self._name else '')))
-
         def start_actor():
-            if self._nodeid:
-                Events.log(Message("Setting up remoting; node ID = %s" % (self._nodeid,)))
-                try:
-                    hub = Hub(nodeid=self._nodeid)
-                except Exception:
-                    err("Could not set up remoting")
-                    traceback.print_exc()
-                    reactor.stop()
-                    return
-            else:
-                Events.log(Message("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting"))
-                hub = HubWithNoRemoting()
+            # if self._nodeid:
+            #     log("Setting up remoting; node ID = %s" % (self._nodeid,))
+            # else:
+            #     log("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting")
 
-            supervision = {'stop': Stop, 'restart': Restart, 'resume': Resume}[self._supervise]
-            node = Node(hub=hub, root_supervision=supervision)
+            self.node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False)
 
             try:
-                self._wrapper = node.spawn(Wrapper.using(
+                self._wrapper = self.node.spawn(Wrapper.using(
                     self._actor_cls.using(**self._init_params),
                     spawn_at=self._name, keep_running=self._keep_running
                 ), name='_runner')
@@ -70,12 +57,12 @@ class ActorRunner(Service):
             else:
                 if self._initial_message is not _EMPTY:
                     self._wrapper << ('_forward', self._initial_message)
+        # dbg("Running: %s%s" % (actor_path, " @ /%s" % (self._name,) if self._name else ''))
+        spawn(start_actor).link_exception(lambda _: reactor.stop())
 
-        reactor.callLater(0.0, start_actor)
-
-    @inlineCallbacks
     def stopService(self):
-        yield Node.stop_all()
+        if getattr(self, 'node', None):
+            self.node.stop()
 
     def __repr__(self):
         return '<ActorRunner>'
@@ -89,7 +76,6 @@ class Wrapper(Actor):
 
     def _do_spawn(self):
         self.actor = self.watch(self.node.spawn(self.actor_factory, name=self.spawn_at))
-        Events.log(Message("Spawned %s" % (self.actor,)))
 
     def pre_start(self):
         self._do_spawn()
@@ -101,16 +87,15 @@ class Wrapper(Actor):
         elif message == ('terminated', self.actor):
             _, actor = message
             if self.keep_running:
-                after(1.0).do(self._do_spawn)
+                spawn_later(1.0, self._do_spawn)
             else:
-                log("actor terminated but not re-spawning actor; pass --keepruning/-k to change this behaviour")
                 self.stop()
         else:
-            Events.log(Message("Contained actor sent a message to parent: %r" % (message,)))
+            log("Contained actor sent a message to parent: %r" % (message,))
 
     def post_stop(self):
         try:
-            reactor.stop()
+            reactor.callFromGreenlet(reactor.stop)
         except ReactorNotRunning:
             pass
 

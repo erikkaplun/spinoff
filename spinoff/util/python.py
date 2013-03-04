@@ -39,7 +39,7 @@ class EnumValue(object):
         return str(self.name)
 
     def __repr__(self):
-        return '<%s%s>' % (self.name, ':%s' % self.order if self.order is not None else '')
+        return self.name
 
 
 def enums(*names):
@@ -70,27 +70,6 @@ def enumrange(*names):
     return enums(*[(order, name) for order, name in enumerate(names)])
 
 
-class _NoReturn(BaseException):
-    """Uused internally in the cooperation between noreturn and the customized inlineCallbacks in util._defer."""
-    def __init__(self, gen):
-        self._gen = gen
-
-
-def noreturn(gen):
-    """Marks a function call that does not return to the current caller.
-
-    Can only be used within generators wrapped with `@inlineCallbacks`. Supports calling of regular functions, and
-    functions that either return a generator or a Deferred.
-
-    When used with a function `foo` that returns a `Deferred`, it is functionally equivalent to but more memory
-    efficient than `returnValue((yield foo()))`.
-
-    See `spinoff.tests.noreturn_test` for usage examples.
-
-    """
-    raise _NoReturn(gen)
-
-
 def clean_tb(tb_lines, excludes):
     for line in tb_lines:
         if not any(all(exclusion in line for exclusion in exclude) for exclude in excludes):
@@ -116,3 +95,17 @@ def dump_method_call(name, args, kwargs):
 
 def dump_dict(d):
     return '{' + ', '.join('%r: %r' % (k, v) for k, v in d.items()) + '}'
+
+
+def deferred_cleanup(fn):
+    """Go defer style cleanups--in reality, just a convenience wrapper over try-finally"""
+    @functools.wraps(fn)
+    def ret(*args, **kwargs):
+        defers = []
+        try:
+            ret = fn(lambda *args: defers.extend(args), *args, **kwargs)
+        finally:
+            for defer in reversed(defers):
+                defer()
+        return ret
+    return ret

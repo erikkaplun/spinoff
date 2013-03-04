@@ -2,19 +2,16 @@ import datetime
 import errno
 import uuid
 import os
-import warnings
+import tempfile
 from cStringIO import StringIO
 
-from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
-from txcoroutine import coroutine
-
-from spinoff.actor import Actor, Ref
-from spinoff.actor.exceptions import Unhandled
-from spinoff.actor.process import Process
+from gevent import with_timeout, Timeout, spawn_later
+from gevent.event import Event, AsyncResult
+from spinoff.actor import Actor, Unhandled
 from spinoff.contrib.filetransfer.util import read_file_async
-from spinoff.util.async import with_timeout, Timeout, after
 from spinoff.util.logging import dbg, err
 from spinoff.util.pattern_matching import ANY, IN
+from spinoff.util.lockfile import lock_file
 
 
 DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024
@@ -27,15 +24,14 @@ class FileAlreadyPublished(Exception):
     pass
 
 
-class _Sender(Process):
+class _Sender(Actor):
     def run(self, service, pub_id, file, send_to):
         self.watch(send_to)
-
         seek_ptr = 0
 
         while True:
             try:
-                msg = yield with_timeout(OPEN_FILE_TIMEOUT, self.get())
+                msg = with_timeout(OPEN_FILE_TIMEOUT, self.get)
             except Timeout:
                 err("Sending of file at %r timed out" % (file,))
                 break
@@ -43,20 +39,14 @@ class _Sender(Process):
             if ('next-chunk', ANY) == msg:
                 service << ('touch-file', pub_id)
                 _, chunk_size = msg
-
-                chunk = yield read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
+                chunk = read_file_async(file, start=seek_ptr, end=seek_ptr + chunk_size)
                 seek_ptr += len(chunk)
-
                 more_coming = len(chunk) > 0 if chunk_size > 0 else True
-
                 send_to << ('chunk', chunk, more_coming)
-
                 if not more_coming:
                     break
-
             elif ('terminated', send_to) == msg:
                 break
-
             else:
                 self.unhandled(msg)
 
@@ -86,27 +76,21 @@ class FilePublisher(Actor):
             if not os.path.exists(file_path) and not os.path.isdir(file_path):
                 err("attempt to publish a file that does not exist")
                 return
-
             if pub_id in self.published:
                 raise FileAlreadyPublished("Attempt to publish %r with ID %r but a file already exists with that ID" % (file_path, pub_id))
             else:
                 self.published[pub_id] = (file_path, datetime.datetime.now())
-
         elif ('get-file', ANY, ANY) == msg:
             _, pub_id, send_to = msg
-
             if pub_id not in self.published:
                 err("attempt to get a file with ID %r which has not been published or is not available anymore" % (pub_id,))
                 return
-
             self._touch_file(pub_id)
-
             file_path, time_added = self.published[pub_id]
             sender = self.watch(_Sender.using(service=self.ref, pub_id=pub_id, file=file_path, send_to=send_to))
             self.senders[sender] = pub_id
             # self.senders[sender] = pub_id
             send_to << ('take-file', sender)
-
         elif ('touch-file', ANY) == msg:
             _, pub_id = msg
             if pub_id not in self.published:
@@ -114,17 +98,13 @@ class FilePublisher(Actor):
                 return
             _, pub_id = msg
             self._touch_file(pub_id)
-
         elif 'purge-old' == msg:
-            after(60.0).do(self.send, 'purge-old')
-
+            spawn_later(60.0, self.send, 'purge-old')
             t = datetime.datetime.now()
-
             for pub_id, (file_path, time_added) in self.published.items():
                 if (t - time_added).total_seconds() > FILE_MAX_LIFETIME and pub_id not in self.senders.values():
                     dbg("purging file %r at %r" % (pub_id, file_path))
                     del self.published[pub_id]
-
         elif ('terminated', IN(self.senders)) == msg:
             _, sender = msg
             del self.senders[sender]
@@ -133,52 +113,45 @@ class FilePublisher(Actor):
         del self._instances[self.node]
 
 
-class _Receiver(Process):
+class _Receiver(Actor):
     def run(self, pub_id, file_service):
         self.watch(file_service)
 
         file_service << ('get-file', pub_id, self.ref)
 
-        msg = yield self.get(('take-file', ANY), ('terminated', file_service))
+        msg = self.get(('take-file', ANY), ('terminated', file_service))
 
         if ('take-file', ANY) == msg:
             _, sender = msg
+            self.watch(sender)
+            while True:
+                msg = self.get(('next-chunk', ANY, ANY), ('terminated', sender))
+                if ('next-chunk', ANY, ANY) == msg:
+                    _, size, d = msg
+                    sender << ('next-chunk', size)
+                    _, chunk, more_coming = self.get(('chunk', ANY, ANY))
+                    d.set((chunk, more_coming))
+                    if not more_coming:
+                        break
+                elif ('terminated', sender) == msg:
+                    d.set_exception(Exception("file sender died prematurely"))
+                else:
+                    assert False
         elif ('terminated', file_service) == msg:
-            _, _, d = yield self.get(('next-chunk', ANY, ANY))
-            d.errback(Exception("file sender died prematurely"))
-            return
-        else:
-            raise Unhandled(msg)
-
-        self.watch(sender)
-
-        while True:
-            msg = yield self.get(('next-chunk', ANY, ANY), ('terminated', sender))
-
-            if ('next-chunk', ANY, ANY) == msg:
-                _, size, d = msg
-                sender << ('next-chunk', size)
-                _, chunk, more_coming = yield self.get(('chunk', ANY, ANY))
-                # if chunk:
-                #     dbg("receive %r at %r" % (hashlib.md5(chunk[:100]).hexdigest()[:8], str(time.time())[8:]))
-                d.callback((chunk, more_coming))
-
-            elif ('terminated', sender) == msg:
-                break
-
-            else:
-                assert False
+            _, _, d = self.get(('next-chunk', ANY, ANY))
+            d.set_exception(Exception("file service died prematurely"))
 
 
 class FileRef(object):
     _fetching = {}
 
-    def __init__(self, pub_id, file_service, abstract_path, mtime):
+    def __init__(self, pub_id, file_service, abstract_path, mtime, size):
         """Private; see File.publish instead"""
         self.pub_id = pub_id
         self.file_service = file_service
         self.abstract_path = abstract_path
         self.mtime = mtime
+        self.size = size
 
     @classmethod
     def publish(cls, path, node, abstract_path=None):
@@ -187,26 +160,42 @@ class FileRef(object):
         pub_id = str(uuid.uuid4())
         file_service = FilePublisher.get(node=node)
         file_service << ('publish', path, pub_id)
-        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path), mtime=reasonable_get_mtime(path))
+        return cls(pub_id, file_service, abstract_path=abstract_path or os.path.basename(path),
+                   mtime=reasonable_get_mtime(path), size=os.path.getsize(path))
 
     def open(self, context=None):
         ret = FileHandle(self.pub_id, self.file_service, context=context, abstract_path=self.abstract_path)
-        return ret._open().addCallback(lambda _: ret)
+        ret._open()
+        return ret
 
-    @coroutine
     def fetch(self, path, context=None):
         if path in self._fetching:
-            yield self._fetching[path]
+            self._fetching[path].wait()
         else:
-            if os.path.exists(path) and reasonable_get_mtime(path) != self.mtime:
-                os.remove(path)
-            self._fetching[path] = Deferred()
             mkdir_p(os.path.dirname(path))
-            with (yield self.open(context=context)) as f:
-                yield f.read_into(path)
-            os.utime(path, (self.mtime, self.mtime))
-            self._fetching[path].callback(None)
-            del self._fetching[path]
+            with lock_file(path):  # might have multiple processes fetching the same file into the same location
+                if os.path.exists(path):
+                    if reasonable_get_mtime(path) != self.mtime or os.path.getsize(path) != self.size:
+                        os.remove(path)
+                    else:
+                        return
+                self._fetching[path] = Event()
+                mkdir_p(os.path.dirname(path))
+                with self.open(context=context) as f:
+                    f.read_into(path)
+                if os.path.getsize(path) != self.size:
+                    os.unlink(path)
+                    raise AssertionError("fetched file size does not match original size (%db fetched vs %db expected)"
+                                         % (os.path.getsize(path), self.size))
+                os.utime(path, (self.mtime, self.mtime))
+                self._fetching[path].set()
+                del self._fetching[path]
+
+    def fetch_tmp(self, context):
+        fd, path = tempfile.mkstemp()
+        os.close(fd)
+        self.fetch(path, context)
+        return path
 
     # @classmethod
     # def at_url(cls, url):
@@ -241,30 +230,29 @@ class FileHandle(object):
         If `size` is not specified, returns the content of the entire file.
 
         """
-        d = Deferred()
+        d = AsyncResult()
         if size is None or size > DEFAULT_CHUNK_SIZE:
             return self._read_multipart(total_size=size)
         else:
             self.receiver << ('next-chunk', size, d)
-            d.addCallback(lambda (chunk, more_coming): ((self.close() if not more_coming else None), chunk)[-1])
-            d.addErrback(err)
-            return d
+            chunk, more_coming = d.get()
+            if not more_coming:
+                self.close()
 
-    @inlineCallbacks
     def read_into(self, file):
         if file in self._reading:
-            yield self._reading[file]
+            self._reading[file].wait()
         else:
-            d = self._reading[file] = Deferred()
+            d = self._reading[file] = Event()
             try:
                 if os.path.exists(file):
                     os.unlink(file)
                 with open(file, 'wb') as f:
-                    yield self._read_multipart(read_into=f)
+                    self._read_multipart(read_into=f)
             finally:
-                d.callback(None)
+                d.set()
+                del self._reading[file]
 
-    @inlineCallbacks
     def _read_multipart(self, total_size=None, read_into=None):
         if self.closed:
             raise Exception("Can't read from a File that's been closed")
@@ -282,23 +270,25 @@ class FileHandle(object):
             else:
                 chunk_size = DEFAULT_CHUNK_SIZE
 
-            d = Deferred()
+            d = AsyncResult()
             self.receiver << ('next-chunk', chunk_size, d)
-            chunk, more_coming = yield d
+            chunk, more_coming = d.get()
 
             read_into.write(chunk)
 
             if not more_coming:
                 break
 
-        returnValue(ret.getvalue() if ret else None)
+        if hasattr(read_into, 'flush'):
+            read_into.flush()
+        return ret.getvalue() if ret else None
 
     def _open(self):
         self.opened = True
         self.receiver = self.context.spawn(_Receiver.using(self.pub_id, self.file_service))
-        d = Deferred()
+        d = AsyncResult()
         self.receiver << ('next-chunk', 0, d)
-        return d
+        return d.get()
 
     def close(self):
         self.closed = True

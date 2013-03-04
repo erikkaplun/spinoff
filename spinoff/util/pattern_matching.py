@@ -45,6 +45,9 @@ def match(pattern, subject, flatten=True):
 
 
 class _Marker(object):
+    def __init__(self):
+        pass
+
     def __repr__(self):
         return self.__str__()
 
@@ -56,7 +59,7 @@ class Matcher(_Marker):
     ignore = False
 
     def __new__(self, *args):
-        obj = super(Matcher, self).__new__(self, *args if args else [])
+        obj = super(Matcher, self).__new__(self)
 
         try:
             argspec = inspect.getargspec(type(obj).__init__)

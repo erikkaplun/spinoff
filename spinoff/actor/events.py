@@ -4,7 +4,7 @@ import sys
 import traceback
 from collections import namedtuple
 
-from twisted.internet.defer import Deferred
+from gevent.event import AsyncResult
 from spinoff.util.logging import err, log, fail
 
 
@@ -20,45 +20,24 @@ class Event(object):
         return '%r' % (self.actor,)
 
 
-class Message(Event, fields('message')):
-    def __repr__(self):  # pragma: no cover
-        return self.message
-
-
-class MessageReceived(Event, fields('actor', 'message')):
+class UnhandledMessage(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):  # pragma: no cover
-        return (super(MessageReceived, self).repr_args() +
-                ', message=%r' % (self.message,))
+        return (super(UnhandledMessage, self).repr_args() +
+                ', message=%r, sender=%r' % (self.message, self.sender))
 
 
-class UnhandledMessage(MessageReceived, fields('actor', 'message')):
-    pass
-
-
-class DeadLetter(Event, fields('actor', 'message')):
+class DeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(DeadLetter, self).repr_args() + (', %r' % (self.message, )))
+        return (super(DeadLetter, self).repr_args() + (', %r, %r' % (self.message, self.sender)))
 
 
-class RemoteDeadLetter(Event, fields('actor', 'message', 'sender_addr')):
+class RemoteDeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender_addr)))
+        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender)))
 
 
-class LifecycleEvent(Event):
-    pass
-
-
-class Started(LifecycleEvent, fields('actor')):
-    pass
-
-
-class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
-    """Logged by actors as they run into errors.
-
-    This is done before the error is reported to the supervisor so even handled errors are logged this way.
-
-    """
+class Error(Event, fields('actor', 'exc', 'tb')):
+    """Logged by actors as they run into errors."""
     def repr_args(self):  # pragma: no cover
         try:
             formatted_traceback = '\n' + traceback.format_exception(self.exc, None, self.tb)
@@ -67,54 +46,7 @@ class Error(LifecycleEvent, fields('actor', 'exc', 'tb')):
         return super(Error, self).repr_args() + formatted_traceback
 
 
-class UnhandledError(Error, fields('actor', 'exc', 'tb')):
-    """Logged by the System actor in the case of errors coming from top-level actors.
-
-    Logged in addition to a regular `Error` event.
-
-    """
-
-
-class ErrorIgnored(Error, fields('actor', 'exc', 'tb')):
-    """Logged whenever there is an exception in an actor but this exception cannot be reported.
-
-    The causes for this event is either an exception in Actor.post_stop or an exception when the actor is being
-    stopped anyway.
-
-    """
-
-
-class ErrorReportingFailure(Error, fields('actor', 'exc', 'tb')):
-    """Logged when reporting an exception fails (due to what might be a bug in the framework)."""
-
-
-class _SupressedBase(LifecycleEvent):
-    """Internal base class that implements the logic shared by the Suspended and Terminated events."""
-    def __new__(cls, actor, reason=None):
-        return super(_SupressedBase, cls).__new__(cls, actor, reason)
-
-    def repr_args(self):
-        return (super(_SupressedBase, self).repr_args() +
-                (', reason=%r' % (self.reason, ) if self.reason else ''))
-
-
-class Suspended(_SupressedBase, fields('actor', 'reason')):
-    pass
-
-
-class Resumed(LifecycleEvent, fields('actor')):
-    pass
-
-
-class Terminated(_SupressedBase, fields('actor', 'reason')):
-    pass
-
-
-class TopLevelActorTerminated(Terminated, fields('actor', 'reason')):
-    pass
-
-
-class HighWaterMarkReached(Event, fields('actor', 'count')):
+class Terminated(Event, fields('actor')):
     pass
 
 
@@ -131,7 +63,7 @@ class Events(object):
             consumers = self.consumers.get(type(event))
             if consumers:
                 consumer_d = consumers.pop(0)
-                consumer_d.callback(event)
+                consumer_d.set(event)
                 return
 
             subscriptions = self.subscriptions.get(type(event))
@@ -153,11 +85,10 @@ class Events(object):
             subscribers.remove(fn)
 
     def consume_one(self, event_type):
-        assert isinstance(event_type, type)
-        c = self.consumers
-        d = Deferred(lambda _: c[event_type].remove(d))
-        c.setdefault(event_type, []).append(d)
-        return d
+        assert isinstance(event_type, type) or all(isinstance(x, type) for x in event_type)
+        ret = AsyncResult()
+        self.consumers.setdefault(event_type, []).append(ret)
+        return ret
 
     def reset(self):
         self.subscriptions = {}

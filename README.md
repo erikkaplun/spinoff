@@ -5,9 +5,9 @@ Spinoff is a framework for writing distributed, fault tolerant and scalable appl
 
 Spinoff is based on the [Actor Model](http://en.wikipedia.org/wiki/Actor_model) and borrows from [Akka](http://akka.io) (location transparency, actor references, etc) and [Erlang](http://en.wikipedia.org/wiki/Erlang_(programming_language)) (processes, `nodename@hosthost` style node references (not implemented yet)).
 
-Spinoff has been built using [Twisted](http://twistedmatrix.com/) as the underlying framework and [ZeroMQ](http://www.zeromq.org/) (via `pyzmq` and a fork of `txzmq`) for remoting.
+Spinoff has been built using [Gevent](http://gevent.org/) and [ZeroMQ](http://www.zeromq.org/) for remoting.
 
-Spinoff is currently under continuous development but is nevertheless usable for writing real applications—its fault tolerance features also protect it against bugs in its own code.
+Spinoff is currently under continuous development but is nevertheless usable for writing real applications—it can also be fault tolerant towards some of the bugs in its own code.
 
 
 Hype
@@ -24,27 +24,26 @@ Example
 
 The following is only a very small "peek preview" style example of what the framework can do. More examples and full documentation will follow soon.
 
-```python
+```
 # spinoff/examples/example1.py
+from gevent import sleep, with_timeout
 from spinoff.actor import Actor
-from spinoff.actor.process import Process
 from spinoff.util.logging import dbg
-from spinoff.util.async import sleep, with_timeout
 
 
-class ExampleProcess(Process):
+class ExampleProcess(Actor):
     def run(self):
         child = self.spawn(ExampleActor)
 
         while True:
             dbg("sending greeting to %r" % (child,))
-            child << ('hello!', self.ref)
+            child << 'hello!'
 
             dbg("waiting for ack from %r" % (child,))
-            yield with_timeout(5.0, self.get('ack'))
+            with_timeout(5.0, self.get, 'ack')
 
             dbg("got 'ack' from %r; now sleeping a bit..." % (child,))
-            yield sleep(1.0)
+            sleep(1.0)
 
 
 class ExampleActor(Actor):
@@ -52,9 +51,8 @@ class ExampleActor(Actor):
         dbg("starting")
 
     def receive(self, msg):
-        content, sender = msg
-        dbg("%r from %r" % (content, sender))
-        sender << 'ack'
+        dbg("%r from %r" % (content, self.sender))
+        self.sender << 'ack'
 
     def post_stop(self):
         dbg("stopping")
@@ -63,13 +61,13 @@ class ExampleActor(Actor):
 The example can be run using the following command:
 
 ```bash
-$ twistd --nodaemon startnode --actor spinoff.examples.example1.ExampleProcess
+$ spin spinoff.examples.example1.ExampleProcess
 ```
 
 or
 
 ```bash
-$ twistd -n startnode -a spinoff.examples.example1.ExampleProcess
+$ spin spinoff.examples.example1.ExampleProcess
 ```
 
 Distributed Example (with Remoting)
@@ -77,24 +75,24 @@ Distributed Example (with Remoting)
 
 ```python
 # spinoff/examples/example2.py
+from gevent import sleep, with_timeout
+
 from spinoff.actor import Actor
-from spinoff.actor.process import Process
 from spinoff.util.logging import dbg
-from spinoff.util.async import sleep, with_timeout
 
 
-class ExampleProcess(Process):
+class ExampleProcess(Actor):
     def run(self, other_actor):
-        other_actor = lookup(other_actor) if isinstance(other_actor, str) else other_actor
+        other_actor = self.node.lookup_str(other_actor) if isinstance(other_actor, str) else other_actor
         while True:
             dbg("sending greeting to %r" % (other_actor,))
-            other_actor << ('hello!', self.ref)
+            other_actor << 'hello!'
 
             dbg("waiting for ack from %r" % (other_actor,))
-            yield with_timeout(5.0, self.get('ack'))
+            with_timeout(5.0, self.get, 'ack')
 
             dbg("got 'ack' from %r; now sleeping a bit..." % (other_actor,))
-            yield sleep(1.0)
+            sleep(1.0)
 
 
 class ExampleActor(Actor):
@@ -102,9 +100,8 @@ class ExampleActor(Actor):
         dbg("starting")
 
     def receive(self, msg):
-        content, sender = msg
-        dbg("%r from %r" % (content, sender))
-        sender << 'ack'
+        dbg("%r from %r" % (msg, self.sender))
+        self.sender << 'ack'
 
     def post_stop(self):
         dbg("stopping")
@@ -113,15 +110,8 @@ class ExampleActor(Actor):
 The example can be run using the following commands:
 
 ```bash
-$ twistd --pidfile node1.pid --nodaemon startnode --remoting localhost:9700 --actor spinoff.examples.example2.ExampleActor --name other
-$ twistd --pidfile node2.pid --nodaemon startnode --remoting localhost:9701 --actor spinoff.examples.example2.ExampleProcess --params "other_actor='localhost:9700/other'"
-```
-
-or
-
-```bash
-$ twistd --pidfile node1.pid -n startnode -r :9700 -a spinoff.examples.example2.ExampleActor -n other
-$ twistd --pidfile node2.pid -n startnode -r :9701 -a spinoff.examples.example2.ExampleProcess -i "other_actor='localhost:9700/other'"
+$ spin -pid node1.pid -nid localhost:9700 spinoff.examples.example2.ExampleActor -name other
+$ spin -pid node2.pid -nid localhost:9701 spinoff.examples.example2.ExampleProcess -params "other_actor='localhost:9700/other'"
 ```
 
 Same Distributed Code without Remoting
@@ -131,13 +121,13 @@ The following example demonstrates how it's possible to run the same code, unmod
 
 ```python
 # spinoff/examples/example2_local.py
-from spinoff.actor.process import Process
+from spinoff.actor import Actor
 from spinoff.util.logging import dbg
 
 from .example2 import ExampleProcess, ExampleActor
 
 
-class LocalApp(Process):
+class LocalApp(Actor):
     def run(self):
         dbg("spawning ExampleActor")
         actor1 = self.spawn(ExampleActor)
@@ -145,19 +135,14 @@ class LocalApp(Process):
         dbg("spawning ExampleProcess")
         self.spawn(ExampleProcess.using(other_actor=actor1))
 
-        yield self.get()  # so that the entire app wouldn't exit immediately
+        self.get()  # so that the entire app wouldn't exit immediately
 ```
 
 The example can be run using the following commands:
 
-```bash
-$ twistd --nodaemon startnode --actor spinoff.examples.example2_local.LocalApp
-```
-
-or
-
-```bash
-$ twistd -n startnode -a spinoff.examples.example2_local.LocalApp
-```
-
-One might be tempted to ask, then, what is the difference between remoting frameworks such as CORBA and Spinoff.  The difference is that actors define clear boundaries where remoting could ever be used, as opposed to splitting a flow of tightly coupled logic into two nodes on the network, which, still providing valid output, can degrade in performance significantly.  This is not to say that actors with location transparency suffer none of such issues but the extent to which the problem exists is, arguably, an order of magnitude lower.
+```bash $ spin spinoff.examples.example2_local.LocalApp ``` One might be tempted to ask, then, what is the difference
+between remoting frameworks such as CORBA and Spinoff.  The difference is that actors define clear boundaries where
+remoting could ever be used, as opposed to splitting a flow of tightly coupled logic into two nodes on the network,
+which, still providing valid output, can degrade in performance significantly.  This is not to say that actors with
+location transparency suffer none of such issues but the extent to which the problem exists is, arguably, an order of
+magnitude lower.
