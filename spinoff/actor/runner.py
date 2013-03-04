@@ -1,7 +1,12 @@
 from __future__ import print_function
 
-from geventreactor import install
-install()
+from twisted.internet.error import ReactorAlreadyInstalledError
+from geventreactor import install, GeventReactor
+try:
+    install()
+except ReactorAlreadyInstalledError:
+    from twisted.internet import reactor
+    assert isinstance(reactor, GeventReactor)
 
 from gevent import spawn, spawn_later
 from twisted.application.service import Service
