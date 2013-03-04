@@ -775,7 +775,7 @@ def test_looking_up_an_actor_by_its_absolute_path_returns_the_original_reference
     ok_(node.lookup_str('/toplevel') is toplevel_actor)
     ok_(node.lookup(Uri.parse('/toplevel')) is toplevel_actor)
 
-    child_actor = toplevel_actor._cell.spawn(Actor, name='child')
+    child_actor = toplevel_actor._cell.spawn_actor(Actor, name='child')
     ok_(node.lookup_str('/toplevel/child') is child_actor)
     ok_(node.lookup(Uri.parse('/toplevel/child')) is child_actor)
 
@@ -787,7 +787,7 @@ def test_looking_up_an_actor_by_a_relative_path_returns_the_original_reference_t
     toplevel_actor = node.spawn(Actor, name='toplevel')
     ok_(node.lookup_str('toplevel') is toplevel_actor)
 
-    child_actor = toplevel_actor._cell.spawn(Actor, name='child')
+    child_actor = toplevel_actor._cell.spawn_actor(Actor, name='child')
     ok_(node.lookup_str('toplevel/child') is child_actor)
     ok_(toplevel_actor / 'child' is child_actor)
 
@@ -800,7 +800,7 @@ def test_looking_up_an_actor_by_a_parent_traversing_relative_path_returns_a_refe
     a = node.spawn(Actor, name='a')
     ok_(node.guardian / 'a' is a)
 
-    b = a._cell.spawn(Actor, name='b')
+    b = a._cell.spawn_actor(Actor, name='b')
     ok_(a / 'b' is b)
     ok_(node.guardian / 'a/b' is b)
 
@@ -811,7 +811,7 @@ def test_looking_up_an_absolute_path_as_if_it_were_relative_just_does_an_absolut
     defer(node.stop)
 
     a = node.spawn(Actor, name='a')
-    a._cell.spawn(Actor, name='b')
+    a._cell.spawn_actor(Actor, name='b')
     root_b = node.spawn(Actor, name='b')
 
     eq_(a / '/b', root_b)

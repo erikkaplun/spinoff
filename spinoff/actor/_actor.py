@@ -24,7 +24,7 @@ class Actor(object):
     receive = run = None
 
     def spawn(self, factory, name=None):
-        return self.__cell.spawn(factory, name)
+        return self.__cell.spawn_actor(factory, name)
 
     def get(self, *patterns):
         return self.__cell.get(*patterns)

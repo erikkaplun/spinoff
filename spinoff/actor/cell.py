@@ -12,7 +12,7 @@ from itertools import count
 import gevent
 import gevent.event
 import gevent.queue
-from gevent import GreenletExit
+from gevent import getcurrent, GreenletExit, Greenlet
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
 from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, UnhandledTermination
@@ -42,7 +42,7 @@ class _BaseCell(object):
     def uri(self):
         raise NotImplementedError
 
-    def spawn(self, factory, name=None):
+    def spawn_actor(self, factory, name=None):
         """Spawns an actor using the given `factory` with the specified `name`.
 
         Returns an immediately usable `Ref` to the newly created actor, regardless of the location of the new actor, or
@@ -62,7 +62,7 @@ class _BaseCell(object):
             name = self._generate_name(factory)
             uri = self.uri / name
         assert name not in self._children  # XXX: ordering??
-        child = self._children[name] = Cell(parent=self.ref, factory=factory, uri=uri, node=self.node).ref
+        child = self._children[name] = Cell.spawn(parent_actor=self.ref, factory=factory, uri=uri, node=self.node).ref
         return child
 
     @abc.abstractmethod
@@ -115,9 +115,7 @@ class _BaseCell(object):
         return cell.ref
 
 
-# TODO: inherit from Greenlet--so that gevent.getcurrent could be used to look up the currently executing actor, and
-# temporary actors spawned from it without having to pass in context explicitly
-class Cell(_BaseCell):
+class Cell(Greenlet, _BaseCell):
     uri = None
     node = None
     impl = None
@@ -133,23 +131,23 @@ class Cell(_BaseCell):
     watchers = None
     watchees = None
 
-    def __init__(self, parent, factory, uri, node):
+    def __init__(self, parent_actor, factory, uri, node):
+        Greenlet.__init__(self)
         if not callable(factory):  # pragma: no cover
             raise TypeError("Provide a callable (such as a class, function or Props) as the factory of the new actor")
         self.factory = factory
-        self.parent = parent
+        self.parent_actor = parent_actor
         self.uri = uri
         self.node = node
         self.queue = gevent.queue.Queue()
         self.inbox = deque()
-        self.worker = gevent.spawn(self.work)
 
     @logstring(u'←')
     def receive(self, message):
         self.queue.put(message)
 
     @logstring(u'↻')
-    def work(self):
+    def _run(self):
         def _stop():
             # dbg("STOP")
             self.shutdown()
@@ -264,7 +262,7 @@ class Cell(_BaseCell):
     def construct(self):
         factory = self.factory
         impl = factory()
-        impl._parent = self.parent
+        impl._parent = self.parent_actor
         impl._set_cell(self)
         if hasattr(impl, 'pre_start'):
             pre_start = impl.pre_start
@@ -333,10 +331,10 @@ class Cell(_BaseCell):
                 self.report((exc, tb))
             elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done'):
                 Events.log(DeadLetter(ref, m))
-        self.parent.send(('_child_terminated', ref))
+        self.parent_actor.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
-        self.impl = self.inbox = self.queue = self.parent = None
+        self.impl = self.inbox = self.queue = self.parent_actor = None
 
     def unhandled(self, m):
         if ('terminated', ANY) == m:
@@ -362,7 +360,7 @@ class Cell(_BaseCell):
 
     def watch(self, actor, *actors, **kwargs):
         actors = (actor,) + actors
-        actors = [self.spawn(x, **kwargs) if isinstance(x, (type, Props)) else x for x in actors]
+        actors = [self.spawn_actor(x, **kwargs) if isinstance(x, (type, Props)) else x for x in actors]
         for other in actors:
             node = self.uri.node
             if other != self.ref:
@@ -414,7 +412,7 @@ class Cell(_BaseCell):
     @property
     def root(self):
         from spinoff.actor.guardian import Guardian
-        return self.parent if isinstance(self.parent, Guardian) else self.parent._cell.root
+        return self.parent_actor if isinstance(self.parent_actor, Guardian) else self.parent_actor._cell.root
 
     # logging
 

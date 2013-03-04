@@ -53,7 +53,7 @@ class Node(object):
     def spawn(self, *args, **kwargs):
         if not self.guardian:
             raise RuntimeError("Node already stopped")
-        return self.guardian.spawn(*args, **kwargs)
+        return self.guardian.spawn_actor(*args, **kwargs)
 
     def send_message(self, message, remote_ref):
         self._hub.send_message(remote_ref.uri.node, _Msg(remote_ref, message))
