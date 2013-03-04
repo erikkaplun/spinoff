@@ -55,8 +55,8 @@ class Node(object):
             raise RuntimeError("Node already stopped")
         return self.guardian.spawn_actor(*args, **kwargs)
 
-    def send_message(self, message, remote_ref):
-        self._hub.send_message(remote_ref.uri.node, _Msg(remote_ref, message))
+    def send_message(self, message, remote_ref, sender):
+        self._hub.send_message(remote_ref.uri.node, _Msg(remote_ref, message, sender))
 
     def watch_node(self, nid, watcher):
         self._hub.watch_node(nid, watcher)
@@ -65,7 +65,7 @@ class Node(object):
         self._hub.unwatch_node(nid, watcher)
 
     def _on_receive(self, sender_nid, msg_bytes):
-        local_path, message = IncomingMessageUnpickler(self, StringIO(msg_bytes)).load()
+        local_path, message, sender = IncomingMessageUnpickler(self, StringIO(msg_bytes)).load()
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:
             if ('_watched', ANY) == message:
@@ -75,14 +75,14 @@ class Node(object):
             elif message in (('terminated', ANY), ('_watched', ANY), ('_unwatched', ANY)):
                 pass
             else:
-                self._remote_dead_letter(local_path, message, sender_nid)
+                self._remote_dead_letter(local_path, message, sender)
         else:
-            cell.receive(message)
+            cell.receive(message, sender)
 
-    def _remote_dead_letter(self, path, msg, from_):
+    def _remote_dead_letter(self, path, msg, sender):
         ref = Ref(cell=None, uri=Uri.parse(self.nid + path), node=self, is_local=True)
         if not (msg == ('_unwatched', ANY) or msg == ('_watched', ANY)):
-            Events.log(RemoteDeadLetter(ref, msg, from_))
+            Events.log(RemoteDeadLetter(ref, msg, sender))
 
     def stop(self):
         if getattr(self, 'guardian', None):
@@ -104,15 +104,15 @@ class Node(object):
 
 
 class _Msg(object):
-    def __init__(self, ref, msg):
-        self.ref, self.msg = ref, msg
+    def __init__(self, ref, msg, sender):
+        self.ref, self.msg, self.sender = ref, msg, sender
 
     def serialize(self):
-        return dumps((self.ref.uri.path, self.msg), protocol=2)
+        return dumps((self.ref.uri.path, self.msg, self.sender), protocol=2)
 
     def send_failed(self):
         if not (self.msg == ('_unwatched', ANY) or self.msg == ('_watched', ANY)):
-            Events.log(DeadLetter(self.ref, self.msg))
+            Events.log(DeadLetter(self.ref, self.msg, self.sender))
 
     def __repr__(self):
-        return "_Msg(%r, %r)" % (self.ref, self.msg)
+        return "_Msg(%r, %r, %r)" % (self.ref, self.msg, self.sender)

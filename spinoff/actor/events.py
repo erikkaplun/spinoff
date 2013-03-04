@@ -20,29 +20,20 @@ class Event(object):
         return '%r' % (self.actor,)
 
 
-class Message(Event, fields('message')):
-    def __repr__(self):  # pragma: no cover
-        return self.message
-
-
-class MessageReceived(Event, fields('actor', 'message')):
+class UnhandledMessage(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):  # pragma: no cover
-        return (super(MessageReceived, self).repr_args() +
-                ', message=%r' % (self.message,))
+        return (super(UnhandledMessage, self).repr_args() +
+                ', message=%r, sender=%r' % (self.message, self.sender))
 
 
-class UnhandledMessage(MessageReceived, fields('actor', 'message')):
-    pass
-
-
-class DeadLetter(Event, fields('actor', 'message')):
+class DeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(DeadLetter, self).repr_args() + (', %r' % (self.message, )))
+        return (super(DeadLetter, self).repr_args() + (', %r, %r' % (self.message, self.sender)))
 
 
-class RemoteDeadLetter(Event, fields('actor', 'message', 'sender_addr')):
+class RemoteDeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender_addr)))
+        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender)))
 
 
 class Error(Event, fields('actor', 'exc', 'tb')):

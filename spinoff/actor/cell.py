@@ -24,6 +24,9 @@ from spinoff.util.pattern_matching import ANY
 from spinoff.util.pattern_matching import OR
 
 
+_NOSENDER = None
+
+
 class _BaseCell(object):
     __metaclass__ = abc.ABCMeta
 
@@ -66,7 +69,7 @@ class _BaseCell(object):
         return child
 
     @abc.abstractmethod
-    def receive(self, message):
+    def receive(self, message, _sender):
         pass
 
     def _generate_name(self, factory):
@@ -143,8 +146,8 @@ class Cell(Greenlet, _BaseCell):
         self.inbox = deque()
 
     @logstring(u'←')
-    def receive(self, message):
-        self.queue.put(message)
+    def receive(self, message, _sender):
+        self.queue.put((_sender, message))
 
     @logstring(u'↻')
     def _run(self):
@@ -170,7 +173,7 @@ class Cell(Greenlet, _BaseCell):
                 self.queue.peek()
             while True:
                 try:
-                    m = self.queue.get_nowait()
+                    sender, m = self.queue.get_nowait()
                 except gevent.queue.Empty:
                     break
                 # dbg("@ CTRL:", m)
@@ -200,12 +203,12 @@ class Cell(Greenlet, _BaseCell):
                 else:
                     if m == ('_node_down', ANY):
                         _, node = m
-                        self.inbox.extend(('terminated', x) for x in (self.watchees or []) if x.uri.node == node)
+                        self.inbox.extend((_NOSENDER, ('terminated', x)) for x in (self.watchees or []) if x.uri.node == node)
                     else:
-                        self.inbox.append(m)
+                        self.inbox.append((sender, m))
             # process the normal letters (i.e. the regular, non-system/non-special messages)
             while not processing and self.queue.empty() and self.inbox:
-                m = self.inbox.popleft()
+                sender, m = self.inbox.popleft()
                 # dbg("@ NORMAL:", m)
                 if m == ('terminated', ANY):
                     _, actor = m
@@ -217,9 +220,10 @@ class Cell(Greenlet, _BaseCell):
                 elif m == ('_child_terminated', ANY):
                     self._child_gone(m[1])
                     break
+                self.impl.sender = sender
                 if self.impl.receive:
                     processing = True
-                    self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.impl.receive, m)
+                    self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.impl.receive, m, sender)
                 elif self.impl.run:
                     assert self.ch.balance == -1
                     if self.get_pt == m:
@@ -228,7 +232,7 @@ class Cell(Greenlet, _BaseCell):
                         self.inbox.extendleft(reversed(self.stash))
                         self.stash.clear()
                     else:
-                        self.stash.append(m)
+                        self.stash.append((sender, m))
                 else:
                     self.catch_exc(self.unhandled, m)
 
@@ -236,26 +240,27 @@ class Cell(Greenlet, _BaseCell):
         try:
             fn(*args, **kwargs)
         except Exception:
-            self.queue.put(('__error', sys.exc_info()[1], sys.exc_info()[2]))
+            self.queue.put((_NOSENDER, ('__error', sys.exc_info()[1], sys.exc_info()[2])))
         else:
-            self.queue.put('__done')
+            self.queue.put((_NOSENDER, '__done'))
 
-    def catch_unhandled(self, fn, m):
+    def catch_unhandled(self, fn, m, sender):
         try:
             fn(m)
         except Unhandled:
-            self.unhandled(m)
+            self.unhandled(m, sender)
 
     # proc
 
     def get(self, *patterns):
         self.get_pt = OR(*patterns)
-        self.queue.put('__done')
+        self.queue.put((_NOSENDER, '__done'))
         return self.ch.get()
 
     def flush(self):
         while self.stash:
-            self.unhandled(self.stash.popleft())
+            sender, m = self.stash.popleft()
+            self.unhandled(m, sender)
 
     # birth & death
 
@@ -282,12 +287,12 @@ class Cell(Greenlet, _BaseCell):
         except GreenletExit:
             ret = None
         except:
-            self.queue.put(('__error', sys.exc_info()[1], sys.exc_info()[2]))
+            self.queue.put((_NOSENDER, ('__error', sys.exc_info()[1], sys.exc_info()[2])))
             return
         if ret is not None:
             warnings.warn("Process.run should not return anything--it's ignored")
-        self.queue.put('__done')
-        self.queue.put('_stop')
+        self.queue.put((_NOSENDER, '__done'))
+        self.queue.put((_NOSENDER, '_stop'))
 
     def shutdown(self, term_msg='_stop'):
         if hasattr(self.impl, 'post_stop'):
@@ -303,11 +308,11 @@ class Cell(Greenlet, _BaseCell):
         self.queue.queue.extendleft(reversed(self.inbox))
         self.inbox.clear()
         while self.children:
-            m = self.queue.get()
+            sender, m = self.queue.get()
             if m == ('_child_terminated', ANY):
                 self._child_gone(m[1])
             else:
-                stash.appendleft(m)
+                stash.appendleft((sender, m))
         self.queue.queue.extendleft(stash)
 
     def destroy(self):
@@ -321,7 +326,7 @@ class Cell(Greenlet, _BaseCell):
             ref = self.ref
         while True:
             try:
-                m = self.queue.get_nowait()
+                sender, m = self.queue.get_nowait()
             except gevent.queue.Empty:
                 break
             if m == ('_watched', ANY):
@@ -330,17 +335,17 @@ class Cell(Greenlet, _BaseCell):
                 _, exc, tb = m
                 self.report((exc, tb))
             elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done'):
-                Events.log(DeadLetter(ref, m))
+                Events.log(DeadLetter(ref, m, sender))
         self.parent_actor.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
         self.impl = self.inbox = self.queue = self.parent_actor = None
 
-    def unhandled(self, m):
+    def unhandled(self, m, sender):
         if ('terminated', ANY) == m:
             raise UnhandledTermination(watcher=self.ref, watchee=m[1])
         else:
-            Events.log(UnhandledMessage(self.ref, m))
+            Events.log(UnhandledMessage(self.ref, m, sender))
 
     @logstring("report")
     def report(self, exc_and_tb=None):

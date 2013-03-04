@@ -3,6 +3,8 @@ from __future__ import print_function
 
 import abc
 
+from gevent import getcurrent
+
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.uri import Uri
 from spinoff.util.pattern_matching import ANY, IN, Matcher
@@ -119,33 +121,38 @@ class Ref(_BaseRef):
         self.node = node
         self.is_local = is_local
 
-    def send(self, message):
+    def send(self, message, _sender=None):
         """Sends a message to the actor represented by this `Ref`."""
+        if not _sender:
+            try:
+                _sender = getcurrent().ref
+            except AttributeError:
+                pass
         if self._cell:
             if not self._cell.stopped:
-                self._cell.receive(message)
+                self._cell.receive(message, _sender)
                 return
             else:
                 self._cell = None
         if not self.is_local:
             if self.uri.node != self.node.nid:
-                self.node.send_message(message, remote_ref=self)
+                self.node.send_message(message, remote_ref=self, sender=_sender)
             else:
                 self._cell = self.node.guardian.lookup_cell(self.uri)
                 self.is_local = True
-                self._cell.receive(message)
+                self._cell.receive(message, _sender)
         else:
             if self.node and self.node.guardian:
                 cell = self.node.guardian.lookup_cell(self.uri)
                 if cell:
-                    cell.receive(message)  # do NOT set self._cell--it will never be unset and will cause a memleak
+                    cell.receive(message, _sender)  # do NOT set self._cell--it will never be unset and will cause a memleak
                     return
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
             elif message in ('_stop', (IN(['terminated', '_watched', '_unwatched']), ANY)):
                 pass
             else:
-                Events.log(DeadLetter(self, message))
+                Events.log(DeadLetter(self, message, _sender))
 
     @property
     def is_stopped(self):
