@@ -24,7 +24,7 @@ Example
 
 The following is only a very small "peek preview" style example of what the framework can do. More examples and full documentation will follow soon.
 
-```
+```python
 # spinoff/examples/example1.py
 from gevent import sleep, with_timeout
 from spinoff.actor import Actor
