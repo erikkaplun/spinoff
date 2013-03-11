@@ -257,6 +257,9 @@ class Cell(Greenlet, _BaseCell):
         self.queue.put((_NOSENDER, '__done'))
         return self.ch.get()
 
+    def get_nowait(self, *patterns):
+        return self.get(*patterns, timeout=0.0)
+
     def flush(self):
         while self.stash:
             sender, m = self.stash.popleft()

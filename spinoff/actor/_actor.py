@@ -30,6 +30,9 @@ class Actor(object):
     def get(self, *patterns, **kwargs):
         return self.__cell.get(*patterns, **kwargs)
 
+    def get_nowait(self, *patterns, **kwargs):
+        return self.__cell.get_nowait(*patterns, **kwargs)
+
     def flush(self):
         self.__cell.flush()
 
