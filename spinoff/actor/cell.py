@@ -12,7 +12,7 @@ from itertools import count
 import gevent
 import gevent.event
 import gevent.queue
-from gevent import getcurrent, GreenletExit, Greenlet
+from gevent import GreenletExit, Greenlet
 from gevent.queue import Empty
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
