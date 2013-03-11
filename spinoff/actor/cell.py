@@ -228,6 +228,7 @@ class Cell(Greenlet, _BaseCell):
                 if self.actor.receive:
                     processing = True
                     self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.actor.receive, m, sender)
+                    self.proc._cell = self
                 elif self.actor.run:
                     assert self.ch.balance == -1
                     if self.get_pt == m:
@@ -288,6 +289,7 @@ class Cell(Greenlet, _BaseCell):
             if actor.receive:
                 raise TypeError("actor should implement only run() or receive() but not both")
             self.proc = gevent.spawn(self.wrap_run, actor.run)
+            self.proc._cell = self
             self.stash = deque()
         return actor
 
