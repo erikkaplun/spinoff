@@ -239,7 +239,7 @@ class Cell(Greenlet, _BaseCell):
                     else:
                         self.stash.append((sender, m))
                 else:
-                    self.catch_exc(self.unhandled, m)
+                    self.catch_exc(self.unhandled, m, sender)
 
     def catch_exc(self, fn, *args, **kwargs):
         try:

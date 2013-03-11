@@ -178,7 +178,7 @@ def test_unhandled_message_is_reported(defer):
     node = DummyNode()
     defer(node.stop)
     a = node.spawn(MyActor)
-    with expect_one_event(UnhandledMessage(a, 'foo')):
+    with expect_one_event(UnhandledMessage(a, 'foo', sender=None)):
         a << 'foo'
 
 
@@ -187,7 +187,7 @@ def test_unhandled_message_to_guardian_is_also_reported(defer):
     node = DummyNode()
     defer(node.stop)
     guardian = node.guardian
-    with expect_one_event(UnhandledMessage(guardian, 'foo')):
+    with expect_one_event(UnhandledMessage(guardian, 'foo', sender=None)):
         guardian << 'foo'
 
 
@@ -196,7 +196,7 @@ def test_with_no_receive_method_all_messages_are_unhandled(defer):
     node = DummyNode()
     defer(node.stop)
     a = node.spawn(Actor)
-    with expect_one_event(UnhandledMessage(a, 'dummy')):
+    with expect_one_event(UnhandledMessage(a, 'dummy', sender=None)):
         a << 'dummy'
 
 
@@ -383,7 +383,7 @@ def test_stopping_an_actor_prevents_it_from_processing_any_more_messages(defer):
     a.stop()
     sleep(.001)
     ok_(not received.is_set(), "the '_stop' message should not be receivable in the actor")
-    with expect_one_event(DeadLetter(a, None)):
+    with expect_one_event(DeadLetter(a, None, sender=None)):
         a << None
 
 
@@ -463,7 +463,7 @@ def test_stopping_in_pre_start_directs_any_refs_to_deadletters(defer):
     defer(node.stop)
     message_received = Event()
     a = node.spawn(MyActor)
-    with expect_one_event(DeadLetter(a, 'dummy')):
+    with expect_one_event(DeadLetter(a, 'dummy', sender=None)):
         a << 'dummy'
     ok_(not message_received.is_set())
 
@@ -515,7 +515,7 @@ def test_messages_to_dead_actors_are_sent_to_dead_letters(defer):
     defer(node.stop)
     a = node.spawn(Actor)
     a.stop()
-    with expect_one_event(DeadLetter(a, 'should-end-up-as-letter')):
+    with expect_one_event(DeadLetter(a, 'should-end-up-as-letter', sender=None)):
         a << 'should-end-up-as-letter'
         idle()
 
@@ -973,7 +973,7 @@ def test_sending_message_to_stopping_parent_from_post_stop_should_deadletter_the
     node = DummyNode()
     defer(node.stop)
     p = node.spawn(Parent)
-    with expect_one_event(DeadLetter(ANY, ANY)):
+    with expect_one_event(DeadLetter(ANY, ANY, sender=ANY)):
         p.stop()
         idle()
 
@@ -986,7 +986,7 @@ def test_queued_messages_are_logged_as_deadletters_after_stop(defer):
     a = node.spawn(Actor)
     a.stop()
     a << 'dummy'
-    eq_(deadletter_event_emitted.get(), DeadLetter(a, 'dummy'))
+    eq_(deadletter_event_emitted.get(), DeadLetter(a, 'dummy', sender=None))
 
 
 @deferred_cleanup
@@ -1095,7 +1095,7 @@ def test_termination_message_contains_ref_that_forwards_to_deadletters(defer):
         def receive(self, message):
             eq_(message, ('terminated', watchee))
             _, sender = message
-            with expect_one_event(DeadLetter(sender, 'dummy')):
+            with expect_one_event(DeadLetter(sender, 'dummy', sender=self.ref)):
                 sender << 'dummy'
                 idle()
             all_ok.set()
@@ -1422,7 +1422,7 @@ def test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visib
     sender_node = Node('localhost:20001', enable_remoting=True, hub_kwargs={'heartbeat_interval': 0.05, 'heartbeat_max_silence': 0.1})
     defer(sender_node.stop)
     ref = sender_node.lookup_str('localhost:23456/actor2')
-    with expect_one_event(DeadLetter(ref, 'bar')):
+    with expect_one_event(DeadLetter(ref, 'bar', sender=None)):
         ref << 'bar'
 test_sending_to_an_unknown_node_doesnt_start_if_the_node_doesnt_become_visible_and_the_message_is_later_dropped.timeout = 40.0
 
@@ -1710,11 +1710,11 @@ def test_all_stashed_messages_are_reported_as_unhandled_on_flush_and_discarded(d
     defer(node.stop)
     p = node.spawn(MyProc)
     p << 'should-be-reported-as-unhandled'
-    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
-        with expect_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled', sender=None)):
+        with expect_one_event(UnhandledMessage(p, 'should-be-reported-as-unhandled', sender=None)):
             p << 'dummy'
-    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled')):
-        with expect_event_not_emitted(UnhandledMessage(p, 'should-be-reported-as-unhandled')):
+    with expect_event_not_emitted(DeadLetter(p, 'should-be-reported-as-unhandled', sender=None)):
+        with expect_event_not_emitted(UnhandledMessage(p, 'should-be-reported-as-unhandled', sender=None)):
             p << 'dummy'
 
 
@@ -1741,8 +1741,8 @@ def test_dead_letters_are_emitted_in_the_order_the_messages_were_sent(defer):
     node = DummyNode()
     defer(node.stop)
     a = node.spawn(Actor)
-    with expect_one_event(DeadLetter(a, 'dummy1')):
-        with expect_one_event(DeadLetter(a, 'dummy2')):
+    with expect_one_event(DeadLetter(a, 'dummy1', sender=None)):
+        with expect_one_event(DeadLetter(a, 'dummy2', sender=None)):
             a << 'dummy1' << 'dummy2'
             a.stop()
 

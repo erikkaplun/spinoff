@@ -7,6 +7,7 @@ import gevent
 from spinoff.actor.cell import _BaseCell
 from spinoff.actor.events import Events, UnhandledMessage
 from spinoff.actor.ref import _BaseRef
+from spinoff.actor.context import get_context
 from spinoff.util.pattern_matching import ANY
 
 
@@ -39,7 +40,7 @@ class Guardian(_BaseCell, _BaseRef):
     def ref(self):
         return self
 
-    def send(self, message):
+    def send(self, message, _sender=None):
         if ('_child_terminated', ANY) == message:
             _, sender = message
             self._child_gone(sender)
@@ -54,7 +55,11 @@ class Guardian(_BaseCell, _BaseRef):
         elif message == '_kill':
             return self._do_stop(kill=True)
         else:
-            Events.log(UnhandledMessage(self, message))
+            if not _sender:
+                context = get_context()
+                if context:
+                    _sender = context.ref
+            Events.log(UnhandledMessage(self, message, _sender))
 
     receive = send
 
