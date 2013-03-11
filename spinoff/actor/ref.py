@@ -7,6 +7,8 @@ from gevent import getcurrent, spawn_later
 
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.uri import Uri
+from spinoff.actor.misc import TempActor
+from spinoff.actor.context import get_context
 from spinoff.util.pattern_matching import ANY, IN, Matcher
 from spinoff.util.logging import dbg
 
@@ -50,6 +52,16 @@ class _BaseRef(object):
         """
         self.send(message)
         return self
+
+    def ask(self, msg):
+        tmp, d = TempActor.make()
+        self.send(msg, _sender=tmp)
+        return d.get()
+
+    def forward(self, msg):
+        sender = get_context().sender
+        assert sender
+        self.send(msg, _sender=sender)
 
     def send_later(self, delay, message, _sender=None):
         spawn_later(delay, self.send, message, _sender=_sender or get_context().ref)
