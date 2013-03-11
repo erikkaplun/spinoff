@@ -13,6 +13,7 @@ import gevent
 import gevent.event
 import gevent.queue
 from gevent import getcurrent, GreenletExit, Greenlet
+from gevent.queue import Empty
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
 from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, UnhandledTermination
@@ -183,6 +184,9 @@ class Cell(Greenlet, _BaseCell):
                         m = '_stop'  # fall thru to the _stop/_kill handler
                     else:
                         continue
+                elif m == '__undone':
+                    processing = True
+                    continue
                 if m == ('__error', ANY, ANY):
                     _, exc, tb = m
                     self.report((exc, tb))
@@ -255,7 +259,10 @@ class Cell(Greenlet, _BaseCell):
     def get(self, *patterns):
         self.get_pt = OR(*patterns)
         self.queue.put((_NOSENDER, '__done'))
-        return self.ch.get()
+        try:
+            return self.ch.get(timeout=timeout)
+        except Empty:
+            self.queue.put((_NOSENDER, '__undone'))
 
     def get_nowait(self, *patterns):
         return self.get(*patterns, timeout=0.0)
