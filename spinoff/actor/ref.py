@@ -139,10 +139,9 @@ class Ref(_BaseRef):
     def send(self, message, _sender=None):
         """Sends a message to the actor represented by this `Ref`."""
         if not _sender:
-            try:
-                _sender = getcurrent().ref
-            except AttributeError:
-                pass
+            context = get_context()
+            if context:
+                _sender = context.ref
         if self._cell:
             if not self._cell.stopped:
                 self._cell.receive(message, _sender)
