@@ -3,7 +3,7 @@ from __future__ import print_function
 
 import abc
 
-from gevent import getcurrent
+from gevent import getcurrent, spawn_later
 
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.uri import Uri
@@ -50,6 +50,9 @@ class _BaseRef(object):
         """
         self.send(message)
         return self
+
+    def send_later(self, delay, message, _sender=None):
+        spawn_later(delay, self.send, message, _sender=_sender or get_context().ref)
 
     def stop(self):
         """Sends '_stop' to this actor"""

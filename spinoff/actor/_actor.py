@@ -70,6 +70,9 @@ class Actor(object):
         """Alias for self.ref.send"""
         self.ref.send(*args, **kwargs)
 
+    def send_later(self, *args, **kwargs):
+        self.ref.send_later(*args, **kwargs)
+
     def __lshift__(self, message):  # pragma: no cover
         self.ref.send(message)
         return self
