@@ -163,7 +163,8 @@ class Ref(_BaseRef):
                     return
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
-            elif message in ('_stop', (IN(['terminated', '_watched', '_unwatched']), ANY)):
+            elif (message == ('terminated', ANY) or message == ('_unwatched', ANY) or message == ('_node_down', ANY) or
+                  message == '_stop' or message == '_kill' or message == '__done'):
                 pass
             else:
                 Events.log(DeadLetter(self, message, _sender))
