@@ -1,11 +1,29 @@
+from __future__ import print_function
+
+import errno
+import os
+
 from gevent.threadpool import ThreadPool
 
 
-def read_file_async(filename, start=0, end=None):
-    return ThreadPool(1).apply(_do_read_file_async, args=(filename, start, end))
+def read_file_async(fhandle, limit=None, threadpool=None):
+    return (threadpool or ThreadPool(1)).apply(_do_read_file_async, args=(fhandle, limit))
 
 
-def _do_read_file_async(filename, start, end):
-    with open(filename, 'rb') as f:
-        f.seek(start)
-        return f.read(end - start) if end is not None else f.read()
+def _do_read_file_async(fhandle, limit):
+    return fhandle.read(limit) if limit is not None else fhandle.read()
+
+
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
+
+
+def reasonable_get_mtime(fname):
+    mtime = os.stat(fname).st_mtime
+    return round(mtime, 2)
