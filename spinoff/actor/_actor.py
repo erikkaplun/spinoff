@@ -27,8 +27,8 @@ class Actor(object):
     def spawn(self, factory, name=None):
         return self.__cell.spawn_actor(factory, name)
 
-    def get(self, *patterns):
-        return self.__cell.get(*patterns)
+    def get(self, *patterns, **kwargs):
+        return self.__cell.get(*patterns, **kwargs)
 
     def flush(self):
         self.__cell.flush()
