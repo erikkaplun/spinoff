@@ -28,7 +28,7 @@ class UnhandledMessage(Event, fields('actor', 'message', 'sender')):
 
 class DeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(DeadLetter, self).repr_args() + (', %r, %r' % (self.message, self.sender)))
+        return (super(DeadLetter, self).repr_args() + (', message=%r, sender=%r' % (self.message, self.sender)))
 
 
 class RemoteDeadLetter(Event, fields('actor', 'message', 'sender')):
