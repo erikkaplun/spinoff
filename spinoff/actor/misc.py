@@ -3,8 +3,8 @@ from __future__ import print_function
 
 import gevent.event
 
-from spinoff.actor._actor import Actor
-from spinoff.actor.ref import _BaseRef
+from spinoff.actor import Actor
+from spinoff.actor.context import get_context
 
 
 class Future(gevent.event.AsyncResult):
@@ -16,10 +16,10 @@ class TempActor(Actor):
     pool = set()
 
     @classmethod
-    def make(cls, context):
+    def make(cls):
         # if not cls.pool:
         d = gevent.event.AsyncResult()
-        ret = context.spawn(cls.using(d, cls.pool))
+        ret = get_context().spawn(cls.using(d, cls.pool))
         return ret, d
         # TODO:this doesn't work reliably for some reason, otherwise it could be a major performance enhancer,
         # at least for as long as actors are as heavy as they currently are
