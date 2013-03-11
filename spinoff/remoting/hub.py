@@ -119,7 +119,7 @@ class Hub(object):
         if hasattr(self, '_initialized'):
             logic, self._logic = self._logic, None
             self._execute(logic.shutdown)
-            sleep(.01)  # XXX: needed?
+            sleep(.1)  # XXX: needed?
         if hasattr(self, '_ctx'):
             self._insock = self._outsock = None
             self._ctx.destroy(linger=0)
