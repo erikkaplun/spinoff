@@ -80,6 +80,9 @@ class Actor(object):
     def stop(self):
         self.ref.stop()
 
+    def reply(self, msg):
+        self.sender << msg
+
     def __eq__(self, other):
         return other is self or self.ref == other
 
