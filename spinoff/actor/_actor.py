@@ -17,6 +17,7 @@ class Actor(object):
 
     __cell = None  # make it really private so it's hard and unpleasant to access the cell
     args, kwargs = (), {}
+    sender = None
 
     def __init__(self, *args, **kwargs):
         self.args, self.kwargs = args, kwargs
