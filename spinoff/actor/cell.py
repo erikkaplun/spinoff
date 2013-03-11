@@ -257,8 +257,9 @@ class Cell(Greenlet, _BaseCell):
 
     # proc
 
-    def get(self, *patterns):
-        self.get_pt = OR(*patterns)
+    def get(self, pattern=ANY, timeout=None):
+        assert timeout is None or isinstance(timeout, (int, float))
+        self.get_pt = pattern
         self.queue.put((_NOSENDER, '__done'))
         try:
             return self.ch.get(timeout=timeout)
