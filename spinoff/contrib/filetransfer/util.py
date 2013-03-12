@@ -3,11 +3,9 @@ from __future__ import print_function
 import errno
 import os
 
-from gevent.threadpool import ThreadPool
 
-
-def read_file_async(fhandle, limit=None, threadpool=None):
-    return (threadpool or ThreadPool(1)).apply(_do_read_file_async, args=(fhandle, limit))
+def read_file_async(threadpool, fhandle, limit=None):
+    return threadpool.apply(_do_read_file_async, args=(fhandle, limit))
 
 
 def _do_read_file_async(fhandle, limit):

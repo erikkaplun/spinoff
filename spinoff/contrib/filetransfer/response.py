@@ -11,7 +11,7 @@ class Response(Actor):
         seek_ptr = 0
         with open(file, 'r') as f:
             while True:
-                chunk = read_file_async(f, limit=chunk_size, threadpool=threadpool)
+                chunk = read_file_async(threadpool, f, limit=chunk_size)
                 seek_ptr += chunk_size
                 more_coming = len(chunk) > 0
                 request << ('chunk', chunk, more_coming)
