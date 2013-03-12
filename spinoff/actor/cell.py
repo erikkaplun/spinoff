@@ -267,8 +267,8 @@ class Cell(Greenlet, _BaseCell):
             self.queue.put((_NOSENDER, '__undone'))
             raise
 
-    def get_nowait(self, *patterns):
-        return self.get(*patterns, timeout=0.0)
+    def get_nowait(self, pattern):
+        return self.get(pattern, timeout=0.0)
 
     def flush(self):
         while self.stash:
