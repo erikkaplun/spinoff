@@ -265,6 +265,7 @@ class Cell(Greenlet, _BaseCell):
             return self.ch.get(timeout=timeout)
         except Empty:
             self.queue.put((_NOSENDER, '__undone'))
+            raise
 
     def get_nowait(self, *patterns):
         return self.get(*patterns, timeout=0.0)
