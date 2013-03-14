@@ -80,15 +80,15 @@ ENABLE_ONLY = False
 
 
 LEVELS = [
-    ('debug', GREEN),
+    ('dbg', GREEN),
     ('log', GREEN),
     ('log', GREEN),
     ('log', GREEN),
     ('log', GREEN),
     ('fail', YELLOW),
     ('flaw', YELLOW),
-    ('error', RED),
-    ('error', RED),
+    ('err', RED),
+    ('err', RED),
     ('panic', BLINK + RED),
     ('fatal', BLINK + RED),
 ]
@@ -224,7 +224,7 @@ def _write(level, *args, **kwargs):
 
             dump_parent_caller = kwargs.pop('caller', False)
             # args = tuple(x.encode('utf-8') for x in args if isinstance(x, unicode))
-            print(("%s %s %s  %s %s  %s  in %s" %
+            print(("%s %s %s %s %s %s in %s" %
                   (datetime.datetime.strftime(datetime.datetime.utcfromtimestamp(time.time() - time.timezone), "%X.%f"), os.getpid(), levelname, loc, logname, statestr, logstring)),
                   file=OUTFILE, *(args + (comment,)))
             if dump_parent_caller:

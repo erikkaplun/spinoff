@@ -24,7 +24,7 @@ Example
 
 The following is only a very small "peek preview" style example of what the framework can do. More examples and full documentation will follow soon.
 
-```
+```python
 # spinoff/examples/example1.py
 from gevent import sleep, with_timeout
 from spinoff.actor import Actor
@@ -83,7 +83,8 @@ from spinoff.util.logging import dbg
 
 class ExampleProcess(Actor):
     def run(self, other_actor):
-        other_actor = self.node.lookup_str(other_actor) if isinstance(other_actor, str) else other_actor
+        if isinstance(other_actor, str):
+            other_actor = self.node.lookup_str(other_actor)
         while True:
             dbg("sending greeting to %r" % (other_actor,))
             other_actor << 'hello!'
@@ -111,7 +112,7 @@ The example can be run using the following commands:
 
 ```bash
 $ spin -pid node1.pid -nid localhost:9700 spinoff.examples.example2.ExampleActor -name other
-$ spin -pid node2.pid -nid localhost:9701 spinoff.examples.example2.ExampleProcess -params "other_actor='localhost:9700/other'"
+$ spin -pid node2.pid -nid localhost:9701 spinoff.examples.example2.ExampleProcess -using "other_actor='localhost:9700/other'"
 ```
 
 Same Distributed Code without Remoting

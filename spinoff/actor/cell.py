@@ -12,7 +12,8 @@ from itertools import count
 import gevent
 import gevent.event
 import gevent.queue
-from gevent import getcurrent, GreenletExit, Greenlet
+from gevent import GreenletExit, Greenlet
+from gevent.queue import Empty
 
 from spinoff.actor.events import Events, UnhandledMessage, DeadLetter, Error
 from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, UnhandledTermination
@@ -121,7 +122,7 @@ class _BaseCell(object):
 class Cell(Greenlet, _BaseCell):
     uri = None
     node = None
-    impl = None
+    actor = None
     proc = None
     stash = None
     stopped = False
@@ -159,12 +160,12 @@ class Cell(Greenlet, _BaseCell):
 
         # dbg(u"►►")
         try:
-            self.impl = self.construct()
+            self.actor = self.construct()
         except Exception:
             self.report()
             _stop()
             return
-        processing = True if self.impl.run else False
+        processing = True if self.actor.run else False
         stopped = False
         while True:
             # dbg("processing: %r, error: %r, suspended: %r, stash size: %s, active: %r" % (processing, error, suspended, len(self.stash) if self.stash is not None else '-'))
@@ -183,6 +184,9 @@ class Cell(Greenlet, _BaseCell):
                         m = '_stop'  # fall thru to the _stop/_kill handler
                     else:
                         continue
+                elif m == '__undone':
+                    processing = True
+                    continue
                 if m == ('__error', ANY, ANY):
                     _, exc, tb = m
                     self.report((exc, tb))
@@ -220,11 +224,12 @@ class Cell(Greenlet, _BaseCell):
                 elif m == ('_child_terminated', ANY):
                     self._child_gone(m[1])
                     break
-                self.impl.sender = sender
-                if self.impl.receive:
+                self.actor.sender = sender
+                if self.actor.receive:
                     processing = True
-                    self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.impl.receive, m, sender)
-                elif self.impl.run:
+                    self.proc = gevent.spawn(self.catch_exc, self.catch_unhandled, self.actor.receive, m, sender)
+                    self.proc._cell = self
+                elif self.actor.run:
                     assert self.ch.balance == -1
                     if self.get_pt == m:
                         processing = True
@@ -234,7 +239,7 @@ class Cell(Greenlet, _BaseCell):
                     else:
                         self.stash.append((sender, m))
                 else:
-                    self.catch_exc(self.unhandled, m)
+                    self.catch_exc(self.unhandled, m, sender)
 
     def catch_exc(self, fn, *args, **kwargs):
         try:
@@ -252,10 +257,18 @@ class Cell(Greenlet, _BaseCell):
 
     # proc
 
-    def get(self, *patterns):
-        self.get_pt = OR(*patterns)
+    def get(self, pattern=ANY, timeout=None):
+        assert timeout is None or isinstance(timeout, (int, float))
+        self.get_pt = pattern
         self.queue.put((_NOSENDER, '__done'))
-        return self.ch.get()
+        try:
+            return self.ch.get(timeout=timeout)
+        except Empty:
+            self.queue.put((_NOSENDER, '__undone'))
+            raise
+
+    def get_nowait(self, pattern):
+        return self.get(pattern, timeout=0.0)
 
     def flush(self):
         while self.stash:
@@ -266,24 +279,25 @@ class Cell(Greenlet, _BaseCell):
 
     def construct(self):
         factory = self.factory
-        impl = factory()
-        impl._parent = self.parent_actor
-        impl._set_cell(self)
-        if hasattr(impl, 'pre_start'):
-            pre_start = impl.pre_start
-            args, kwargs = impl.args, impl.kwargs
+        actor = factory()
+        actor._parent = self.parent_actor
+        actor._set_cell(self)
+        if hasattr(actor, 'pre_start'):
+            pre_start = actor.pre_start
+            args, kwargs = actor.args, actor.kwargs
             pre_start(*args, **kwargs)
-        if impl.run:
+        if actor.run:
             self.ch = gevent.queue.Channel()
-            if impl.receive:
+            if actor.receive:
                 raise TypeError("actor should implement only run() or receive() but not both")
-            self.proc = gevent.spawn(self.wrap_run, impl.run)
+            self.proc = gevent.spawn(self.wrap_run, actor.run)
+            self.proc._cell = self
             self.stash = deque()
-        return impl
+        return actor
 
     def wrap_run(self, fn):
         try:
-            ret = fn(*self.impl.args, **self.impl.kwargs)
+            ret = fn(*self.actor.args, **self.actor.kwargs)
         except GreenletExit:
             ret = None
         except:
@@ -295,9 +309,9 @@ class Cell(Greenlet, _BaseCell):
         self.queue.put((_NOSENDER, '_stop'))
 
     def shutdown(self, term_msg='_stop'):
-        if hasattr(self.impl, 'post_stop'):
+        if hasattr(self.actor, 'post_stop'):
             try:
-                self.impl.post_stop()
+                self.actor.post_stop()
             except:
                 self.report()
         while self.watchees:
@@ -339,7 +353,7 @@ class Cell(Greenlet, _BaseCell):
         self.parent_actor.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
             watcher << ('terminated', ref)
-        self.impl = self.inbox = self.queue = self.parent_actor = None
+        self.actor = self.inbox = self.queue = self.parent_actor = None
 
     def unhandled(self, m, sender):
         if ('terminated', ANY) == m:

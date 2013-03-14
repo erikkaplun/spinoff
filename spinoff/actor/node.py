@@ -12,7 +12,6 @@ from spinoff.actor.uri import Uri
 from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.remoting.pickler import IncomingMessageUnpickler
 from spinoff.util.pattern_matching import ANY
-from spinoff.actor.events import RemoteDeadLetter
 
 
 class Node(object):
@@ -82,7 +81,7 @@ class Node(object):
     def _remote_dead_letter(self, path, msg, sender):
         ref = Ref(cell=None, uri=Uri.parse(self.nid + path), node=self, is_local=True)
         if not (msg == ('_unwatched', ANY) or msg == ('_watched', ANY)):
-            Events.log(RemoteDeadLetter(ref, msg, sender))
+            Events.log(DeadLetter(ref, msg, sender))
 
     def stop(self):
         if getattr(self, 'guardian', None):

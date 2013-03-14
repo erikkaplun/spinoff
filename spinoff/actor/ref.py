@@ -3,10 +3,12 @@ from __future__ import print_function
 
 import abc
 
-from gevent import getcurrent
+from gevent import getcurrent, spawn_later
 
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.uri import Uri
+from spinoff.actor.misc import TempActor
+from spinoff.actor.context import get_context
 from spinoff.util.pattern_matching import ANY, IN, Matcher
 from spinoff.util.logging import dbg
 
@@ -50,6 +52,19 @@ class _BaseRef(object):
         """
         self.send(message)
         return self
+
+    def ask(self, msg):
+        tmp, d = TempActor.make()
+        self.send(msg, _sender=tmp)
+        return d.get()
+
+    def forward(self, msg):
+        sender = get_context().sender
+        assert sender
+        self.send(msg, _sender=sender)
+
+    def send_later(self, delay, message, _sender=None):
+        spawn_later(delay, self.send, message, _sender=_sender or get_context().ref)
 
     def stop(self):
         """Sends '_stop' to this actor"""
@@ -124,10 +139,9 @@ class Ref(_BaseRef):
     def send(self, message, _sender=None):
         """Sends a message to the actor represented by this `Ref`."""
         if not _sender:
-            try:
-                _sender = getcurrent().ref
-            except AttributeError:
-                pass
+            context = get_context()
+            if context:
+                _sender = context.ref
         if self._cell:
             if not self._cell.stopped:
                 self._cell.receive(message, _sender)
@@ -149,7 +163,8 @@ class Ref(_BaseRef):
                     return
             if ('_watched', ANY) == message:
                 message[1].send(('terminated', self))
-            elif message in ('_stop', (IN(['terminated', '_watched', '_unwatched']), ANY)):
+            elif (message == ('terminated', ANY) or message == ('_unwatched', ANY) or message == ('_node_down', ANY) or
+                  message == '_stop' or message == '_kill' or message == '__done'):
                 pass
             else:
                 Events.log(DeadLetter(self, message, _sender))

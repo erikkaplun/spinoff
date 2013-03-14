@@ -208,7 +208,7 @@ def test_relayee_disconnects(t=Time, logic=DEFAULT_LOGIC, cat=NID('cat:321'), mo
 def test_relayee_disappears(t=Time, logic=DEFAULT_LOGIC, cat=NID('cat:321'), mouse=NID('mouse:321')):
     t, logic = test_relay_successful_connect_request(t, logic, cat=cat, mouse=mouse)
     just_(logic.ping_received(IN, cat, 2, t.current + logic.heartbeat_max_silence / 2.0))
-    emits_(logic.heartbeat(t=t.advance(logic.heartbeat_max_silence)), [(RelaySigNodeDown, IN, cat, mouse), (NodeDown, mouse), (Ping, IN, cat, 3), (NextBeat, 1.0)])
+    emits_(logic.heartbeat(t=t.advance(logic.heartbeat_max_silence)), [(RelaySigNodeDown, IN, cat, mouse), (Disconnect, mouse), (NodeDown, mouse), (Ping, IN, cat, 3), (NextBeat, 1.0)])
 
 
 def test_after_requestor_disconnects_relayee_disconnect_does_nothing(t=Time, logic=DEFAULT_LOGIC, cat=NID('cat:321'), mouse=NID('mouse:321')):

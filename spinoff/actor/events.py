@@ -22,18 +22,19 @@ class Event(object):
 
 class UnhandledMessage(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):  # pragma: no cover
+        r = repr(self.message)
+        if len(r) > 200:
+            r = r[:200] + '...'
         return (super(UnhandledMessage, self).repr_args() +
-                ', message=%r, sender=%r' % (self.message, self.sender))
+                ', message=%s, sender=%r' % (r, self.sender))
 
 
 class DeadLetter(Event, fields('actor', 'message', 'sender')):
     def repr_args(self):
-        return (super(DeadLetter, self).repr_args() + (', %r, %r' % (self.message, self.sender)))
-
-
-class RemoteDeadLetter(Event, fields('actor', 'message', 'sender')):
-    def repr_args(self):
-        return (super(RemoteDeadLetter, self).repr_args() + (', %r, from=%s' % (self.message, self.sender)))
+        r = repr(self.message)
+        if len(r) > 200:
+            r = r[:200] + '...'
+        return (super(DeadLetter, self).repr_args() + (', message=%s, sender=%r' % (r, self.sender)))
 
 
 class Error(Event, fields('actor', 'exc', 'tb')):

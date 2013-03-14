@@ -17,6 +17,7 @@ class Actor(object):
 
     __cell = None  # make it really private so it's hard and unpleasant to access the cell
     args, kwargs = (), {}
+    sender = None
 
     def __init__(self, *args, **kwargs):
         self.args, self.kwargs = args, kwargs
@@ -26,8 +27,11 @@ class Actor(object):
     def spawn(self, factory, name=None):
         return self.__cell.spawn_actor(factory, name)
 
-    def get(self, *patterns):
-        return self.__cell.get(*patterns)
+    def get(self, *patterns, **kwargs):
+        return self.__cell.get(*patterns, **kwargs)
+
+    def get_nowait(self, *patterns, **kwargs):
+        return self.__cell.get_nowait(*patterns, **kwargs)
 
     def flush(self):
         self.__cell.flush()
@@ -66,12 +70,18 @@ class Actor(object):
         """Alias for self.ref.send"""
         self.ref.send(*args, **kwargs)
 
+    def send_later(self, *args, **kwargs):
+        self.ref.send_later(*args, **kwargs)
+
     def __lshift__(self, message):  # pragma: no cover
         self.ref.send(message)
         return self
 
     def stop(self):
         self.ref.stop()
+
+    def reply(self, msg):
+        self.sender << msg
 
     def __eq__(self, other):
         return other is self or self.ref == other
@@ -80,4 +90,4 @@ class Actor(object):
         return not (self == other)
 
     def __repr__(self):
-        return "<impl:%s>" % (self.ref.uri.path,)
+        return "<%s>" % (self.ref.uri.path,)
