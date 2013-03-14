@@ -9,6 +9,7 @@ from spinoff.contrib.filetransfer.server import Server
 from spinoff.contrib.filetransfer.util import mkdir_p, reasonable_get_mtime
 from spinoff.util.lockfile import lock_file
 from spinoff.util.logging import dbg
+from spinoff.util.pattern_matching import ANY
 
 
 __all__ = ['serve_file']
@@ -65,7 +66,7 @@ class FileRef(object):
                     transferred_size = self._transfer(tmpfile)
                 if transferred_size != self.size:
                     os.unlink(tmppath)
-                    raise TransferSizeMismatch("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
+                    raise TransferFailed("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
                 os.utime(tmppath, (self.mtime, self.mtime))
                 if path:
                     os.rename(tmppath, path)
@@ -74,15 +75,19 @@ class FileRef(object):
                     return tmppath
 
     def _transfer(self, fh):
-        request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id))
+        request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
         more = True
         ret = 0
         while more:
             msg = request.ask('next')
             if msg == 'stop':
                 break
-            elif msg == 'failed':
-                raise TransferInterrupted
+            elif msg == ('failure', ANY):
+                _, cause = msg
+                assert cause in ('response-died', 'inconsistent', 'timeout')
+                raise TransferFailed("Other side died prematurely" if cause == 'response-died' else
+                                     "Inconsistent stream" if cause == 'inconsistent' else
+                                     "Timed out")
             _, chunk, more = msg
             assert _ == 'chunk'
             ret += len(chunk)
@@ -91,14 +96,6 @@ class FileRef(object):
 
     def __repr__(self):
         return "<file '%s' @ %r>" % (self.abstract_path, self.server)
-
-
-class TransferInterrupted(Exception):
-    pass
-
-
-class TransferSizeMismatch(Exception):
-    pass
 
 
 class TransferFailed(Exception):
