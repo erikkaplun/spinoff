@@ -90,4 +90,4 @@ class Actor(object):
         return not (self == other)
 
     def __repr__(self):
-        return "<impl:%s>" % (self.ref.uri.path,)
+        return "<%s>" % (self.ref.uri.path,)
