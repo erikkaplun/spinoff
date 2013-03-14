@@ -16,7 +16,6 @@ from spinoff.actor.events import Events, UnhandledMessage, DeadLetter
 from spinoff.actor.exceptions import Unhandled, NameConflict, UnhandledTermination
 from spinoff.util.pattern_matching import ANY, IS_INSTANCE
 from spinoff.util.testing import assert_raises, expect_one_warning, expect_one_event, expect_failure, MockActor, expect_event_not_emitted
-from spinoff.actor.events import RemoteDeadLetter
 from spinoff.util.testing.actor import wrap_globals
 from spinoff.util.python import deferred_cleanup
 
@@ -1410,7 +1409,7 @@ def test_messages_sent_to_nonexistent_remote_actors_are_deadlettered(defer):
     defer(sender_node.stop, receiver_node.stop)
 
     noexist = sender_node.lookup_str('localhost:20002/non-existent-actor')
-    with expect_one_event(RemoteDeadLetter):
+    with expect_one_event(DeadLetter):
         noexist << 'straight-down-the-drain'
 test_messages_sent_to_nonexistent_remote_actors_are_deadlettered.timeout = 3.0
 

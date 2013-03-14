@@ -37,14 +37,6 @@ class DeadLetter(Event, fields('actor', 'message', 'sender')):
         return (super(DeadLetter, self).repr_args() + (', message=%s, sender=%r' % (r, self.sender)))
 
 
-class RemoteDeadLetter(Event, fields('actor', 'message', 'sender')):
-    def repr_args(self):
-        r = repr(self.message)
-        if len(r) > 200:
-            r = r[:200] + '...'
-        return (super(RemoteDeadLetter, self).repr_args() + (', message=%s, from=%s' % (r, self.sender)))
-
-
 class Error(Event, fields('actor', 'exc', 'tb')):
     """Logged by actors as they run into errors."""
     def repr_args(self):  # pragma: no cover
