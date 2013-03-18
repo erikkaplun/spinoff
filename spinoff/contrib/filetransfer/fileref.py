@@ -18,11 +18,16 @@ __all__ = ['serve_file']
 _NULL_CTX = contextmanager(lambda: (yield))
 
 
-def serve_file(path, abstract_path=None):
+def serve_file(path, abstract_path=None, node=None):
     mtime = reasonable_get_mtime(path)
     size = os.path.getsize(path)
     file_id = uuid.uuid4().get_hex()
-    server = Server.get_for_context()
+
+    node = node or get_context().node
+    server = Server._instances.get(node)
+    if not server:
+        server = Server._instances[node] = node.spawn(Server)
+
     server << ('serve', path, file_id)
     if abstract_path is None:
         abstract_path = os.path.basename(path)
