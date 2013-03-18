@@ -15,13 +15,6 @@ from spinoff.contrib.filetransfer import constants
 class Server(Actor):
     _instances = {}
 
-    @classmethod
-    def get_for_context(cls):
-        node = get_context().node
-        if node not in cls._instances:
-            cls._instances[node] = node.spawn(cls)
-        return cls._instances[node]
-
     def pre_start(self):
         self.threadpool = ThreadPool(maxsize=10)
         self.published = {}  # <file_id> => (<local file path>, <time added>)
