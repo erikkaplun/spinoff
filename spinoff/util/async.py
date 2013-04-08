@@ -46,7 +46,7 @@ def with_timeout(timeout, d, reactor=reactor):
     timeout_d = sleep(timeout, reactor)
     timeout_d.addCallback(lambda _: (
         d.cancel(),
-        ret.errback(Failure(Timeout())),
+        ret.errback(Failure(Timeout())) if not ret.called else None,
     ))
 
     timeout_d.addErrback(lambda f: f.trap(CancelledError))
