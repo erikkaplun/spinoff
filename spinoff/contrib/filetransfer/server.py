@@ -1,6 +1,5 @@
 import datetime
 import os
-import tempfile
 
 from gevent.threadpool import ThreadPool
 
@@ -38,11 +37,7 @@ class Server(Actor):
                 file_path, time_added = self.published[file_id]
                 if request == 'request-local':
                     self._touch_file(file_id)
-                    fh, tmppath = tempfile.mkstemp()
-                    os.close(fh)
-                    os.unlink(tmppath)
-                    os.link(file_path, tmppath)
-                    self.reply(('local-file', tmppath))
+                    self.reply(('local-file', file_path))
                 else:
                     response = self.spawn(Response.using(file=file_path, request=self.sender, threadpool=self.threadpool))
                     self.watch(response)

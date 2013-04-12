@@ -1,4 +1,6 @@
 import os
+import shutil
+import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -60,7 +62,7 @@ class FileRef(object):
                     if local_path != path:
                         if os.path.exists(path):
                             os.unlink(path)
-                        os.link(local_path, path)
+                        (os.link if sys.platform != 'win32' else shutil.copy)(local_path, path)
                     return path
                 else:
                     return local_path
