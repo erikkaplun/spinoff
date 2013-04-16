@@ -11,6 +11,8 @@ class Future(gevent.event.AsyncResult):
     def send(self, message):
         (self.set if not isinstance(message, BaseException) else self.set_exception)(message)
 
+    __lshift__ = send
+
 
 class TempActor(Actor):
     pool = set()
