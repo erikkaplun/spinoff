@@ -21,7 +21,7 @@ def lock_file(path, maxdelay=.1, lock_cls=LockFile):
             sleep(maxdelay)
         else:
             try:
-                yield
+                yield lock
                 break
             finally:
                 lock.release()
