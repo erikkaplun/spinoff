@@ -1,6 +1,5 @@
 import os
 import shutil
-import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -10,7 +9,6 @@ from spinoff.contrib.filetransfer.request import Request
 from spinoff.contrib.filetransfer.server import Server
 from spinoff.contrib.filetransfer.util import mkdir_p, reasonable_get_mtime
 from spinoff.util.lockfile import lock_file
-from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import ANY
 
 
@@ -62,7 +60,7 @@ class FileRef(object):
                     if local_path != path:
                         if os.path.exists(path):
                             os.unlink(path)
-                        (os.link if sys.platform != 'win32' else shutil.copy)(local_path, path)
+                        shutil.copy(local_path, path)
                     return path
                 else:
                     return local_path
