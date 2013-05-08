@@ -42,32 +42,32 @@ class FileRef(object):
         self.mtime = mtime
         self.size = size
 
-    def fetch(self, path=None):
-        if path is not None and os.path.isdir(path):
-            raise TransferFailed("%r is a directory" % (path,))
-        if path:
-            mkdir_p(os.path.dirname(path))
-        with lock_file(path) if path is not None else _NULL_CTX():
-            if (path is not None and
-                    os.path.exists(path) and
-                    reasonable_get_mtime(path) == self.mtime and
-                    os.path.getsize(path) == self.size):
+    def fetch(self, dst_path=None):
+        if dst_path is not None and os.dst_path.isdir(dst_path):
+            raise TransferFailed("%r is a directory" % (dst_path,))
+        if dst_path:
+            mkdir_p(os.dst_path.dirname(dst_path))
+        with lock_file(dst_path) if dst_path is not None else _NULL_CTX():
+            if (dst_path is not None and
+                    os.dst_path.exists(dst_path) and
+                    reasonable_get_mtime(dst_path) == self.mtime and
+                    os.dst_path.getsize(dst_path) == self.size):
                 return
 
             ret = None
             if self.server.uri.node == get_context().ref.uri.node:
-                _, local_path = self.server.ask(('request-local', self.file_id))
+                _, src_path = self.server.ask(('request-local', self.file_id))
                 assert _ == 'local-file'
-                if path is not None:
-                    if local_path != path:
-                        if os.path.exists(path):
-                            os.unlink(path)
-                        shutil.copy(local_path, path)
-                    ret = path
+                if dst_path is not None:
+                    if src_path != dst_path:
+                        if os.dst_path.exists(dst_path):
+                            os.unlink(dst_path)
+                        shutil.copy(src_path, dst_path)
+                    ret = dst_path
                 else:
                     fd, tmppath = tempfile.mkstemp()
                     os.close(fd)
-                    shutil.copy(local_path, tmppath)
+                    shutil.copy(src_path, tmppath)
                     ret = tmppath
             else:
                 fd, tmppath = tempfile.mkstemp()
@@ -77,9 +77,9 @@ class FileRef(object):
                 if transferred_size != self.size:
                     os.unlink(tmppath)
                     raise TransferFailed("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
-                if path:
-                    os.rename(tmppath, path)
-                    ret = path
+                if dst_path:
+                    os.rename(tmppath, dst_path)
+                    ret = dst_path
                 else:
                     ret = tmppath
             os.utime(ret, (self.mtime, self.mtime))
