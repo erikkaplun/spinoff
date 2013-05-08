@@ -43,15 +43,15 @@ class FileRef(object):
         self.size = size
 
     def fetch(self, dst_path=None):
-        if dst_path is not None and os.dst_path.isdir(dst_path):
+        if dst_path is not None and os.path.isdir(dst_path):
             raise TransferFailed("%r is a directory" % (dst_path,))
         if dst_path:
-            mkdir_p(os.dst_path.dirname(dst_path))
+            mkdir_p(os.path.dirname(dst_path))
         with lock_file(dst_path) if dst_path is not None else _NULL_CTX():
             if (dst_path is not None and
-                    os.dst_path.exists(dst_path) and
+                    os.path.exists(dst_path) and
                     reasonable_get_mtime(dst_path) == self.mtime and
-                    os.dst_path.getsize(dst_path) == self.size):
+                    os.path.getsize(dst_path) == self.size):
                 return
 
             ret = None
@@ -62,7 +62,7 @@ class FileRef(object):
                 # store to specific path
                 if dst_path is not None:
                     if src_path != dst_path:
-                        if os.dst_path.exists(dst_path):
+                        if os.path.exists(dst_path):
                             os.unlink(dst_path)
                         shutil.copy(src_path, dst_path)
                     ret = dst_path
