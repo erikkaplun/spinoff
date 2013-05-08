@@ -53,6 +53,8 @@ class FileRef(object):
                     reasonable_get_mtime(path) == self.mtime and
                     os.path.getsize(path) == self.size):
                 return
+
+            ret = None
             if self.server.uri.node == get_context().ref.uri.node:
                 _, local_path = self.server.ask(('request-local', self.file_id))
                 assert _ == 'local-file'
@@ -61,9 +63,12 @@ class FileRef(object):
                         if os.path.exists(path):
                             os.unlink(path)
                         shutil.copy(local_path, path)
-                    return path
+                    ret = path
                 else:
-                    return local_path
+                    fd, tmppath = tempfile.mkstemp()
+                    os.close(fd)
+                    shutil.copy(local_path, tmppath)
+                    ret = tmppath
             else:
                 fd, tmppath = tempfile.mkstemp()
                 os.close(fd)
@@ -72,12 +77,13 @@ class FileRef(object):
                 if transferred_size != self.size:
                     os.unlink(tmppath)
                     raise TransferFailed("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
-                os.utime(tmppath, (self.mtime, self.mtime))
                 if path:
                     os.rename(tmppath, path)
-                    return path
+                    ret = path
                 else:
-                    return tmppath
+                    ret = tmppath
+            os.utime(ret, (self.mtime, self.mtime))
+            return ret
 
     def _transfer(self, fh):
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
