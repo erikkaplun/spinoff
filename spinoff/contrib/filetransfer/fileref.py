@@ -83,10 +83,9 @@ class FileRef(object):
                     raise TransferFailed("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
                 # store to specific path
                 if dst_path:
-                    with lock_file(dst_path):
-                        if os.path.exists(dst_path):
-                            os.unlink(dst_path)
-                        os.rename(tmppath, dst_path)
+                    if os.path.exists(dst_path):
+                        os.unlink(dst_path)
+                    os.rename(tmppath, dst_path)
                     ret = dst_path
                 # store to temp
                 else:
