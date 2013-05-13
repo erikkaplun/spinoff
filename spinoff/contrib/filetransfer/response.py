@@ -6,9 +6,6 @@ from spinoff.contrib.filetransfer import constants
 from spinoff.util.pattern_matching import OR, ANY
 
 
-ALLOWED_OVERSPEED = 1.1
-
-
 class Response(Actor):
     def run(self, file, request, threadpool, chunk_size=constants.DEFAULT_CHUNK_SIZE, send_ahead=constants.SEND_AHEAD):
         self.watch(request)
