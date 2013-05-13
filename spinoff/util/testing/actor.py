@@ -4,17 +4,13 @@ import functools
 import gc
 import inspect
 import sys
-import traceback
 from contextlib import contextmanager
 
-from gevent import idle, with_timeout, Timeout, sleep
-from gevent.event import Event
+from gevent import with_timeout, Timeout, sleep
 from nose.tools import ok_, eq_
-from twisted.internet.defer import DebugInfo
 
-from spinoff.actor import Actor, Node
+from spinoff.actor import Actor
 from spinoff.actor.events import Events, Error
-from spinoff.remoting import HubWithNoRemoting
 
 from .common import assert_raises
 

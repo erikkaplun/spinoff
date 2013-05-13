@@ -6,16 +6,13 @@ from spinoff.contrib.filetransfer import constants
 from spinoff.util.pattern_matching import OR, ANY
 
 
-ALLOWED_OVERSPEED = 1.1
-
-
 class Response(Actor):
     def run(self, file, request, threadpool, chunk_size=constants.DEFAULT_CHUNK_SIZE, send_ahead=constants.SEND_AHEAD):
         self.watch(request)
         seek_ptr = 0
         chunks_sent = 0
         other_received = 0
-        with open(file, 'r') as f:
+        with open(file, 'rb') as f:
             while True:
                 chunk = read_file_async(threadpool, f, limit=chunk_size)
                 more_coming = len(chunk) > 0
