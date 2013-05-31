@@ -348,7 +348,7 @@ class Cell(Greenlet, _BaseCell):
             elif m == ('__error', ANY, ANY):
                 _, exc, tb = m
                 self.report((exc, tb))
-            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done'):
+            elif not (m == ('terminated', ANY) or m == ('_unwatched', ANY) or m == ('_node_down', ANY) or m == '_stop' or m == '_kill' or m == '__done' or m == '__undone'):
                 Events.log(DeadLetter(ref, m, sender))
         self.parent_actor.send(('_child_terminated', ref))
         for watcher in (self.watchers or []):
