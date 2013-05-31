@@ -135,7 +135,11 @@ class Hub(object):
         recv, t, execute, message_received, ping_received, sig_disconnect_received = (
             sock.recv_multipart, time.time, self._execute, self._logic.message_received, self._logic.ping_received, self._logic.sig_disconnect_received)
         while True:
-            sender_nid, msg_bytes = recv()
+            data = recv()
+            try:
+                sender_nid, msg_bytes = data
+            except ValueError:
+                continue
             # dbg("recv", repr(msg_bytes), "from", sender_nid)
             msg_header, msg_bytes = msg_bytes[:4], msg_bytes[4:]
             if msg_header == SIG_DISCONNECT:
