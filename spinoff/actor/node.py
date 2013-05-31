@@ -68,11 +68,13 @@ class Node(object):
         pickler = IncomingMessageUnpickler(self, StringIO(msg_bytes))
         try:
             loaded = pickler.load()
-        except Exception as e:
-            err("failed to parse message from %r (%s)" % (sender_nid, str(e)))
-            return
+        except Exception:
+            return  # malformed input
 
-        local_path, message, sender = loaded
+        try:
+            local_path, message, sender = loaded
+        except Exception:
+            return  # malformed input
 
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:

@@ -139,7 +139,7 @@ class Hub(object):
             try:
                 sender_nid, msg_bytes = data
             except ValueError:
-                continue
+                continue  # malformed input
             # dbg("recv", repr(msg_bytes), "from", sender_nid)
             msg_header, msg_bytes = msg_bytes[:4], msg_bytes[4:]
             if msg_header == SIG_DISCONNECT:
@@ -163,9 +163,13 @@ class Hub(object):
             elif msg_header == SIG_RELAY_NVM:
                 execute(self._logic.relay_nvm_received, sender_nid, relayee_nid=msg_bytes)
             elif msg_header < MIN_VERSION_BITS:
-                raise NotImplementedError("don't know how to handle signal: %r" % (msg_header,))
+                continue  # malformed input
             else:
-                version = struct.unpack(MSG_HEADER_FORMAT, msg_header)[0] - MIN_VERSION_VALUE
+                try:
+                    unpacked = struct.unpack(MSG_HEADER_FORMAT, msg_header)
+                except Exception:
+                    continue  # malformed input
+                version = unpacked[0] - MIN_VERSION_VALUE
                 if msg_bytes:
                     execute(message_received, on_sock, sender_nid, version, msg_bytes, t())
                 else:
@@ -258,7 +262,12 @@ verifyClass(IHub, Hub)
 
 
 def naddr_to_zmq_endpoint(nid):
-    host, port = nid.split(':')
+    if '\0' in nid:
+        return None
+    try:
+        host, port = nid.split(':')
+    except ValueError:
+        return None
     try:
         return 'tcp://%s:%s' % (gethostbyname(host), port)
     except socket.gaierror as e:
