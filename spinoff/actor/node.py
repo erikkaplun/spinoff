@@ -12,6 +12,7 @@ from spinoff.actor.uri import Uri
 from spinoff.remoting import Hub, HubWithNoRemoting
 from spinoff.remoting.pickler import IncomingMessageUnpickler
 from spinoff.util.pattern_matching import ANY
+from spinoff.util.logging import err
 
 
 class Node(object):
@@ -64,7 +65,14 @@ class Node(object):
         self._hub.unwatch_node(nid, watcher)
 
     def _on_receive(self, sender_nid, msg_bytes):
-        local_path, message, sender = IncomingMessageUnpickler(self, StringIO(msg_bytes)).load()
+        pickler = IncomingMessageUnpickler(self, StringIO(msg_bytes))
+        try:
+            loaded = pickler.load()
+        except Exception as e:
+            err("failed to parse message from %r (%s)" % (sender_nid, str(e)))
+        else:
+            local_path, message, sender = loaded
+
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:
             if ('_watched', ANY) == message:
