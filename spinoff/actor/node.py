@@ -70,8 +70,9 @@ class Node(object):
             loaded = pickler.load()
         except Exception as e:
             err("failed to parse message from %r (%s)" % (sender_nid, str(e)))
-        else:
-            local_path, message, sender = loaded
+            return
+
+        local_path, message, sender = loaded
 
         cell = self.guardian.lookup_cell(Uri.parse(local_path))
         if not cell:
