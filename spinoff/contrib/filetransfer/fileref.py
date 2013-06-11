@@ -18,6 +18,9 @@ __all__ = ['serve_file']
 _NULL_CTX = contextmanager(lambda: (yield))
 
 
+ERRNO_INVALID_CROSS_DEVICE_LINK = 18
+
+
 def serve_file(path, abstract_path=None, node=None):
     mtime = reasonable_get_mtime(path)
     size = os.path.getsize(path)
@@ -85,7 +88,7 @@ class FileRef(object):
                 if dst_path:
                     if os.path.exists(dst_path):
                         os.unlink(dst_path)
-                    os.rename(tmppath, dst_path)
+                    move_or_copy(tmppath, dst_path)
                     ret = dst_path
                 # store to temp
                 else:
@@ -119,3 +122,16 @@ class FileRef(object):
 
 class TransferFailed(Exception):
     pass
+
+
+def move_or_copy(src, dst):
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        if e.errno == ERRNO_INVALID_CROSS_DEVICE_LINK:
+            try:
+                shutil.copy(src, dst)
+            finally:
+                os.unlink(src)
+        else:
+            raise
