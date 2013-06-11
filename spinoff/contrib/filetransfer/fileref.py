@@ -55,7 +55,7 @@ class FileRef(object):
                     os.path.exists(dst_path) and
                     reasonable_get_mtime(dst_path) == self.mtime and
                     os.path.getsize(dst_path) == self.size):
-                return
+                return dst_path
 
             ret = None
             # local
