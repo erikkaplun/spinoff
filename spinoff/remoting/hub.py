@@ -261,6 +261,9 @@ class Hub(object):
 verifyClass(IHub, Hub)
 
 
+EAI_ERRNO_TEMPORARY_FAILURE_IN_NAME_RESOLUTION = -3  # no EAI_... in socket for this errno
+
+
 def naddr_to_zmq_endpoint(nid):
     if '\0' in nid:
         return None
@@ -271,7 +274,8 @@ def naddr_to_zmq_endpoint(nid):
     try:
         return 'tcp://%s:%s' % (gethostbyname(host), port)
     except socket.gaierror as e:
-        if e.errno != socket.EAI_NONAME:
+        # XXX: perhaps we should retry in a few sec in case of EAI_ERRNO_TEMPORARY_FAILURE_IN_NAME_RESOLUTION?
+        if e.errno not in (socket.EAI_NONAME, EAI_ERRNO_TEMPORARY_FAILURE_IN_NAME_RESOLUTION):
             raise
         else:
             return None
