@@ -3,6 +3,7 @@ from __future__ import print_function
 import time
 import socket
 import struct
+import traceback
 
 import zmq.green as zmq
 from zope.interface import Interface, implements
@@ -15,7 +16,7 @@ from spinoff.remoting.hublogic import (
     HubLogic, Connect, Disconnect, SigDisconnect, Send, Ping,
     RelaySigNew, RelayConnect, RelaySigConnected, RelaySend, RelayForward, RelaySigNodeDown, RelayNvm,
     Receive, SendFailed, NodeDown, NextBeat, Bind, IN, OUT, flatten)
-from spinoff.util.logging import dbg
+from spinoff.util.logging import err
 
 
 __all__ = ['Hub']
@@ -276,6 +277,5 @@ def naddr_to_zmq_endpoint(nid):
     except socket.gaierror as e:
         # XXX: perhaps we should retry in a few sec in case of EAI_ERRNO_TEMPORARY_FAILURE_IN_NAME_RESOLUTION?
         if e.errno not in (socket.EAI_NONAME, EAI_ERRNO_TEMPORARY_FAILURE_IN_NAME_RESOLUTION):
-            raise
-        else:
-            return None
+            err("%s\n%s" % (e, traceback.format_exc()))
+    return None
