@@ -203,7 +203,7 @@ class REGEXP(Matcher):
 
 class IN(Matcher):
     def __init__(self, options):
-        self.options = options
+        self.options = list(options)
 
     def __eq__(self, other):
         return other in self.options
