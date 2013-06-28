@@ -120,6 +120,28 @@ class EQ(Matcher):
         return 'EQ(%r)' % (self.pattern,)
 
 
+class GT(Matcher):
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, x):
+        return x > self.value
+
+    def __str__(self):
+        return 'GT(%r)' % (self.value,)
+
+
+class LT(Matcher):
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, x):
+        return x < self.value
+
+    def __str__(self):
+        return 'LT(%r)' % (self.value,)
+
+
 class IS_INSTANCE(Matcher):
     def __init__(self, t):
         self.t = t
