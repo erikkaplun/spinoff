@@ -88,6 +88,10 @@ class Matcher(_Marker):
     def __ne__(self, x):
         return not (self == x)
 
+    def __hash__(self):
+        # detect when a matcher was used as a dict key, or put in a set or similar
+        raise RuntimeError("Can't hash pattern matchers")
+
 
 class ANY(Matcher):
     def __eq__(self, x):
