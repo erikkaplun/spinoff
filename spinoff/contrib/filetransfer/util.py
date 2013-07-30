@@ -24,4 +24,4 @@ def mkdir_p(path):
 
 def reasonable_get_mtime(fname):
     mtime = os.stat(fname).st_mtime
-    return round(mtime, 2)
+    return round(mtime, 1)

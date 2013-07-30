@@ -12,7 +12,7 @@ setup(
     name="spinoff",
     description="Framework for writing distributed, fault tolerant and scalable internet applications",
     long_description=long_description,
-    version="0.7.11",
+    version="0.7.12",
     packages=find_packages() + ['geventreactor'],
 
     install_requires=[
