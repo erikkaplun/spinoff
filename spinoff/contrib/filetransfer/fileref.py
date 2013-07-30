@@ -94,6 +94,7 @@ class FileRef(object):
                 else:
                     ret = tmppath
             os.utime(ret, (self.mtime, self.mtime))
+            assert reasonable_get_mtime(ret) == self.mtime
             return ret
 
     def _transfer(self, fh):
