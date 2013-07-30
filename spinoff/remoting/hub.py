@@ -236,8 +236,6 @@ class Hub(object):
                         zmqaddr = naddr_to_zmq_endpoint(naddr)
                         if zmqaddr:
                             self._outsock.connect(zmqaddr)
-                        else:
-                            pass  # TODO: would be nicer if we used this information and notified an immediate disconnect
                     sleep(0.001)
                 elif cmd is Disconnect:
                     _, naddr = action
