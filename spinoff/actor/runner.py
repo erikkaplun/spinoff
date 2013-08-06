@@ -16,7 +16,7 @@ from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.validate import _validate_nodeid
-from spinoff.util.logging import panic, dbg, log
+from spinoff.util.logging import panic, log
 from spinoff.util.pattern_matching import ANY
 
 _EMPTY = object()
@@ -44,7 +44,7 @@ class ActorRunner(Service):
             # else:
             #     log("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting")
 
-            self.node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False, enable_relay=self.enable_relay)
+            self.node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False, enable_relay=self._enable_relay)
 
             try:
                 self._wrapper = self.node.spawn(Wrapper.using(
