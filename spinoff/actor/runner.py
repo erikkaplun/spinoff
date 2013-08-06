@@ -16,7 +16,7 @@ from twisted.python.failure import Failure
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.validate import _validate_nodeid
-from spinoff.util.logging import panic, dbg, log
+from spinoff.util.logging import panic, log
 from spinoff.util.pattern_matching import ANY
 
 _EMPTY = object()
