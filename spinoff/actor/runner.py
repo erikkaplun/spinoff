@@ -23,7 +23,7 @@ _EMPTY = object()
 
 
 class ActorRunner(Service):
-    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, name=None, keep_running=False):
+    def __init__(self, actor_cls, init_params={}, initial_message=_EMPTY, nodeid=None, enable_relay=False, name=None, keep_running=False):
         if nodeid:
             _validate_nodeid(nodeid)
         self._init_params = init_params
@@ -31,6 +31,7 @@ class ActorRunner(Service):
         self._actor_cls = actor_cls
         self._wrapper = None
         self._nodeid = nodeid
+        self._enable_relay = enable_relay
         self._name = name
         self._keep_running = keep_running
 
@@ -43,7 +44,7 @@ class ActorRunner(Service):
             # else:
             #     log("No remoting requested; specify `--remoting/-r <nodeid>` (nodeid=host:port) to set up remoting")
 
-            self.node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False)
+            self.node = Node(nid=self._nodeid, enable_remoting=True if self._nodeid else False, enable_relay=self.enable_relay)
 
             try:
                 self._wrapper = self.node.spawn(Wrapper.using(
