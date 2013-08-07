@@ -304,7 +304,7 @@ class Cell(Greenlet, _BaseCell):
             self.queue.put((_NOSENDER, ('__error', sys.exc_info()[1], sys.exc_info()[2])))
             return
         if ret is not None:
-            warnings.warn("Process.run should not return anything--it's ignored")
+            warnings.warn("Actor.run should not return anything--it's ignored")
         self.queue.put((_NOSENDER, '__done'))
         self.queue.put((_NOSENDER, '_stop'))
 

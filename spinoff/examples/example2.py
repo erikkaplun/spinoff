@@ -1,21 +1,22 @@
-from spinoff.actor import Actor, lookup
-from spinoff.actor.process import Process
+from gevent import sleep, with_timeout
+
+from spinoff.actor import Actor
 from spinoff.util.logging import dbg
-from spinoff.util.async import sleep, with_timeout
 
 
-class ExampleProcess(Process):
+class ExampleProcess(Actor):
     def run(self, other_actor):
-        other_actor = lookup(other_actor) if isinstance(other_actor, str) else other_actor
+        if isinstance(other_actor, str):
+            other_actor = self.node.lookup_str(other_actor)
         while True:
             dbg("sending greeting to %r" % (other_actor,))
-            other_actor << ('hello!', self.ref)
+            other_actor << 'hello!'
 
             dbg("waiting for ack from %r" % (other_actor,))
-            yield with_timeout(5.0, self.get('ack'))
+            with_timeout(5.0, self.get, 'ack')
 
             dbg("got 'ack' from %r; now sleeping a bit..." % (other_actor,))
-            yield sleep(1.0)
+            sleep(1.0)
 
 
 class ExampleActor(Actor):
@@ -23,9 +24,8 @@ class ExampleActor(Actor):
         dbg("starting")
 
     def receive(self, msg):
-        content, sender = msg
-        dbg("%r from %r" % (content, sender))
-        sender << 'ack'
+        dbg("%r from %r" % (msg, self.sender))
+        self.sender << 'ack'
 
     def post_stop(self):
         dbg("stopping")
