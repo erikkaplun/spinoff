@@ -24,39 +24,7 @@ Example
 
 The following is only a very small "peek preview" style example of what the framework can do. More examples and full documentation will follow soon.
 
-```python
-# spinoff/examples/example1.py
-from gevent import sleep, with_timeout
-from spinoff.actor import Actor
-from spinoff.util.logging import dbg
-
-
-class ExampleProcess(Actor):
-    def run(self):
-        child = self.spawn(ExampleActor)
-
-        while True:
-            dbg("sending greeting to %r" % (child,))
-            child << 'hello!'
-
-            dbg("waiting for ack from %r" % (child,))
-            with_timeout(5.0, self.get, 'ack')
-
-            dbg("got 'ack' from %r; now sleeping a bit..." % (child,))
-            sleep(1.0)
-
-
-class ExampleActor(Actor):
-    def pre_start(self):
-        dbg("starting")
-
-    def receive(self, msg):
-        dbg("%r from %r" % (msg, self.sender))
-        self.sender << 'ack'
-
-    def post_stop(self):
-        dbg("stopping")
-```
+See [spinoff/examples/example1.py](spinoff/examples/example1.py)
 
 The example can be run using the following command:
 
@@ -73,40 +41,7 @@ $ spin spinoff.examples.example1.ExampleProcess
 Distributed Example (with Remoting)
 ===================================
 
-```python
-# spinoff/examples/example2.py
-from gevent import sleep, with_timeout
-
-from spinoff.actor import Actor
-from spinoff.util.logging import dbg
-
-
-class ExampleProcess(Actor):
-    def run(self, other_actor):
-        if isinstance(other_actor, str):
-            other_actor = self.node.lookup_str(other_actor)
-        while True:
-            dbg("sending greeting to %r" % (other_actor,))
-            other_actor << 'hello!'
-
-            dbg("waiting for ack from %r" % (other_actor,))
-            with_timeout(5.0, self.get, 'ack')
-
-            dbg("got 'ack' from %r; now sleeping a bit..." % (other_actor,))
-            sleep(1.0)
-
-
-class ExampleActor(Actor):
-    def pre_start(self):
-        dbg("starting")
-
-    def receive(self, msg):
-        dbg("%r from %r" % (msg, self.sender))
-        self.sender << 'ack'
-
-    def post_stop(self):
-        dbg("stopping")
-```
+See [spinoff/examples/example2.py](spinoff/examples/example2.py)
 
 The example can be run using the following commands:
 
@@ -120,24 +55,7 @@ Same Distributed Code without Remoting
 
 The following example demonstrates how it's possible to run the same code, unmodified, in a single thread with no network/remoting involved whatsoever.  It's an illustration of how actors (components) written using Spinoff are xagnostic of how they are wired to work with other actors and can thus be viewed as abstract components containing only pure domain logic and no low level transportation and topology details.
 
-```python
-# spinoff/examples/example2_local.py
-from spinoff.actor import Actor
-from spinoff.util.logging import dbg
-
-from .example2 import ExampleProcess, ExampleActor
-
-
-class LocalApp(Actor):
-    def run(self):
-        dbg("spawning ExampleActor")
-        actor1 = self.spawn(ExampleActor)
-
-        dbg("spawning ExampleProcess")
-        self.spawn(ExampleProcess.using(other_actor=actor1))
-
-        self.get()  # so that the entire app wouldn't exit immediately
-```
+See [spinoff/examples/example2_local.py](spinoff/examples/example2_local.py)
 
 The example can be run using the following commands:
 
