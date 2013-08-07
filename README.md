@@ -51,7 +51,7 @@ class ExampleActor(Actor):
         dbg("starting")
 
     def receive(self, msg):
-        dbg("%r from %r" % (content, self.sender))
+        dbg("%r from %r" % (msg, self.sender))
         self.sender << 'ack'
 
     def post_stop(self):
