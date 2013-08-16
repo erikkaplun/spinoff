@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from spinoff.contrib.filetransfer.request import Request
 from spinoff.contrib.filetransfer.server import Server
 from spinoff.contrib.filetransfer.util import mkdir_p, reasonable_get_mtime
 from spinoff.util.lockfile import lock_file
+from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import ANY
 
 
@@ -98,6 +100,7 @@ class FileRef(object):
             return ret
 
     def _transfer(self, fh):
+        dbg("Transfering file", self.abstract_path)
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
         more = True
         ret = 0
@@ -115,6 +118,10 @@ class FileRef(object):
             assert _ == 'chunk'
             ret += len(chunk)
             fh.write(chunk)
+            sys.stderr.write('.')
+            sys.stderr.flush()
+        sys.stderr.write('\n')
+        dbg("File transfer finished, stored in", fh)
         return ret
 
     def __repr__(self):
