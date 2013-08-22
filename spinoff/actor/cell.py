@@ -20,9 +20,8 @@ from spinoff.actor.exceptions import NameConflict, LookupFailed, Unhandled, Unha
 from spinoff.actor.props import Props
 from spinoff.actor.ref import Ref
 from spinoff.actor.uri import Uri
-from spinoff.util.logging import logstring, dbg, fail
+from spinoff.util.logging import logstring, fail
 from spinoff.util.pattern_matching import ANY
-from spinoff.util.pattern_matching import OR
 
 
 _NOSENDER = None
