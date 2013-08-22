@@ -197,7 +197,7 @@ class HubLogic(object):
     def relay_connected_received(self, relayee_nid):
         if relayee_nid in self.cl_relayees:
             relay_nid = self.cl_relayees[relayee_nid]
-            for msg_h in self.queues.pop(relayee_nid):
+            for msg_h in self.queues.pop(relayee_nid, []):
                 yield RelaySend, (IN if relay_nid in self.channels_in else OUT), relay_nid, relayee_nid, msg_h
 
     def relay_nodedown_received(self, relay_nid, relayee_nid):
