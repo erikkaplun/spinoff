@@ -45,7 +45,7 @@ class FileRef(object):
         self.mtime = mtime
         self.size = size
 
-    def fetch(self, dst_path=None):
+    def fetch(self, dst_path=None, on_progress=None):
         if dst_path is not None and os.path.isdir(dst_path):
             raise TransferFailed("%r is a directory" % (dst_path,))
         if dst_path:
@@ -75,12 +75,14 @@ class FileRef(object):
                     os.close(fd)
                     shutil.copy(src_path, tmppath)
                     ret = tmppath
+                if on_progress:
+                    on_progress(fileref=self, transferred_size=self.size, local=True)
             # remote
             else:
                 fd, tmppath = tempfile.mkstemp()
                 os.close(fd)
                 with open(tmppath, 'wb') as tmpfile:
-                    transferred_size = self._transfer(tmpfile)
+                    transferred_size = self._transfer(tmpfile, on_progress)
                 if transferred_size != self.size:
                     os.unlink(tmppath)
                     raise TransferFailed("fetched file size %db does not match remote size %db" % (transferred_size, self.size))
@@ -97,7 +99,7 @@ class FileRef(object):
             assert reasonable_get_mtime(ret) == self.mtime
             return ret
 
-    def _transfer(self, fh):
+    def _transfer(self, fh, on_progress):
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
         more = True
         ret = 0
@@ -115,6 +117,8 @@ class FileRef(object):
             assert _ == 'chunk'
             ret += len(chunk)
             fh.write(chunk)
+            if on_progress:
+                on_progress(fileref=self, transferred_size=ret, local=False)
         return ret
 
     def __repr__(self):
