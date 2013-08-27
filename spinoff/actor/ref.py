@@ -183,7 +183,7 @@ class Ref(_BaseRef):
         from spinoff.actor.misc import Future
         future = Future()
         self << ('_watched', future)
-        return future
+        return future.get()
 
     def __eq__(self, other):
         """Returns `True` if the `other` `Ref` points to the same actor.
