@@ -4,7 +4,6 @@ import os
 from gevent.threadpool import ThreadPool
 
 from spinoff.actor import Actor
-from spinoff.actor.context import get_context
 from spinoff.util.logging import dbg, err
 from spinoff.util.pattern_matching import ANY, IN
 from spinoff.contrib.filetransfer.response import Response
