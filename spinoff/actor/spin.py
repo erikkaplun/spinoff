@@ -55,7 +55,10 @@ def spin(actor_cls, name=None, init_params={}, node_id=None, initial_messages=[]
         initial_messages=initial_messages,
         stop_event=stop_event
     ), name='-runner')
-    stop_event.wait()
+    try:
+        stop_event.wait()
+    except KeyboardInterrupt:
+        pass
 
 
 def console():
