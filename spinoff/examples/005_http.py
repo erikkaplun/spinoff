@@ -1,7 +1,7 @@
 from gevent import sleep
 
 from spinoff.actor import Actor
-from spinoff.contrib.http.server import HttpServer
+from spinoff.contrib.http import HttpServer
 
 
 class Main(Actor):
