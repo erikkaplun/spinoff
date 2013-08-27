@@ -2,7 +2,6 @@ import argparse
 import sys
 
 from gevent.event import Event
-from gevent.hub import LoopExit
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.exceptions import Unhandled
@@ -56,10 +55,7 @@ def spin(actor_cls, name=None, init_params={}, node_id=None, initial_messages=[]
         initial_messages=initial_messages,
         stop_event=stop_event
     ), name='-runner')
-    try:
-        stop_event.wait()
-    except LoopExit as exc:
-        assert exc.message == 'This operation would block forever'
+    stop_event.wait()
 
 
 def console():
