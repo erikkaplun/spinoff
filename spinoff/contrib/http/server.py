@@ -5,11 +5,10 @@ from gevent.pywsgi import WSGIServer
 from gevent.queue import Queue
 
 from spinoff.actor import Actor
-from spinoff.util.pattern_matching import ANY
+from spinoff.actor.events import Events, Error
 from spinoff.actor.exceptions import Unhandled
 from spinoff.util.logging import dbg
-from spinoff.actor.events import Events
-from spinoff.actor.events import Error
+from spinoff.util.pattern_matching import ANY
 
 
 class HttpServer(Actor):
