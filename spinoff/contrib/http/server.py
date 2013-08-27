@@ -2,7 +2,7 @@ import re
 import traceback
 
 from gevent.pywsgi import WSGIServer
-from gevent.queue import Queue
+from gevent.queue import Channel
 
 from spinoff.actor import Actor
 from spinoff.actor.events import Events, Error
@@ -18,7 +18,7 @@ class HttpServer(Actor):
         self.server.start()
 
     def handle_wsgi_request(self, env, start_response):
-        ch = Queue()
+        ch = Channel()
         req = Request(ch, env, start_response)
         self << ('handle', req)
         return response_stream(ch)
