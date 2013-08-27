@@ -53,10 +53,10 @@ class _BaseRef(object):
         self.send(message)
         return self
 
-    def ask(self, msg):
+    def ask(self, msg, timeout=None):
         tmp, d = TempActor.make()
         self.send(msg, _sender=tmp)
-        return d.get()
+        return d.get(timeout=timeout)
 
     def forward(self, msg):
         sender = get_context().sender
