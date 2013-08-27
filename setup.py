@@ -25,5 +25,12 @@ setup(
     author="Erik Allik",
     author_email="erik.allik@skype.net",
     license="BSD",
-    url="http://github.com/eallik/spinoff/"
+    url="http://github.com/eallik/spinoff/",
+
+    entry_points={
+        'console_scripts': [
+            'spin = spinoff.actor.spin:console',
+        ]
+    },
+
 )

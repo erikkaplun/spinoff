@@ -4,6 +4,7 @@ from .node import Node
 from .uri import Uri
 from .props import Props
 from .exceptions import Unhandled
+from .spin import spin
 
 
-__all__ = [Actor, Node, Uri, Props, Unhandled]
+__all__ = [Actor, Node, Uri, Props, Unhandled, spin]
