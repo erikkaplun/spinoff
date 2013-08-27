@@ -22,7 +22,7 @@ class IndexResponder(Actor):
 class FooResponder(Actor):
     def run(self, request, name):
         request.write('foo got: %s\n' % (name,))
-        request.write('...and adder computed: 3 + 4 = %s\n' % (self.spawn(Adder.using()).ask((3, 4)),))
+        request.write('...and adder computed: 3 + 4 = %s\n' % (self.spawn(Adder).ask((3, 4)),))
 
 
 class Adder(Actor):
@@ -35,4 +35,4 @@ class Adder(Actor):
 class AdderResponder(Actor):
     def run(self, request, a, b):
         a, b = int(a), int(b)
-        request.write('%d + %d = %d\n' % (a, b, self.spawn(Adder.using()).ask((a, b)),))
+        request.write('%d + %d = %d\n' % (a, b, self.spawn(Adder).ask((a, b)),))
