@@ -285,13 +285,15 @@ class Cell(Greenlet, _BaseCell):
             pre_start = actor.pre_start
             args, kwargs = actor.args, actor.kwargs
             pre_start(*args, **kwargs)
-        if actor.run:
+        elif actor.run:
             self.ch = gevent.queue.Channel()
             if actor.receive:
                 raise TypeError("actor should implement only run() or receive() but not both")
             self.proc = gevent.spawn(self.wrap_run, actor.run)
             self.proc._cell = self
             self.stash = deque()
+        elif actor.args or actor.kwargs:
+            raise TypeError("args or kwargs provided to actor but actor accepts none")
         return actor
 
     def wrap_run(self, fn):
