@@ -6,7 +6,7 @@ from gevent.hub import LoopExit
 
 from spinoff.actor import Actor, Node
 from spinoff.actor.exceptions import Unhandled
-from spinoff.util.logging import dbg, err
+from spinoff.util.logging import err
 
 
 _EMPTY = object()
@@ -113,8 +113,6 @@ def console():
             init_params = eval(eval_str)
         except Exception:
             raise _InitError("Failed to parse value: -init/--init-params")
-        else:
-            dbg("init_params: %r" % (init_params,))
 
         initial_messages = []
         for msg_raw in args.initial_message:
