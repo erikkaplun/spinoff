@@ -8,27 +8,31 @@ class Main(Actor):
     def run(self):
         http_srv = self.spawn(HttpServer.using(address=('localhost', 8080), responders=[
             (r'^/$', IndexResponder),
-            (r'^/foo$', FooResponder),
+            (r'^/foo/(?P<name>.+)$', FooResponder),
+            (r'^/add/(?P<a>[0-9]+)/(?P<b>[0-9]+)$', AdderResponder),
         ]))
         http_srv.join()
 
 
 class IndexResponder(Actor):
     def run(self, request):
-        request.start_response('200 OK', [('Content-Type', 'text/html')])
-        request.write('index')
-        request.close()
+        request.write('Hello, World!\n')
 
 
 class FooResponder(Actor):
-    def run(self, request):
-        request.start_response('200 OK', [('Content-Type', 'text/html')])
-        request.write('foo\n')
-        self.spawn(SubResponder.using(request))
+    def run(self, request, name):
+        request.write('foo got: %s\n' % (name,))
+        request.write('...and adder computed: 3 + 4 = %s\n' % (self.spawn(Adder.using()).ask((3, 4)),))
 
 
-class SubResponder(Actor):
-    def run(self, req):
-        sleep(1.0)
-        req.write('sub\n')
-        req.close()
+class Adder(Actor):
+    def receive(self, msg):
+        a, b = msg
+        sleep(0.2)  # processing time
+        self.reply(a + b)
+
+
+class AdderResponder(Actor):
+    def run(self, request, a, b):
+        a, b = int(a), int(b)
+        request.write('%d + %d = %d\n' % (a, b, self.spawn(Adder.using()).ask((a, b)),))
