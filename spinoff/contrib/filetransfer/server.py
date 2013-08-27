@@ -2,6 +2,7 @@ import datetime
 import os
 
 from gevent.threadpool import ThreadPool
+import requests
 
 from spinoff.actor import Actor
 from spinoff.util.logging import dbg, err
@@ -51,6 +52,15 @@ class Server(Actor):
         elif ('terminated', IN(self.responses)) == msg:
             _, sender = msg
             self._touch_file(file_id=self.responses.pop(sender))
+        elif ('upload', ANY, ANY) == msg:
+            _, file_id, url = msg
+            if file_id not in self.published:
+                self.reply((False, "Attempted to upload a file with ID %r which has not been published or is not available anymore" % (file_id,)))
+            else:
+                self._touch_file(file_id)
+                file_path, _ = self.published[file_id]
+                r = requests.post(url, files={'file': open(file_path, 'rb')})
+                self.reply((True, r.text))
 
     def _touch_file(self, file_id):
         file_path, time_added = self.published[file_id]

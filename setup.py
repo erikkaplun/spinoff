@@ -20,6 +20,7 @@ setup(
         'pyzmq==13.1',
         'gevent==1.0rc2',
         'lockfile==0.9.1',
+        'requests',
     ],
 
     author="Erik Allik",
