@@ -65,3 +65,14 @@ remoting could ever be used, as opposed to splitting a flow of tightly coupled l
 which, still providing valid output, can degrade in performance significantly.  This is not to say that actors with
 location transparency suffer none of such issues but the extent to which the problem exists is, arguably, an order of
 magnitude lower.
+
+Example HTTP server
+===================
+
+See [spinoff/examples/005_http.py](spinoff/examples/005_http.py)
+
+The example can be run using the following commands:
+
+```bash
+$ spin spinoff.examples.0005_http.Main
+```
