@@ -12,14 +12,15 @@ from spinoff.util.pattern_matching import ANY
 
 
 class HttpServer(Actor):
-    def pre_start(self, address, responders):
+    def pre_start(self, address, responders, default_content_type='text/html'):
         self.responders = responders
+        self.default_content_type = default_content_type
         self.server = WSGIServer(address, self.handle_wsgi_request)
         self.server.start()
 
     def handle_wsgi_request(self, env, start_response):
         ch = Channel()
-        req = Request(ch, env, start_response)
+        req = Request(ch, env, start_response, default_content_type=self.default_content_type)
         self << ('handle', req)
         return response_stream(ch)
 
@@ -88,12 +89,16 @@ def response_stream(ch):
 
 
 class Request(object):
-    def __init__(self, ch, env, start_response):
+    def __init__(self, ch, env, start_response, default_content_type):
         self.ch = ch
         self.env = env
         self._response_started = False
         self._start_response = start_response
+        self.default_content_type = default_content_type
         self.closed = False
+
+    def set_status(self, status):
+        self.start_response(status, [('Content-Type', self.default_content_type)])
 
     def start_response(self, *args):
         self._response_started = True
