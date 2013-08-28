@@ -27,14 +27,19 @@ class HttpServer(Actor):
     def receive(self, msg):
         if ('handle', ANY) == msg:
             _, req = msg
-            responder = self.get_responder(req.env['PATH_INFO'])
-            if responder:
-                self.spawn(RequestHandler.using(req, responder))
-            else:
-                req.start_response('404 Not Found', [('Content-Type', 'text/html')])
-                req.write('<h1>404 Not Found</h1>\n')
-                req.write('The page you tried to reach could not be found.\n')
-                req.close()
+            try:
+                responder = self.get_responder(req.env['PATH_INFO'])
+                if responder:
+                    responder, args, kwargs = responder
+                    self.spawn(RequestHandler.using(req, responder, args, kwargs))
+                else:
+                    req.start_response('404 Not Found', [('Content-Type', 'text/html')])
+                    req.write('<h1>404 Not Found</h1>\n')
+                    req.write('The page you tried to reach could not be found.\n')
+                    req.close()
+            except:
+                _send_500(req)
+                raise
 
         elif 'get-addr' == msg:
             self.reply(self.server.address)
@@ -51,20 +56,23 @@ class HttpServer(Actor):
 
 
 class RequestHandler(Actor):
-    def run(self, req, responder):
-        responder, args, kwargs = responder
-        self.responder = responder = self.spawn(responder.using(req, *args, **kwargs))
-        self.error = None
+    def run(self, req, responder, args, kwargs):
         try:
-            Events.subscribe(Error, self.check_error)  # XXX: it would be nicer if Events.subscribe accepted an actor ref to filter on
-            responder.join()
-            if not req.closed:
-                if self.error:
-                    req.start_response('500 Internal Server Error', [('Content-Type', 'text/html')])
-                    req.write(''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)))
-                req.close()
-        finally:
-            Events.unsubscribe(Error, self.check_error)
+            self.responder = responder = self.spawn(responder.using(req, *args, **kwargs))
+            self.error = None
+            try:
+                Events.subscribe(Error, self.check_error)  # XXX: it would be nicer if Events.subscribe accepted an actor ref to filter on
+                responder.join()
+                if not req.closed:
+                    if self.error:
+                        req.start_response('500 Internal Error', [('Content-Type', 'text/html')])
+                        req.write(''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)))
+                    req.close()
+            finally:
+                Events.unsubscribe(Error, self.check_error)
+        except:
+            _send_500(req)
+            raise
 
     def check_error(self, error):
         if error.actor == self.responder:
@@ -111,3 +119,10 @@ class Request(object):
     def close(self):
         self.closed = True
         self.ch.put(_BREAK)
+
+
+def _send_500(req):
+    req.start_response('500 Error', [('Content-Type', 'text/html')])
+    req.write('<h1>500 Internal Server Error</h1>\n')
+    req.write('The server encountered an internal error or misconfiguration and was unable to complete your request.\n')
+    req.close()
