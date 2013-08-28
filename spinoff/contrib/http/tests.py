@@ -68,8 +68,6 @@ def test_file_upload(defer):
 
 
 def make_responder(fn):
-    fn.__name__ = 'run'
-
     class Responder(Actor):
         def run(self, *args, **kwargs):
             return fn(*args, **kwargs)
@@ -77,12 +75,9 @@ def make_responder(fn):
 
 
 def actor_exec(node, fn, *args, **kwargs):
-    ret = AsyncResult()
-
     class ExecActor(Actor):
         def run(self):
             ret.set(fn(*args, **kwargs))
-
+    ret = AsyncResult()
     node.spawn(ExecActor)
-
     return ret.get()
