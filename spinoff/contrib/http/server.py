@@ -65,8 +65,7 @@ class RequestHandler(Actor):
                 responder.join()
                 if not req.closed:
                     if self.error:
-                        req.start_response('500 Internal Error', [('Content-Type', 'text/html')])
-                        req.write(''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)))
+                        _send_500('<pre>%s</pre>' % (''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)),))
                     req.close()
             finally:
                 Events.unsubscribe(Error, self.check_error)
@@ -121,8 +120,10 @@ class Request(object):
         self.ch.put(_BREAK)
 
 
-def _send_500(req):
+def _send_500(req, extra=None):
     req.start_response('500 Error', [('Content-Type', 'text/html')])
     req.write('<h1>500 Internal Server Error</h1>\n')
     req.write('The server encountered an internal error or misconfiguration and was unable to complete your request.\n')
+    if extra is not None:
+        req.write(extra)
     req.close()
