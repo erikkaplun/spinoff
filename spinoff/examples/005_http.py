@@ -47,6 +47,6 @@ class FormSubmitResponder(Actor):
         for item in stuff:
             if random.random() < 0.25:
                 request.set_status('400 Bad Request')
-                request.writeln("I feel like I don't like the value %r")
+                request.writeln("I'm feeling moody...")
                 return
         request.writeln("got:\n%s" % ("\n".join(str(x) for x in stuff),))
