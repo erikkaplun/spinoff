@@ -1,7 +1,7 @@
 from gevent import getcurrent
 
 
-def get_context():
+def _get_cell():
     curr = getcurrent()
     try:
         cell = curr._cell
@@ -11,7 +11,12 @@ def get_context():
         else:
             return None
     # give out the method, not the cell object itself, to avoid exposing the internals
-    return Context(cell)
+    return cell
+
+
+def get_context():
+    cell = _get_cell()
+    return Context(cell) if cell else None
 
 
 class Context(object):

@@ -8,7 +8,7 @@ from gevent import getcurrent, spawn_later
 from spinoff.actor.events import Events, DeadLetter
 from spinoff.actor.uri import Uri
 from spinoff.actor.misc import TempActor
-from spinoff.actor.context import get_context
+from spinoff.actor.context import get_context, _get_cell
 from spinoff.util.pattern_matching import ANY, IN, Matcher
 from spinoff.util.logging import dbg
 
@@ -179,11 +179,9 @@ class Ref(_BaseRef):
         return self.is_local and not self._cell
 
     def join(self):
-        # XXX: will break if somebody tries to do lookups on the future or inspect its `Uri`, which it doesn't have:
-        from spinoff.actor.misc import Future
-        future = Future()
-        self << ('_watched', future)
-        return future.get()
+        cell = _get_cell()
+        cell.watch(self)
+        cell.get(('terminated', self))
 
     def __eq__(self, other):
         """Returns `True` if the `other` `Ref` points to the same actor.
