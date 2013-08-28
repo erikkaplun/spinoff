@@ -118,6 +118,8 @@ class Request(BaseRequest):
         self.ch.put(data)
 
     def close(self):
+        if not self._response_started:
+            self._start_response('200 OK', [('Content-Type', 'text/html')])
         self.closed = True
         self.ch.put(_BREAK)
 
