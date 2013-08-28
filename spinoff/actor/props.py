@@ -15,7 +15,7 @@ class Props(object):
         return self.cls(*self.args, **self.kwargs)
 
     def using(self, *args, **kwargs):
-        args += args
+        args = self.args + args
         kwargs.update(self.kwargs)
         return Props(self.cls, *args, **kwargs)
 
