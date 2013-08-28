@@ -1,3 +1,5 @@
+import random
+
 from gevent import sleep
 
 from spinoff.actor import Actor
@@ -10,6 +12,7 @@ class Main(Actor):
             (r'^/$', IndexResponder),
             (r'^/foo/(?P<name>.+)$', FooResponder),
             (r'^/add/(?P<a>[0-9]+)/(?P<b>[0-9]+)$', AdderResponder),
+            (r'^/form$', FormSubmitResponder),
         ]))
         http_srv.join()
 
@@ -36,3 +39,14 @@ class AdderResponder(Actor):
     def run(self, request, a, b):
         a, b = int(a), int(b)
         request.write('%d + %d = %d\n' % (a, b, self.spawn(Adder).ask((a, b)),))
+
+
+class FormSubmitResponder(Actor):
+    def run(self, request):
+        stuff = request.form.getlist('stuff')
+        for item in stuff:
+            if random.random() < 0.25:
+                request.set_status('400 Bad Request')
+                request.writeln("I feel like I don't like the value %r")
+                return
+        request.writeln("got:\n%s" % ("\n".join(str(x) for x in stuff),))
