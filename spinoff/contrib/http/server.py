@@ -9,6 +9,7 @@ from spinoff.actor.events import Events, Error
 from spinoff.actor.exceptions import Unhandled
 from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import ANY
+from .werkzeug_wrappers import BaseRequest
 
 
 class HttpServer(Actor):
@@ -92,7 +93,7 @@ def response_stream(ch):
         yield val
 
 
-class Request(object):
+class Request(BaseRequest):
     def __init__(self, ch, env, start_response, default_content_type):
         self.ch = ch
         self.env = env
@@ -100,6 +101,7 @@ class Request(object):
         self._start_response = start_response
         self.default_content_type = default_content_type
         self.closed = False
+        BaseRequest.__init__(self, env)
 
     def set_status(self, status):
         self.start_response(status, [('Content-Type', self.default_content_type)])
