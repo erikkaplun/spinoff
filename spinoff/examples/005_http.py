@@ -13,6 +13,7 @@ class Main(Actor):
             (r'^/foo/(?P<name>.+)$', FooResponder),
             (r'^/add/(?P<a>[0-9]+)/(?P<b>[0-9]+)$', AdderResponder),
             (r'^/form$', FormSubmitResponder),
+            (r'^/file-echo$', FileEchoResponder),
         ]))
         http_srv.join()
 
@@ -50,3 +51,12 @@ class FormSubmitResponder(Actor):
                 request.writeln("I'm feeling moody...")
                 return
         request.writeln("got:\n%s" % ("\n".join(str(x) for x in stuff),))
+
+
+class FileEchoResponder(Actor):
+    def run(self, request):
+        while True:
+            chunk = request.files['file1'].read(50 * 1024)
+            if not chunk:
+                break
+            request.write(chunk)
