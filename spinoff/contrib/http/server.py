@@ -66,7 +66,7 @@ class RequestHandler(Actor):
                 responder.join()
                 if not req.closed:
                     if self.error:
-                        _send_500('<pre>%s</pre>' % (''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)),))
+                        _send_500(req, extra='\n<pre>\n%s</pre>\n' % (''.join(traceback.format_exception(type(self.error.exc), self.error.exc, self.error.tb)),))
                     req.close()
             finally:
                 Events.unsubscribe(Error, self.check_error)
