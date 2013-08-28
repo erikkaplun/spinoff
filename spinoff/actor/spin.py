@@ -59,6 +59,8 @@ def spin(actor_cls, name=None, init_params={}, node_id=None, initial_messages=[]
         stop_event.wait()
     except KeyboardInterrupt:
         pass
+    finally:
+        node.stop()
 
 
 def console():
