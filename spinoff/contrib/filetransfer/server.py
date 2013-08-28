@@ -32,6 +32,7 @@ class Server(Actor):
         elif msg == ('request', ANY) or msg == ('request-local', ANY):
             request, file_id = msg
             if file_id not in self.published:
+                # TODO: replace with a reply to the requestor, just like in the upload() case
                 err("attempt to get a file with ID %r which has not been published or is not available anymore" % (file_id,))
             else:
                 file_path, time_added = self.published[file_id]
@@ -55,12 +56,12 @@ class Server(Actor):
         elif ('upload', ANY, ANY) == msg:
             _, file_id, url = msg
             if file_id not in self.published:
-                self.reply((False, "Attempted to upload a file with ID %r which has not been published or is not available anymore" % (file_id,)))
+                self.reply((False, None))
             else:
                 self._touch_file(file_id)
                 file_path, _ = self.published[file_id]
                 r = requests.post(url, files={'file': open(file_path, 'rb')})
-                self.reply((True, r.text))
+                self.reply((True, (r.status_code, dict(r.headers), r.text)))
 
     def _touch_file(self, file_id):
         file_path, time_added = self.published[file_id]

@@ -100,7 +100,10 @@ class FileRef(object):
             return ret
 
     def upload(self, url):
-        return self.server.ask(('upload', self.file_id, url))
+        success, response = self.server.ask(('upload', self.file_id, url))
+        if not success:
+            raise FileNotFound
+        return response
 
     def _transfer(self, fh, on_progress):
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
@@ -129,6 +132,10 @@ class FileRef(object):
 
 
 class TransferFailed(Exception):
+    pass
+
+
+class FileNotFound(Exception):
     pass
 
 
