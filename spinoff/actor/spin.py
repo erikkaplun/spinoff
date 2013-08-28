@@ -90,22 +90,13 @@ def console():
     args = argparser.parse_args()
 
     try:
-        try:
-            if '.' not in args.actor:
-                raise _ImportFailed
-                sys.exit(1)
-            else:
-                mod_name, cls_name = args.actor.rsplit('.', 1)
-                try:
-                    mod = __import__(mod_name, fromlist=[cls_name])
-                except ImportError:
-                    raise _ImportFailed
-                try:
-                    actor_cls = getattr(mod, cls_name)
-                except AttributeError:
-                    raise _ImportFailed
-        except _ImportFailed:
+        if '.' not in args.actor:
             raise _InitError("Failed to import %s" % (args.actor,))
+            sys.exit(1)
+        else:
+            mod_name, cls_name = args.actor.rsplit('.', 1)
+            mod = __import__(mod_name, fromlist=[cls_name])
+            actor_cls = getattr(mod, cls_name)
 
         eval_str = 'dict(%s)' % (args.init_params,)
         try:
