@@ -113,7 +113,7 @@ class Request(BaseRequest):
 
     def write(self, data):
         if not self._response_started:
-            self._start_response('200 OK', [('Content-Type', 'text/html')])
+            self._start_response('200 OK', [('Content-Type', self.default_content_type)])
         self.ch.put(data)
 
     def writeln(self, data):
@@ -121,7 +121,7 @@ class Request(BaseRequest):
 
     def close(self):
         if not self._response_started:
-            self._start_response('200 OK', [('Content-Type', 'text/html')])
+            self._start_response('200 OK', [('Content-Type', self.default_content_type)])
         self.closed = True
         self.ch.put(_BREAK)
 
