@@ -117,6 +117,9 @@ class Request(BaseRequest):
             self._start_response('200 OK', [('Content-Type', 'text/html')])
         self.ch.put(data)
 
+    def writeln(self, data):
+        self.write(data + b'\n')
+
     def close(self):
         if not self._response_started:
             self._start_response('200 OK', [('Content-Type', 'text/html')])
