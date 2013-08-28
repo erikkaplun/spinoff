@@ -7,7 +7,6 @@ from gevent.queue import Channel
 from spinoff.actor import Actor
 from spinoff.actor.events import Events, Error
 from spinoff.actor.exceptions import Unhandled
-from spinoff.util.logging import dbg
 from spinoff.util.pattern_matching import ANY
 from werkzeug import BaseRequest
 
