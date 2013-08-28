@@ -49,9 +49,6 @@ class HttpServer(Actor):
                 kwargs = m.groupdict()
                 return responder, args if not kwargs else (), kwargs
 
-    def post_stop(self):
-        dbg()
-
 
 class RequestHandler(Actor):
     def run(self, req, responder):
