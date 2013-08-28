@@ -55,8 +55,10 @@ class FormSubmitResponder(Actor):
 
 class FileEchoResponder(Actor):
     def run(self, request):
+        fl = request.files['file1']
+        request.start_response('200 OK', [('Content-Disposition', 'attachment; filename="%s-echo"' % (str(fl.filename),))])
         while True:
-            chunk = request.files['file1'].read(50 * 1024)
+            chunk = fl.read(50 * 1024)
             if not chunk:
                 break
             request.write(chunk)
