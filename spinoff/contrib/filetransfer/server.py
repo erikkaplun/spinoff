@@ -62,6 +62,15 @@ class Server(Actor):
                 file_path, _ = self.published[file_id]
                 r = requests.post(url, files={'file': open(file_path, 'rb')})
                 self.reply((True, (r.status_code, dict(r.headers), r.text)))
+        elif ('delete', ANY) == msg:
+            _, file_id = msg
+            if file_id not in self.published:
+                self.reply(False)
+            else:
+                file_path, _ = self.published[file_id]
+                del self.published[file_id]
+                os.unlink(file_path)
+                self.reply(True)
 
     def _touch_file(self, file_id):
         file_path, time_added = self.published[file_id]
