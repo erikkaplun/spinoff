@@ -1,5 +1,6 @@
 import datetime
 import os
+import traceback
 
 from gevent.threadpool import ThreadPool
 import requests
@@ -53,15 +54,21 @@ class Server(Actor):
         elif ('terminated', IN(self.responses)) == msg:
             _, sender = msg
             self._touch_file(file_id=self.responses.pop(sender))
-        elif ('upload', ANY, ANY) == msg:
-            _, file_id, url = msg
+        elif ('upload', ANY, ANY, ANY) == msg:
+            _, file_id, url, expect_response = msg
             if file_id not in self.published:
-                self.reply((False, None))
+                self.reply((False, ('file-not-found',)))
             else:
                 self._touch_file(file_id)
                 file_path, _ = self.published[file_id]
-                r = requests.post(url, files={'file': open(file_path, 'rb')})
-                self.reply((True, (r.status_code, dict(r.headers), r.text)))
+                try:
+                    r = requests.post(url, files={'file': open(file_path, 'rb')})
+                except Exception as e:
+                    self.reply((False, ('exception', (type(e).__name__, e.message, traceback.format_exc()))))
+                if r.status_code != expect_response:
+                    self.reply((False, ('bad-status-code', r.status_code)))
+                else:
+                    self.reply((True, (r.status_code, dict(r.headers), r.text)))
         elif ('delete', ANY) == msg:
             _, file_id = msg
             if file_id not in self.published:
