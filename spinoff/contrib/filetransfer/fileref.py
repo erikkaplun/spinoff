@@ -99,11 +99,18 @@ class FileRef(object):
             assert reasonable_get_mtime(ret) == self.mtime
             return ret
 
-    def upload(self, url):
-        success, response = self.server.ask(('upload', self.file_id, url))
-        if not success:
-            raise FileNotFound
-        return response
+    def upload(self, url, expect_response=200):
+        ok, response = self.server.ask(('upload', self.file_id, url, expect_response))
+        if ok:
+            return response
+        else:
+            reason = response[0]
+            if reason == 'file-not-found':
+                raise FileNotFound
+            elif reason == 'exception':
+                raise UploadFailed(response[1])
+            elif reason == 'bad-status-code':
+                raise UploadFailed("Bad status code: %s" % (response[1]))
 
     def delete(self):
         if not self.server.ask(('delete', self.file_id)):
@@ -140,6 +147,10 @@ class TransferFailed(Exception):
 
 
 class FileNotFound(Exception):
+    pass
+
+
+class UploadFailed(Exception):
     pass
 
 
