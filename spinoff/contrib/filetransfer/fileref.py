@@ -105,6 +105,10 @@ class FileRef(object):
             raise FileNotFound
         return response
 
+    def delete(self):
+        if not self.server.ask(('delete', self.file_id)):
+            raise FileNotFound
+
     def _transfer(self, fh, on_progress):
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
         more = True
