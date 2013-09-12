@@ -54,15 +54,18 @@ class Server(Actor):
         elif ('terminated', IN(self.responses)) == msg:
             _, sender = msg
             self._touch_file(file_id=self.responses.pop(sender))
-        elif ('upload', ANY, ANY, ANY) == msg:
-            _, file_id, url, expect_response = msg
+        elif ('upload', ANY, ANY, ANY, ANY) == msg:
+            _, file_id, url, method, expect_response = msg
+            if method not in ('POST', 'PUT'):
+                self.reply((False, 'bad-method',))
             if file_id not in self.published:
                 self.reply((False, ('file-not-found',)))
             else:
                 self._touch_file(file_id)
                 file_path, _ = self.published[file_id]
+                upload = requests.post if method == 'POST' else requests.put
                 try:
-                    r = requests.post(url, files={'file': open(file_path, 'rb')})
+                    r = upload(url, files={'file': open(file_path, 'rb')})
                 except Exception as e:
                     self.reply((False, ('exception', (type(e).__name__, e.message, traceback.format_exc()))))
                 if r.status_code != expect_response:
