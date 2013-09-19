@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import errno
 import time
 import socket
 import struct
@@ -136,7 +137,12 @@ class Hub(object):
         recv, t, execute, message_received, ping_received, sig_disconnect_received = (
             sock.recv_multipart, time.time, self._execute, self._logic.message_received, self._logic.ping_received, self._logic.sig_disconnect_received)
         while True:
-            data = recv()
+            try:
+                data = recv()
+            except zmq.ZMQError as e:
+                if e.errno != errno.EINTR:  # Sometimes "Interrupted system call" happens on Linux. Nobody knows which signal is interrupting it.
+                    raise
+                continue
             try:
                 sender_nid, msg_bytes = data
             except ValueError:
