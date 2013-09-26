@@ -25,3 +25,7 @@ class Context(object):
         self.sender = cell.actor.sender if cell.actor else None
         self.node = cell.node
         self.ref = cell.ref
+
+
+def spawn(*args, **kwargs):
+    return get_context().spawn(*args, **kwargs)
