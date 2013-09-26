@@ -96,17 +96,17 @@ def response_stream(ch):
 
 
 class Request(BaseRequest):
-    def __init__(self, ch, env, start_response, default_content_type):
+    def __init__(self, ch, env, start_response, content_type):
         self.ch = ch
         self.env = env
         self._response_started = False
         self._start_response = start_response
-        self.default_content_type = default_content_type
+        self.content_type = content_type
         self.closed = False
         BaseRequest.__init__(self, env)
 
     def set_status(self, status):
-        self.start_response(status, [('Content-Type', self.default_content_type)])
+        self.start_response(status, [('Content-Type', self.content_type)])
 
     def start_response(self, *args):
         self._response_started = True
@@ -116,7 +116,7 @@ class Request(BaseRequest):
 
     def write(self, data):
         if not self._response_started:
-            self._start_response('200 OK', [('Content-Type', self.default_content_type)])
+            self._start_response('200 OK', [('Content-Type', self.content_type)])
         self.ch.put(data)
 
     def writeln(self, data):
@@ -124,7 +124,7 @@ class Request(BaseRequest):
 
     def close(self):
         if not self._response_started:
-            self._start_response('200 OK', [('Content-Type', self.default_content_type)])
+            self._start_response('200 OK', [('Content-Type', self.content_type)])
         self.closed = True
         self.ch.put(_BREAK)
 
