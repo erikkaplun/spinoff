@@ -9,6 +9,7 @@ from nose.tools import eq_
 from spinoff.actor import Node, Actor
 from spinoff.util.python import deferred_cleanup
 from spinoff.contrib.http.server import HttpServer
+from spinoff.util.testing.common import assert_raises
 
 
 patch_all()  # to make python-requests cooperative
@@ -65,6 +66,23 @@ def test_file_upload(defer):
         req = requests.post('http://localhost:%d/handle-file' % (port,), files={'file': open(f.name, 'rb')})
     eq_(200, req.status_code)
     eq_(rnd_data, req.text)
+
+
+@deferred_cleanup
+def test_stop(defer):
+    node = Node()
+    defer(node.stop)
+
+    responders = []
+    http_server = node.spawn(HttpServer.using(address=('localhost', 0), responders=responders))
+    _, port = actor_exec(node, lambda: http_server.ask('get-addr'))
+
+    eq_(404, requests.get('http://localhost:%d' % (port,)).status_code)
+
+    http_server.stop()
+
+    with assert_raises(requests.ConnectionError):
+        requests.get('http://localhost:%d' % (port,))
 
 
 def make_responder(fn):
