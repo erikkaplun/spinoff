@@ -34,6 +34,8 @@ class Node(object):
         )
 
     def lookup_str(self, addr):
+        if not isinstance(addr, str):
+            raise TypeError("%s.lookup_str expects a str" % type(self).__name__)  # pragma: no cover
         return self.lookup(Uri.parse(addr))
 
     def lookup(self, uri):

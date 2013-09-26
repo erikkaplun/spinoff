@@ -88,7 +88,7 @@ class _BaseCell(object):
 
     def get_child(self, name):
         if not (name and isinstance(name, str)):
-            raise TypeError("get_child takes a non-emtpy string")  # pragma: no cover
+            raise TypeError("get_child takes a non-emtpy string not %r" % (name,))  # pragma: no cover
         return self._children.get(name, None)
 
     def lookup_cell(self, uri):
