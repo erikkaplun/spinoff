@@ -18,6 +18,9 @@ class HttpServer(Actor):
         self.server = WSGIServer(address, self.handle_wsgi_request)
         self.server.start()
 
+    def post_stop(self):
+        self.server.stop()
+
     def handle_wsgi_request(self, env, start_response):
         ch = Channel()
         req = Request(ch, env, start_response, default_content_type=self.default_content_type)
