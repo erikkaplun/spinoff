@@ -162,7 +162,7 @@ class Ref(_BaseRef):
                     cell.receive(message, _sender)  # do NOT set self._cell--it will never be unset and will cause a memleak
                     return
             if ('_watched', ANY) == message:
-                message[1].send(('terminated', self))
+                message[1].send(('terminated', self), _sender=self)
             elif (message == ('terminated', ANY) or message == ('_unwatched', ANY) or message == ('_node_down', ANY) or
                   message == '_stop' or message == '_kill' or message == '__done'):
                 pass

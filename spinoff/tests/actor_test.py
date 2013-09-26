@@ -1018,15 +1018,16 @@ def test_watching_running_actor(defer):
             self.watch(watchee)
 
         def receive(self, message):
-            message_receieved.set(message)
+            message_receieved.set((self.sender, message))
 
     node = DummyNode()
     defer(node.stop)
     message_receieved = AsyncResult()
     watchee = node.spawn(Actor)
     node.spawn(Watcher)
+    idle()
     watchee.stop()
-    eq_(message_receieved.get(), ('terminated', watchee))
+    eq_(message_receieved.get(), (watchee, ('terminated', watchee)))
 
 
 @deferred_cleanup
@@ -1039,13 +1040,13 @@ def test_watching_new_actor(defer):
             self.watch(a)
 
         def receive(self, message):
-            message_receieved.set(message)
+            message_receieved.set((self.sender, message))
 
     node = DummyNode()
     defer(node.stop)
     watchee, message_receieved = AsyncResult(), AsyncResult()
     node.spawn(Watcher)
-    eq_(message_receieved.get(), ('terminated', watchee.get()))
+    eq_(message_receieved.get(), (watchee.get(), ('terminated', watchee.get())))
 
 
 @deferred_cleanup
@@ -1055,7 +1056,7 @@ def test_watching_dead_actor(defer):
             self.watch(watchee)
 
         def receive(self, message):
-            message_receieved.set(message)
+            message_receieved.set((self.sender, message))
 
     node = DummyNode()
     defer(node.stop)
@@ -1064,7 +1065,7 @@ def test_watching_dead_actor(defer):
     watchee.stop()
     idle()
     node.spawn(Watcher)
-    eq_(message_receieved.get(), ('terminated', watchee))
+    eq_(message_receieved.get(), (watchee, ('terminated', watchee)))
 
 
 @deferred_cleanup
