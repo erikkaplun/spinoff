@@ -75,12 +75,16 @@ class Server(Actor):
         elif ('delete', ANY) == msg:
             _, file_id = msg
             if file_id not in self.published:
-                self.reply(False)
+                self.reply((False, ('file-not-found', None)))
             else:
                 file_path, _ = self.published[file_id]
                 del self.published[file_id]
-                os.unlink(file_path)
-                self.reply(True)
+                try:
+                    os.unlink(file_path)
+                except BaseException as e:
+                    self.reply((False, ('exception', (type(e).__name__, e.message, traceback.format_exc()))))
+                else:
+                    self.reply((True, None))
 
     def _touch_file(self, file_id):
         file_path, time_added = self.published[file_id]
