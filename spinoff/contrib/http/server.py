@@ -23,7 +23,7 @@ class HttpServer(Actor):
 
     def handle_wsgi_request(self, env, start_response):
         ch = Channel()
-        req = Request(ch, env, start_response, default_content_type=self.default_content_type)
+        req = Request(ch, env, start_response, content_type=self.default_content_type)
         self << ('handle', req)
         return response_stream(ch)
 
