@@ -68,10 +68,11 @@ class Server(Actor):
                     r = upload(url, files={'file': open(file_path, 'rb')})
                 except Exception as e:
                     self.reply((False, ('exception', (type(e).__name__, e.message, traceback.format_exc()))))
-                if r.status_code != expect_response:
-                    self.reply((False, ('bad-status-code', r.status_code)))
                 else:
-                    self.reply((True, (r.status_code, dict(r.headers), r.text)))
+                    if r.status_code != expect_response:
+                        self.reply((False, ('bad-status-code', r.status_code)))
+                    else:
+                        self.reply((True, (r.status_code, dict(r.headers), r.text)))
         elif ('delete', ANY) == msg:
             _, file_id = msg
             if file_id not in self.published:
