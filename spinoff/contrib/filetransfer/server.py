@@ -57,9 +57,9 @@ class Server(Actor):
         elif ('upload', ANY, ANY, ANY, ANY) == msg:
             _, file_id, url, method, expect_response = msg
             if method not in ('POST', 'PUT'):
-                self.reply((False, 'bad-method',))
+                self.reply((False, ('bad-method', None)))
             if file_id not in self.published:
-                self.reply((False, ('file-not-found',)))
+                self.reply((False, ('file-not-found', None)))
             else:
                 self._touch_file(file_id)
                 file_path, _ = self.published[file_id]

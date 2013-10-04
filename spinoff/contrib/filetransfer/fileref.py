@@ -100,24 +100,24 @@ class FileRef(object):
             return ret
 
     def upload(self, url, method='POST', expect_response=200):
-        ok, response = self.server.ask(('upload', self.file_id, url, method, expect_response))
+        ok, result = self.server.ask(('upload', self.file_id, url, method, expect_response))
         if ok:
-            return response
+            return result
         else:
-            reason = response[0]
+            reason, arg = result
             if reason == 'file-not-found':
                 raise FileNotFound
             elif reason == 'exception':
-                raise UploadFailed(response[1])
+                raise UploadFailed(arg)
             elif reason == 'bad-status-code':
-                raise UploadFailed("Bad status code: %s" % (response[1]))
+                raise UploadFailed("Bad status code: %s" % (arg))
             elif reason == 'bad-method':
                 raise UploadFailed("Bad method: %s" % method)
 
     def delete(self):
-        ok, resp = self.server.ask(('delete', self.file_id))
+        ok, result = self.server.ask(('delete', self.file_id))
         if not ok:
-            reason, arg = resp
+            reason, arg = result
             if reason == 'file-not-found':
                 raise FileNotFound
             elif reason == 'exception':
