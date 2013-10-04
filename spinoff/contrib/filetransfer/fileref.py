@@ -115,8 +115,13 @@ class FileRef(object):
                 raise UploadFailed("Bad method: %s" % method)
 
     def delete(self):
-        if not self.server.ask(('delete', self.file_id)):
-            raise FileNotFound
+        ok, resp = self.server.ask(('delete', self.file_id))
+        if not ok:
+            reason, arg = resp
+            if reason == 'file-not-found':
+                raise FileNotFound
+            elif reason == 'exception':
+                raise DeletionFailed(arg)
 
     def _transfer(self, fh, on_progress):
         request = get_context().spawn(Request.using(server=self.server, file_id=self.file_id, size=self.size, abstract_path=self.abstract_path))
@@ -153,6 +158,10 @@ class FileNotFound(Exception):
 
 
 class UploadFailed(Exception):
+    pass
+
+
+class DeletionFailed(Exception):
     pass
 
 
