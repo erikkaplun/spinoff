@@ -76,7 +76,7 @@ def console():
     )
     argparser.add_argument('actor', metavar='ACTOR',
                            help="The actor to run")
-    argparser.add_argument('-init', '--init-params', metavar='INIT', default={},
+    argparser.add_argument('-using', '--using', metavar='USING', default={},
                            help="Parameters to pass to the actor")
     argparser.add_argument('-msg', '--initial-message', metavar='MSG', nargs='*', default=[],
                            help="Messages to send to the actor. Specify multiple times to send multiple messages. These must be valid Python expressions")
