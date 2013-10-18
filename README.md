@@ -57,9 +57,11 @@ The following example demonstrates how it's possible to run the same code, unmod
 
 See [spinoff/examples/example2_local.py](spinoff/examples/example2_local.py)
 
-The example can be run using the following commands:
+The example can be run using the following command:
 
-```bash $ spin spinoff.examples.example2_local.LocalApp ``` One might be tempted to ask, then, what is the difference
+```bash $ spin spinoff.examples.example2_local.LocalApp```
+
+One might ask, then, what is the difference
 between remoting frameworks such as CORBA and Spinoff.  The difference is that actors define clear boundaries where
 remoting could ever be used, as opposed to splitting a flow of tightly coupled logic into two nodes on the network,
 which, still providing valid output, can degrade in performance significantly.  This is not to say that actors with
