@@ -1,4 +1,4 @@
-from gevent import sleep, with_timeout
+from gevent import sleep
 
 from spinoff.actor import Actor
 from spinoff.util.logging import dbg
@@ -13,7 +13,7 @@ class ExampleProcess(Actor):
             other_actor << 'hello!'
 
             dbg("waiting for ack from %r" % (other_actor,))
-            with_timeout(5.0, self.get, 'ack')
+            self.get('ack', timeout=5.0)
 
             dbg("got 'ack' from %r; now sleeping a bit..." % (other_actor,))
             sleep(1.0)
