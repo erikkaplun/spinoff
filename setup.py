@@ -13,7 +13,7 @@ setup(
     description="Framework for writing distributed, fault tolerant and scalable internet applications",
     long_description=long_description,
     version="0.7.18",
-    packages=find_packages() + ['geventreactor'],
+    packages=find_packages(),
 
     install_requires=[
         'zope.interface',
