@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 from gevent.event import Event
@@ -90,6 +91,9 @@ def console():
                            help="What to name the actor")
 
     args = argparser.parse_args()
+
+    # where the spin command was invoked
+    sys.path.insert(0, os.getcwd())
 
     try:
         if '.' not in args.actor:
