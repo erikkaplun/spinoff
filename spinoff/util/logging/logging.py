@@ -250,7 +250,7 @@ def get_logname(obj):
             if isinstance(obj, type) else
             repr(obj).strip('<>')
             if not isinstance(obj, types.ModuleType) else
-            'module ' + obj.__name__)
+            obj.__name__)
 
 
 def get_logstate(obj):
