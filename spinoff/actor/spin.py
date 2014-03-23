@@ -104,7 +104,7 @@ def console():
             mod = __import__(mod_name, fromlist=[cls_name])
             actor_cls = getattr(mod, cls_name)
 
-        eval_str = 'dict(%s)' % (args.init_params,)
+        eval_str = 'dict(%s)' % (args.using,)
         try:
             init_params = eval(eval_str)
         except Exception:
