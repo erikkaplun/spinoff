@@ -18,7 +18,7 @@ setup(
     install_requires=[
         'zope.interface',
         'pyzmq==13.1',
-        'gevent==1.0rc2',
+        'gevent==1.0',
         'lockfile==0.9.1',
     ],
 
