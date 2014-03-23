@@ -19,7 +19,6 @@ setup(
         'zope.interface',
         'pyzmq==13.1',
         'gevent==1.0',
-        'lockfile==0.9.1',
     ],
 
     author="Erik Allik",
