@@ -18,7 +18,7 @@ setup(
     install_requires=[
         'zope.interface',
         'pyzmq==13.1',
-        'gevent==1.0',
+        'gevent==23.9.1',
     ],
 
     author="Erik Allik",
